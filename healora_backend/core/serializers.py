@@ -1,23 +1,22 @@
 from rest_framework import serializers
-from .models import User, Appointment
+from django.contrib.auth import get_user_model
 
-class UserSerializer(serializers.ModelSerializer):
+User = get_user_model()
+
+class RegisterSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True)
+    full_name = serializers.CharField(write_only=True, required=False)
+
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'password', 'role']
-        extra_kwargs = {'password': {'write_only': True}} # Hides password from API results
+        fields = ('email', 'password', 'role', 'full_name')
 
     def create(self, validated_data):
-        # We use the email as the username since React only asks for email!
         user = User.objects.create_user(
-            username=validated_data['email'], 
+            username=validated_data['email'], # Use email as username
             email=validated_data['email'],
             password=validated_data['password'],
-            role=validated_data.get('role', 'patient')
+            first_name=validated_data.get('full_name', ''),
+            role=validated_data.get('role', 'PATIENT')
         )
         return user
-
-class AppointmentSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Appointment
-        fields = '__all__'

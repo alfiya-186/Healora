@@ -1,11 +1,11 @@
-from rest_framework import viewsets
-from .models import User, Appointment
-from .serializers import UserSerializer, AppointmentSerializer
+from rest_framework import generics
+from rest_framework.permissions import AllowAny
+from django.contrib.auth import get_user_model
+from .serializers import RegisterSerializer
 
-class UserViewSet(viewsets.ModelViewSet):
+User = get_user_model()
+
+class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
-    serializer_class = UserSerializer
-
-class AppointmentViewSet(viewsets.ModelViewSet):
-    queryset = Appointment.objects.all()
-    serializer_class = AppointmentSerializer
+    permission_classes = (AllowAny,)
+    serializer_class = RegisterSerializer

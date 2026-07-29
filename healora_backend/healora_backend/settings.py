@@ -37,7 +37,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    # Add these 3 lines:
+    # Added for Healora:
     'rest_framework',
     'corsheaders',
     'core',
@@ -45,8 +45,8 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'corsheaders.middleware.CorsMiddleware',  # THIS MUST BE EXACTLY HERE
     'django.contrib.sessions.middleware.SessionMiddleware',
-    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -79,11 +79,14 @@ WSGI_APPLICATION = 'healora_backend.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'postgres',          # Leave this as postgres
+        'USER': 'postgres',          # Leave this as postgres
+        'PASSWORD': 'alfz',          # <-- Put 'alfz' (or your actual password) HERE!
+        'HOST': 'localhost',         # <-- THIS MUST BE 'localhost'
+        'PORT': '5432',              # Leave this as 5432
     }
 }
-
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
@@ -122,5 +125,16 @@ USE_TZ = True
 STATIC_URL = 'static/'
 
 
-CORS_ALLOW_ALL_ORIGINS = True # Allows React (localhost:5173) to connect
+# Custom User Model
 AUTH_USER_MODEL = 'core.User'
+
+# CORS Settings - Allow Everything for Development (Do not add CORS_ALLOWED_ORIGINS here!)
+CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_CREDENTIALS = True
+
+# Configure Django REST Framework to use JWT Authentication
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    )
+}
