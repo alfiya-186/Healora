@@ -19,22 +19,15 @@ class User(AbstractUser):
 
 # 2. Patient Profile (Based on PDF Page 3 & 8 - Patient Management)
 class PatientProfile(models.Model):
-    GENDER_CHOICES = [('M', 'Male'), ('F', 'Female'), ('O', 'Other')]
-
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='patient_profile')
-    date_of_birth = models.DateField(null=True, blank=True)
-    gender = models.CharField(max_length=10, choices=GENDER_CHOICES, blank=True)
-    
-    # Nutrition Assessment (PDF Page 8)
     height_cm = models.FloatField(null=True, blank=True)
     weight_kg = models.FloatField(null=True, blank=True)
+    medical_history = models.TextField(blank=True)
+    food_allergies = models.TextField(blank=True)
+    health_goals = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
     
-    # Health Records & History
-    medical_history = models.TextField(blank=True, help_text="e.g., PCOS, Diabetes, Hypertension")
-    family_medical_history = models.TextField(blank=True)
-    food_allergies = models.TextField(blank=True, help_text="e.g., Peanuts, Dairy")
-    food_preferences = models.CharField(max_length=100, blank=True, help_text="e.g., Vegan, Keto")
-    health_goals = models.TextField(blank=True, help_text="e.g., Weight Loss")
 
     def __str__(self):
         return f"Profile: {self.user.first_name}"
