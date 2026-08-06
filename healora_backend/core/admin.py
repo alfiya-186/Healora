@@ -2,9 +2,12 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from .models import User, PatientProfile, Appointment
 
-# Register Custom User
-admin.site.register(User, UserAdmin)
+# Tell Django to show the Role and Phone Number fields in the Admin panel!
+class CustomUserAdmin(UserAdmin):
+    fieldsets = UserAdmin.fieldsets + (
+        ('Healora Custom Fields', {'fields': ('role', 'phone_number')}),
+    )
 
-# Register Patient Profile & Appointments
+admin.site.register(User, CustomUserAdmin)
 admin.site.register(PatientProfile)
 admin.site.register(Appointment)

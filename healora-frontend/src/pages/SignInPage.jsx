@@ -19,20 +19,28 @@ const SignInPage = () => {
       const response = await fetch('/api/login/', {
         method: 'POST',
         headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-        // ⚠️ THIS IS THE PERMANENT FIX: Django requires the key to be named 'username'
         body: JSON.stringify({ username: email, password: password }),
       });
       
       const data = await response.json().catch(() => null);
 
       if (response.ok) {
-        // Save security tokens and user details
+        // 1. Save security tokens and user details
         localStorage.setItem('access_token', data.access);
         localStorage.setItem('user_role', data.role);
         localStorage.setItem('user_name', data.first_name || 'User');
         
-        // Redirect based on role!
-        navigate(data.role === 'NUTRITIONIST' ? '/nutritionist-dashboard' : '/patient-dashboard');
+        // 2. THIS IS WHERE THE ROUTING GOES!
+        if (data.role === 'ADMIN') {
+          navigate('/admin-dashboard');
+        } else if (data.role === 'MANAGER') {
+          navigate('/manager-dashboard');
+        } else if (data.role === 'NUTRITIONIST') {
+          navigate('/nutritionist-dashboard');
+        } else {
+          navigate('/patient-dashboard');
+        }
+        
       } else {
         setErrorMsg('Invalid email or password. Are you sure you registered this account?');
       }
