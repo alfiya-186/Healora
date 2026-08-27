@@ -1,4 +1,13 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-/* You can leave any other custom CSS below this */
+
+/* 🌟 THE ULTIMATE BROWSER SWIPE BLOCKER 🌟 */
+html, body, #root {
+  /* Stops the "bounce" effect */
+  overscroll-behavior-x: none !important;
+  overscroll-behavior-y: none !important;
+  
+  /* THIS IS THE MAGIC LINE: Physically disables horizontal browser swipe gestures! */
+  touch-action: pan-y !important; 
+}

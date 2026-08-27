@@ -1,11 +1,10 @@
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth import get_user_model
-from .models import PatientProfile, Appointment
+from .models import PatientProfile, Appointment, DietPlan, WellnessLog, SystemAuditLog
 
 User = get_user_model()
 
-# 1. THIS IS THE MISSING LOGIN SERIALIZER
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
         data = super().validate(attrs)
@@ -14,7 +13,6 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         data['id'] = self.user.id
         return data
 
-# 2. Registration Serializer
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
 
@@ -36,14 +34,69 @@ class RegisterSerializer(serializers.ModelSerializer):
             PatientProfile.objects.create(user=user)
         return user
 
-# 3. Patient Profile Serializer
 class PatientProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = PatientProfile
-        fields = ['height_cm', 'weight_kg', 'medical_history', 'food_allergies', 'health_goals']
+        fields = ['age', 'height_cm', 'weight_kg', 'medical_history', 'food_allergies', 'food_preferences', 'health_goals']
 
-# 4. Appointment Booking Serializer
 class AppointmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Appointment
+        fields = '__all__'
+
+class DietPlanSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DietPlan
+        fields = '__all__'
+
+class NutritionistPatientSerializer(serializers.ModelSerializer):
+    age = serializers.SerializerMethodField()
+    height_cm = serializers.SerializerMethodField()
+    weight_kg = serializers.SerializerMethodField()
+    food_allergies = serializers.SerializerMethodField()
+    food_preferences = serializers.SerializerMethodField()
+    medical_history = serializers.SerializerMethodField()
+    health_goals = serializers.SerializerMethodField()
+    enrolled_program = serializers.SerializerMethodField()
+
+    def _profile(self, obj):
+        try:
+            return obj.patient_profile
+        except PatientProfile.DoesNotExist:
+            return None
+
+    def _get(self, obj, field, default=''):
+        profile = self._profile(obj)
+        return getattr(profile, field, default) if profile else default
+
+    def get_age(self, obj): return self._get(obj, 'age', None)
+    def get_height_cm(self, obj): return self._get(obj, 'height_cm', None)
+    def get_weight_kg(self, obj): return self._get(obj, 'weight_kg', None)
+    def get_food_allergies(self, obj): return self._get(obj, 'food_allergies', 'None')
+    def get_food_preferences(self, obj): return self._get(obj, 'food_preferences', 'No preference')
+    def get_medical_history(self, obj): return self._get(obj, 'medical_history', 'None reported')
+    def get_health_goals(self, obj): return self._get(obj, 'health_goals', 'Weight Management')
+    def get_enrolled_program(self, obj): return self._get(obj, 'health_goals', 'Weight Management')
+
+    class Meta:
+        model = User
+        fields = (
+            'id', 'first_name', 'last_name', 'email', 'role', 'is_active',
+            'age', 'height_cm', 'weight_kg', 'food_allergies',
+            'food_preferences', 'medical_history', 'health_goals', 'enrolled_program'
+        )
+
+class WellnessLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WellnessLog
+        fields = '__all__'
+
+class UserListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ('id', 'first_name', 'last_name', 'email', 'role', 'date_joined', 'is_active')
+
+class SystemAuditLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SystemAuditLog
         fields = '__all__'

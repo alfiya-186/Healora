@@ -1,12 +1,11 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, Mail, Lock, PlusSquare, ArrowRight, ArrowLeft, Leaf, ShieldCheck, Eye, EyeOff, Briefcase, Phone } from 'lucide-react';
+import { User, Mail, Lock, PlusSquare, ArrowRight, ArrowLeft, Leaf, ShieldCheck, Eye, EyeOff, Phone } from 'lucide-react';
 
 const SignUpPage = () => {
   const navigate = useNavigate();
-  const [role, setRole] = useState('PATIENT');
   
-  // MATCHES POSTGRESQL DATABASE COLUMNS EXACTLY
+  // Form State (Role is permanently 'PATIENT' for this public page)
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
@@ -22,10 +21,20 @@ const SignUpPage = () => {
     e.preventDefault();
     setErrorMsg('');
 
-    // Validations
-    if (!agreeTerms) return setErrorMsg("Please agree to the Terms of Service.");
-    if (password.length < 8) return setErrorMsg("Password must be at least 8 characters.");
-    if (phone && !phone.match(/^\d{10}$/)) return setErrorMsg("Phone number must be exactly 10 digits.");
+    // --- SUBMIT VALIDATIONS ---
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email.match(emailRegex)) {
+      return setErrorMsg("Please enter a valid email address.");
+    }
+    if (phone.length < 10) {
+      return setErrorMsg("Phone number must be exactly 10 digits.");
+    }
+    if (password.length < 8) {
+      return setErrorMsg("Password must be at least 8 characters long.");
+    }
+    if (!agreeTerms) {
+      return setErrorMsg("Please agree to the Terms of Service and Privacy Policy.");
+    }
 
     setIsLoading(true);
 
@@ -34,26 +43,25 @@ const SignUpPage = () => {
         method: 'POST',
         headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          first_name: firstName, 
-          last_name: lastName, 
-          email: email, 
-          phone_number: phone,  // <--- NOW SAVING TO DATABASE
+          first_name: firstName.trim(), 
+          last_name: lastName.trim(), 
+          email: email.toLowerCase().trim(), 
+          phone_number: phone,
           password: password, 
-          role: role 
+          role: 'PATIENT' 
         }),
       });
 
       const data = await response.json().catch(() => null);
 
       if (response.ok) {
-        alert("🎉 Account created successfully! Please sign in.");
+        alert("🎉 Patient Account created successfully! Please sign in.");
         navigate('/signin');
       } else {
-        // SMART ERROR HANDLING
         if (response.status === 500) {
-          setErrorMsg("Server Error (500). Please check your Django terminal for the crash reason.");
+          setErrorMsg("Server Error (500). Please check Django terminal.");
         } else if (data && data.email) {
-          setErrorMsg("This email is already registered.");
+          setErrorMsg("This email is already registered. Please sign in.");
         } else {
           setErrorMsg("Registration failed: " + (data ? JSON.stringify(data) : "Unknown Error"));
         }
@@ -96,8 +104,8 @@ const SignUpPage = () => {
 
         <div className="my-auto max-w-lg w-full mx-auto space-y-3">
           <div>
-            <h2 className="text-2xl sm:text-3xl font-extrabold text-[#1C2C22]">Create an Account</h2>
-            <p className="text-[#5A6B60] text-xs mt-1">Please fill in your details to get started.</p>
+            <h2 className="text-3xl sm:text-4xl font-extrabold text-[#1C2C22]">Patient Registration</h2>
+            <p className="text-[#5A6B60] text-sm mt-1">Please fill in your details to create your health profile.</p>
           </div>
 
           {errorMsg && (
@@ -106,84 +114,121 @@ const SignUpPage = () => {
             </div>
           )}
 
-          <form onSubmit={handleRegister} className="space-y-3">
+          <form onSubmit={handleRegister} className="space-y-4" autoComplete="off">
             
-            {/* Role Selection */}
-            <div>
-              <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">I am registering as a:</label>
-              <div className="grid grid-cols-2 gap-3">
-                <div onClick={() => setRole('PATIENT')} className={`cursor-pointer p-2.5 rounded-xl border-2 transition-all flex items-center gap-2.5 ${role === 'PATIENT' ? 'border-[#456A50] bg-[#EAF0EC]' : 'border-[#EBE9E0] bg-white'}`}>
-                  <div className={`p-1.5 rounded-lg ${role === 'PATIENT' ? 'bg-[#456A50] text-white' : 'bg-[#FDFCF8] text-[#5A6B60]'}`}><User size={16} /></div>
-                  <h4 className="font-bold text-xs text-[#1C2C22]">Patient</h4>
-                </div>
-                <div onClick={() => setRole('NUTRITIONIST')} className={`cursor-pointer p-2.5 rounded-xl border-2 transition-all flex items-center gap-2.5 ${role === 'NUTRITIONIST' ? 'border-[#456A50] bg-[#EAF0EC]' : 'border-[#EBE9E0] bg-white'}`}>
-                  <div className={`p-1.5 rounded-lg ${role === 'NUTRITIONIST' ? 'bg-[#456A50] text-white' : 'bg-[#FDFCF8] text-[#5A6B60]'}`}><Briefcase size={16} /></div>
-                  <h4 className="font-bold text-xs text-[#1C2C22]">Nutritionist</h4>
-                </div>
+            {/* Row 1: First Name & Last Name (ONLY ALPHABETS ALLOWED) */}
+            <div className="grid grid-cols-2 gap-4 mt-6">
+              <div>
+                <label className="block text-xs font-bold text-[#1C2C22] mb-1.5">First Name</label>
+                <input 
+                  type="text" 
+                  required 
+                  value={firstName} 
+                  onChange={(e) => {
+                    // ONLY allows letters and spaces
+                    if (/^[a-zA-Z\s]*$/.test(e.target.value)) setFirstName(e.target.value);
+                  }} 
+                  placeholder="Jane" 
+                  autoComplete="off" 
+                  className="w-full bg-white border border-[#EBE9E0] rounded-xl py-2.5 px-4 outline-none focus:border-[#456A50] text-sm shadow-sm" 
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-[#1C2C22] mb-1.5">Last Name</label>
+                <input 
+                  type="text" 
+                  required 
+                  value={lastName} 
+                  onChange={(e) => {
+                    // ONLY allows letters and spaces
+                    if (/^[a-zA-Z\s]*$/.test(e.target.value)) setLastName(e.target.value);
+                  }} 
+                  placeholder="Doe" 
+                  autoComplete="off" 
+                  className="w-full bg-white border border-[#EBE9E0] rounded-xl py-2.5 px-4 outline-none focus:border-[#456A50] text-sm shadow-sm" 
+                />
               </div>
             </div>
 
-            {/* Row 1: First Name & Last Name */}
-            <div className="grid grid-cols-2 gap-3">
+            {/* Row 2: Email & Phone Number (ONLY NUMBERS ALLOWED) */}
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-[11px] font-semibold text-[#1C2C22] mb-1">First Name</label>
-                <input type="text" required value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="Jane" className="w-full bg-white border border-[#EBE9E0] rounded-xl py-2 px-3 outline-none focus:border-[#456A50] text-xs shadow-sm" />
-              </div>
-              <div>
-                <label className="block text-[11px] font-semibold text-[#1C2C22] mb-1">Last Name</label>
-                <input type="text" required value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Doe" className="w-full bg-white border border-[#EBE9E0] rounded-xl py-2 px-3 outline-none focus:border-[#456A50] text-xs shadow-sm" />
-              </div>
-            </div>
-
-            {/* Row 2: Email & Phone Number */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[11px] font-semibold text-[#1C2C22] mb-1">Email Address</label>
+                <label className="block text-xs font-bold text-[#1C2C22] mb-1.5">Email Address</label>
                 <div className="relative">
-                  <Mail className="absolute left-3 top-2.5 text-[#5A6B60]" size={14} />
-                  <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="jane@example.com" className="w-full bg-white border border-[#EBE9E0] rounded-xl py-2 pl-9 pr-3 outline-none focus:border-[#456A50] text-xs shadow-sm" />
+                  <Mail className="absolute left-3.5 top-3 text-[#5A6B60]" size={16} />
+                  <input 
+                    type="email" 
+                    required 
+                    value={email} 
+                    onChange={(e) => setEmail(e.target.value)} 
+                    placeholder="jane@example.com" 
+                    autoComplete="off" 
+                    className="w-full bg-white border border-[#EBE9E0] rounded-xl py-2.5 pl-10 pr-3.5 outline-none focus:border-[#456A50] text-sm shadow-sm" 
+                  />
                 </div>
               </div>
               <div>
-                <label className="block text-[11px] font-semibold text-[#1C2C22] mb-1">Phone Number</label>
+                <label className="block text-xs font-bold text-[#1C2C22] mb-1.5">Phone Number</label>
                 <div className="relative">
-                  <Phone className="absolute left-3 top-2.5 text-[#5A6B60]" size={14} />
-                  <input type="tel" required value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="10 Digits" className="w-full bg-white border border-[#EBE9E0] rounded-xl py-2 pl-9 pr-3 outline-none focus:border-[#456A50] text-xs shadow-sm" />
+                  <Phone className="absolute left-3.5 top-3 text-[#5A6B60]" size={16} />
+                  <input 
+                    type="tel" 
+                    required 
+                    maxLength="10"
+                    value={phone} 
+                    onChange={(e) => {
+                      // ONLY allows digits (0-9) and stops at 10 characters
+                      if (/^\d*$/.test(e.target.value) && e.target.value.length <= 10) setPhone(e.target.value);
+                    }} 
+                    placeholder="10 Digits" 
+                    autoComplete="off" 
+                    className="w-full bg-white border border-[#EBE9E0] rounded-xl py-2.5 pl-10 pr-3.5 outline-none focus:border-[#456A50] text-sm shadow-sm" 
+                  />
                 </div>
               </div>
             </div>
 
             {/* Row 3: Password */}
             <div>
-              <label className="block text-[11px] font-semibold text-[#1C2C22] mb-1">Password</label>
+              <label className="block text-xs font-bold text-[#1C2C22] mb-1.5">Password</label>
               <div className="relative">
-                <Lock className="absolute left-3 top-2.5 text-[#5A6B60]" size={14} />
-                <input type={showPassword ? "text" : "password"} required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" className="w-full bg-white border border-[#EBE9E0] rounded-xl py-2 pl-9 pr-9 outline-none focus:border-[#456A50] text-xs shadow-sm" />
-                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-2 text-[#5A6B60]">
-                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                <Lock className="absolute left-3.5 top-3 text-[#5A6B60]" size={16} />
+                <input 
+                  type={showPassword ? "text" : "password"} 
+                  required 
+                  value={password} 
+                  onChange={(e) => setPassword(e.target.value)} 
+                  placeholder="••••••••" 
+                  autoComplete="new-password" 
+                  className="w-full bg-white border border-[#EBE9E0] rounded-xl py-2.5 pl-10 pr-10 outline-none focus:border-[#456A50] text-sm shadow-sm" 
+                />
+                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3.5 top-3 text-[#5A6B60]">
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
-              <p className="text-[10px] text-[#5A6B60] mt-0.5">ⓘ Must be at least 8 characters.</p>
+              <p className="text-xs text-[#5A6B60] mt-1">ⓘ Must be at least 8 characters.</p>
             </div>
 
             {/* Terms & Submit */}
-            <div className="flex items-start gap-2 pt-0.5">
-              <input type="checkbox" id="terms" checked={agreeTerms} onChange={(e) => setAgreeTerms(e.target.checked)} className="mt-0.5 h-3.5 w-3.5 rounded border-[#EBE9E0] text-[#456A50] focus:ring-[#456A50]" />
-              <label htmlFor="terms" className="text-[11px] text-[#5A6B60]">I agree to the <span className="font-semibold text-[#456A50]">Terms</span> and <span className="font-semibold text-[#456A50]">Privacy Policy</span>.</label>
+            <div className="flex items-start gap-2 pt-2">
+              <input type="checkbox" id="terms" checked={agreeTerms} onChange={(e) => setAgreeTerms(e.target.checked)} className="mt-0.5 h-4 w-4 rounded border-[#EBE9E0] text-[#456A50] focus:ring-[#456A50]" />
+              <label htmlFor="terms" className="text-xs text-[#5A6B60] leading-tight">
+                I agree to the <span className="font-semibold text-[#456A50] cursor-pointer hover:underline">Terms of Service</span>, <span className="font-semibold text-[#456A50] cursor-pointer hover:underline">Privacy Policy</span>, and acknowledge the <span className="font-semibold text-[#456A50] cursor-pointer hover:underline">HIPAA Notice</span>.
+              </label>
             </div>
 
-            <button type="submit" disabled={isLoading} className="w-full bg-[#456A50] text-white font-bold py-3 px-6 rounded-xl shadow-lg shadow-[#456A50]/20 hover:bg-[#35533E] transition flex items-center justify-center gap-2 text-sm disabled:opacity-70">
-              {isLoading ? 'Creating...' : <>Apply <ArrowRight size={18} /></>}
+            <button type="submit" disabled={isLoading} className="w-full bg-[#456A50] hover:bg-[#35533E] text-white font-bold py-3.5 px-6 rounded-xl shadow-lg shadow-[#456A50]/20 transition flex items-center justify-center gap-2 text-sm disabled:opacity-70 mt-4">
+              {isLoading ? 'Registering...' : <>Register as Patient <ArrowRight size={18} /></>}
             </button>
 
-            <p className="text-center text-[11px] text-[#5A6B60] pt-1">
+            <p className="text-center text-xs text-[#5A6B60] pt-4">
               Already registered? <button type="button" onClick={() => navigate('/signin')} className="font-bold text-[#456A50] hover:underline">Sign In</button>
             </p>
 
           </form>
         </div>
 
-        <div className="text-center text-[10px] text-[#5A6B60] pt-2 border-t border-[#EBE9E0] flex justify-between items-center">
+        <div className="text-center text-[10px] text-[#5A6B60] pt-2 border-t border-[#EBE9E0]">
           <span>© 2026 Healora Wellness</span>
         </div>
       </div>

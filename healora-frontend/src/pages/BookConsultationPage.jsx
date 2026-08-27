@@ -21,14 +21,16 @@ const BookConsultationPage = () => {
     if (selectedDate < today) return setErrorMsg("Cannot book in the past.");
     
     setIsSubmitting(true);
+    const userId = localStorage.getItem('user_id') || 1; // Dynamically gets the logged-in patient
+
     try {
       const response = await fetch('/api/appointments/create/', {
         method: 'POST',
         headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ patient: 1, date, time, mode, status: 'SCHEDULED', health_notes: healthNotes, amount_paid: rates[mode] }),
+        body: JSON.stringify({ patient: userId, date, time, mode, status: 'SCHEDULED', health_notes: healthNotes, amount_paid: rates[mode] }),
       });
-      if (response.ok) { setIsSuccess(true); setTimeout(() => navigate('/patient-dashboard'), 3000); } 
-      else setErrorMsg('Database error.');
+      if (response.ok) { setIsSuccess(true); setTimeout(() => navigate('/patient-dashboard', { replace: true }), 3000); } 
+      else setErrorMsg('Database error. Check Django console.');
     } catch { setErrorMsg('Server connection failed.'); } 
     finally { setIsSubmitting(false); }
   };
@@ -38,7 +40,7 @@ const BookConsultationPage = () => {
       <div className="bg-white p-10 rounded-3xl shadow-xl shadow-[#1C2C22]/5 flex flex-col items-center text-center max-w-md w-full border border-[#EBE9E0]">
         <div className="bg-[#EAF0EC] p-4 rounded-full mb-6"><CheckCircle className="text-[#456A50] w-12 h-12" /></div>
         <h2 className="text-3xl font-extrabold text-[#1C2C22] mb-2 font-serif">Confirmed.</h2>
-        <p className="text-[#5A6B60] mb-8 text-sm">Your consultation is scheduled for <span className="font-bold text-[#1C2C22]">{date} at {time}</span>.</p>
+        <p className="text-[#5A6B60] mb-8 text-sm">Your consultation is scheduled for <br /><span className="font-bold text-[#1C2C22]">{date} at {time}</span>.</p>
         <div className="w-full bg-[#FDFCF8] border border-[#EBE9E0] rounded-xl p-4 mb-6"><p className="text-xs text-[#5A6B60] mb-1 uppercase tracking-widest font-bold">Total Paid</p><p className="text-2xl font-bold text-[#456A50]">₹{rates[mode]}</p></div>
       </div>
     </div>
@@ -47,7 +49,12 @@ const BookConsultationPage = () => {
   return (
     <div className="min-h-screen bg-[#FDFCF8] py-10 px-4 sm:px-6 lg:px-8 font-sans text-[#1C2C22]">
       <div className="max-w-6xl mx-auto">
-        <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-[#5A6B60] hover:text-[#456A50] font-bold text-sm mb-8"><ArrowLeft size={18} /> Return to Portal</button>
+        
+        {/* 🌟 THIS BUTTON IS NOW FIXED 🌟 */}
+        <button onClick={() => navigate('/patient-dashboard')} className="flex items-center gap-2 text-[#5A6B60] hover:text-[#456A50] font-bold text-sm mb-8 w-max transition">
+          <ArrowLeft size={18} /> Return to Portal
+        </button>
+        
         <div className="mb-10"><h1 className="text-4xl font-extrabold tracking-tight">Book Consultation</h1><p className="text-[#5A6B60] mt-2 font-serif italic">Secure your session with our clinical experts.</p></div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
