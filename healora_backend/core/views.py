@@ -1,15 +1,17 @@
-from rest_framework import generics
+from rest_framework import generics, status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenObtainPairView
 from django.contrib.auth import get_user_model
 from django.utils import timezone
+import datetime
 from .serializers import (
     RegisterSerializer, AppointmentSerializer, CustomTokenObtainPairSerializer, 
     PatientProfileSerializer, UserListSerializer, DietPlanSerializer, 
-    WellnessLogSerializer, SystemAuditLogSerializer, NutritionistPatientSerializer
+    WellnessLogSerializer, SystemAuditLogSerializer, NutritionistPatientSerializer,
+    ClinicHolidaySerializer
 )
-from .models import Appointment, PatientProfile, DietPlan, WellnessLog, SystemAuditLog
+from .models import Appointment, PatientProfile, DietPlan, WellnessLog, SystemAuditLog, ClinicHoliday
 
 User = get_user_model()
 
@@ -141,14 +143,77 @@ class PatientAppointmentListCreateView(generics.ListCreateAPIView):
     def get_queryset(self):
         return Appointment.objects.filter(patient_id=self.kwargs['user_id']).order_by('-date')
 
+    def create(self, request, *args, **kwargs):
+        appt_date_str = request.data.get('date')
+        nut_id = request.data.get('nutritionist')
+        
+        if appt_date_str:
+            try:
+                appt_date = datetime.datetime.strptime(appt_date_str, '%Y-%m-%d').date()
+                # Check Sunday (6 in python weekday where Mon=0, Sun=6)
+                if appt_date.weekday() == 6:
+                    return Response({'error': 'The clinic is closed on all Sundays. Please select a working day.'}, status=status.HTTP_400_BAD_REQUEST)
+                # Check 2nd Saturday (weekday 5 and day of month 8-14)
+                if appt_date.weekday() == 5 and 8 <= appt_date.day <= 14:
+                    return Response({'error': 'The clinic is closed on the 2nd Saturday of the month.'}, status=status.HTTP_400_BAD_REQUEST)
+                
+                # Check Full Clinic Holidays
+                clinic_holiday = ClinicHoliday.objects.filter(date=appt_date, holiday_type='CLINIC_HOLIDAY').first()
+                if clinic_holiday:
+                    return Response({'error': f'The clinic is closed on this date for {clinic_holiday.reason}.'}, status=status.HTTP_400_BAD_REQUEST)
+                
+                # Check Nutritionist Leaves if specific nutritionist selected
+                if nut_id and nut_id not in ('AUTO', '', None):
+                    nut_leave = ClinicHoliday.objects.filter(date=appt_date, holiday_type='NUTRITIONIST_LEAVE', nutritionist_id=nut_id).first()
+                    if nut_leave:
+                        nut_name = nut_leave.nutritionist.first_name if nut_leave.nutritionist else "The nutritionist"
+                        return Response({'error': f'Dr. {nut_name} is on leave on this date ({nut_leave.reason}). Please choose another doctor or date.'}, status=status.HTTP_400_BAD_REQUEST)
+            except ValueError:
+                pass
+
+        return super().create(request, *args, **kwargs)
+
     def perform_create(self, serializer):
         serializer.save(patient_id=self.kwargs['user_id'])
         log_event("API_REQUEST", f"New Consultation appointment booked for patient ID {self.kwargs['user_id']}.")
 
+class AppointmentUpdateView(generics.RetrieveUpdateAPIView):
+    queryset = Appointment.objects.all()
+    serializer_class = AppointmentSerializer
+    permission_classes = (AllowAny,)
+
+    def patch(self, request, *args, **kwargs):
+        response = super().patch(request, *args, **kwargs)
+        if response.status_code == 200 and 'meet_link' in request.data:
+            log_event("TELEHEALTH", f"Clinic Manager updated Telehealth consultation Google Meet link for Appointment ID {kwargs.get('pk')}.")
+        return response
+
 class PatientDocumentListCreateView(generics.ListAPIView):
+
     permission_classes = (AllowAny,)
     def get(self, request, *args, **kwargs):
         return Response([])
+
+# --- CLINIC HOLIDAYS & LEAVES MANAGEMENT VIEWS ---
+class ClinicHolidayListCreateView(generics.ListCreateAPIView):
+    queryset = ClinicHoliday.objects.all().order_by('date')
+    permission_classes = (AllowAny,)
+    serializer_class = ClinicHolidaySerializer
+
+    def perform_create(self, serializer):
+        holiday = serializer.save()
+        label = "Full Clinic Holiday" if holiday.holiday_type == 'CLINIC_HOLIDAY' else f"Leave for {holiday.nutritionist.first_name if holiday.nutritionist else 'Staff'}"
+        log_event("DB_UPDATE", f"Clinic schedule marked: {label} on {holiday.date} ({holiday.reason}).")
+
+class ClinicHolidayDeleteView(generics.DestroyAPIView):
+    queryset = ClinicHoliday.objects.all()
+    permission_classes = (AllowAny,)
+
+    def delete(self, request, *args, **kwargs):
+        instance = self.get_object()
+        log_event("DB_UPDATE", f"Clinic Holiday/Leave for {instance.date} deleted.")
+        return super().delete(request, *args, **kwargs)
+
 
 # --- ADMIN DASHBOARD VIEWS ---
 class AdminUserListView(generics.ListAPIView):

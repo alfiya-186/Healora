@@ -3,8 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { 
   LayoutDashboard, Users, Calendar, LogOut, Search, 
   CheckCircle2, HeartPulse, UserCircle, UserPlus, X, 
-  User, Mail, Phone, Lock, CalendarPlus, Edit3, MessageSquare, Send, Camera, IndianRupee, Download, Bell, Apple, Clock
+  User, Mail, Phone, Lock, CalendarPlus, Edit3, MessageSquare, Send, Camera, IndianRupee, Download, Bell, Apple, Clock,
+  CalendarDays, CalendarX, Plus, Trash2, AlertCircle, ShieldAlert, Check, Video, VideoOff, Link2, ExternalLink, Copy
 } from 'lucide-react';
+import BookingCalendarPicker from '../components/BookingCalendarPicker.jsx';
+import TimeSlotPicker, { normalizeTimeTo24H, normalizeTimeToLabel } from '../components/TimeSlotPicker.jsx';
+
 
 const secureFetch = async (url, options = {}) => {
   const token = localStorage.getItem('access_token');
@@ -34,12 +38,15 @@ const ClinicManagerDashboard = () => {
   const [patients, setPatients] = useState([]);
   const [appointments, setAppointments] = useState([]);
   const [nutritionists, setNutritionists] = useState([]);
+  const [clinicHolidays, setClinicHolidays] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // --- MODALS & FORMS ---
   const [showAddPatient, setShowAddPatient] = useState(false);
   const [showWalkinModal, setShowWalkinModal] = useState(false);
   const [showRescheduleModal, setShowRescheduleModal] = useState(false);
+  const [showHolidayModal, setShowHolidayModal] = useState(false);
+  const [showMeetModal, setShowMeetModal] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [profilePic, setProfilePic] = useState(null);
 
@@ -47,6 +54,11 @@ const ClinicManagerDashboard = () => {
   const [patientForm, setPatientForm] = useState({ first_name: '', last_name: '', email: '', phone: '', password: '' });
   const [walkinForm, setWalkinForm] = useState({ patient: '', nutritionist: '', date: '', time: '' });
   const [rescheduleForm, setRescheduleForm] = useState({ id: '', date: '', time: '', patientName: '', patientId: '', nutritionistId: '' });
+  const [holidayForm, setHolidayForm] = useState({ date: '', holiday_type: 'CLINIC_HOLIDAY', reason: '', nutritionist: '' });
+  const [meetForm, setMeetForm] = useState({ id: '', patientId: '', patientName: '', nutritionistId: '', nutritionistName: '', date: '', time: '', meet_link: '' });
+  const [copiedLink, setCopiedLink] = useState(false);
+
+
 
   // --- CHAT & NOTIFICATIONS STATE ---
   const [chats, setChats] = useState([]);
@@ -83,10 +95,12 @@ const ClinicManagerDashboard = () => {
       const localAppts = JSON.parse(localStorage.getItem('healora_all_appointments')) || [];
       const localChats = JSON.parse(localStorage.getItem('healora_chats')) || [];
       const notifs = JSON.parse(localStorage.getItem(`healora_notifications_${managerId}`)) || [];
+      const cachedHolidays = JSON.parse(localStorage.getItem('healora_clinic_holidays_db')) || [];
       
-      const [usersRes, nutRes] = await Promise.all([
+      const [usersRes, nutRes, holidayRes] = await Promise.all([
         secureFetch('/api/admin-api/users/').catch(()=>({ok:false})),
-        secureFetch('/api/nutritionists/').catch(()=>({ok:false}))
+        secureFetch('/api/nutritionists/').catch(()=>({ok:false})),
+        secureFetch('/api/clinic-holidays/').catch(()=>({ok:false}))
       ]);
 
       let apiUsers = [];
@@ -104,6 +118,14 @@ const ClinicManagerDashboard = () => {
       
       if (nutRes.ok) setNutritionists(await nutRes.json());
 
+      if (holidayRes.ok) {
+        const hData = await holidayRes.json();
+        setClinicHolidays(hData);
+        localStorage.setItem('healora_clinic_holidays_db', JSON.stringify(hData));
+      } else {
+        setClinicHolidays(cachedHolidays);
+      }
+
       // Bulletproof ID sorting logic
       const sortedAppts = localAppts.sort((a, b) => {
         const idA = typeof a.id === 'string' ? parseInt(a.id.replace(/\D/g, '')) || 0 : a.id;
@@ -118,6 +140,86 @@ const ClinicManagerDashboard = () => {
     } catch (error) { console.error("Data fetch error", error); } 
     finally { if (showLoader) setIsLoading(false); } // Only remove loader if we added it
   };
+
+  const handleCreateHoliday = async (e) => {
+    e.preventDefault();
+    if (!holidayForm.date) {
+      alert("Please select a date for the holiday / leave.");
+      return;
+    }
+    if (!holidayForm.reason.trim()) {
+      alert("Please provide a reason or description.");
+      return;
+    }
+    if (holidayForm.holiday_type === 'NUTRITIONIST_LEAVE' && !holidayForm.nutritionist) {
+      alert("Please select the nutritionist taking leave.");
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const payload = {
+        date: holidayForm.date,
+        holiday_type: holidayForm.holiday_type,
+        reason: holidayForm.reason.trim(),
+        nutritionist: holidayForm.holiday_type === 'NUTRITIONIST_LEAVE' ? holidayForm.nutritionist : null
+      };
+
+      const res = await secureFetch('/api/clinic-holidays/', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+
+      let savedItem = null;
+      if (res.ok) {
+        savedItem = await res.json();
+      } else {
+        const nutObj = nutritionists.find(n => String(n.id) === String(holidayForm.nutritionist));
+        savedItem = {
+          id: Date.now(),
+          ...payload,
+          nutritionist_name: nutObj ? `Dr. ${nutObj.first_name} ${nutObj.last_name}` : null
+        };
+      }
+
+      const updated = [...clinicHolidays.filter(h => !(h.date === payload.date && h.holiday_type === payload.holiday_type && String(h.nutritionist) === String(payload.nutritionist))), savedItem];
+      setClinicHolidays(updated);
+      localStorage.setItem('healora_clinic_holidays_db', JSON.stringify(updated));
+
+      // Broadcast system notification
+      const label = payload.holiday_type === 'CLINIC_HOLIDAY' ? 'Clinic Holiday Marked' : 'Staff Leave Registered';
+      const detail = payload.holiday_type === 'CLINIC_HOLIDAY' 
+        ? `The clinic will be closed on ${payload.date} (${payload.reason}). Patient bookings are blocked for this date.`
+        : `Dr. ${savedItem.nutritionist_name || 'Staff'} will be on leave on ${payload.date} (${payload.reason}).`;
+      
+      // Notify patients and staff
+      patients.slice(0, 10).forEach(p => sendNotificationToUser(p.id, label, detail));
+      nutritionists.forEach(n => sendNotificationToUser(n.id, label, detail));
+
+      setShowHolidayModal(false);
+      setHolidayForm({ date: '', holiday_type: 'CLINIC_HOLIDAY', reason: '', nutritionist: '' });
+      alert(`✅ ${label} successfully registered for ${payload.date}!`);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to save holiday. Please check connection.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteHoliday = async (id, dateStr) => {
+    if (!window.confirm(`Are you sure you want to remove the holiday/leave marked for ${dateStr}?`)) return;
+    
+    try {
+      await secureFetch(`/api/clinic-holidays/${id}/`, { method: 'DELETE' });
+    } catch (err) {}
+
+    const updated = clinicHolidays.filter(h => h.id !== id);
+    setClinicHolidays(updated);
+    localStorage.setItem('healora_clinic_holidays_db', JSON.stringify(updated));
+    alert("✅ Schedule updated: Holiday removed.");
+  };
+
 
   const getProfileImg = (id) => {
     const pic = localStorage.getItem(`profilePic_${id}`);
@@ -223,6 +325,23 @@ const ClinicManagerDashboard = () => {
       alert("Please ensure both a Patient and Nutritionist are selected.");
       return;
     }
+    if (!walkinForm.date || !walkinForm.time) {
+      alert("Please select both a Date and an available 20-25 min Time Slot.");
+      return;
+    }
+
+    // Collision check
+    const isSlotTaken = appointments.some(a => 
+      a.status !== 'CANCELLED' && 
+      a.date === walkinForm.date && 
+      normalizeTimeTo24H(a.time) === normalizeTimeTo24H(walkinForm.time) &&
+      (String(a.nutritionist) === String(walkinForm.nutritionist))
+    );
+
+    if (isSlotTaken) {
+      alert(`⚠️ The selected time slot (${normalizeTimeToLabel(walkinForm.time)}) on ${walkinForm.date} is already booked for this doctor. Please pick another available slot.`);
+      return;
+    }
     
     setIsSaving(true);
     try {
@@ -248,6 +367,25 @@ const ClinicManagerDashboard = () => {
 
   const handleRescheduleAppt = async (e) => {
     e.preventDefault();
+    if (!rescheduleForm.date || !rescheduleForm.time) {
+      alert("Please select both a new Date and an available Time Slot.");
+      return;
+    }
+
+    // Collision check
+    const isSlotTaken = appointments.some(a => 
+      String(a.id) !== String(rescheduleForm.id) &&
+      a.status !== 'CANCELLED' && 
+      a.date === rescheduleForm.date && 
+      normalizeTimeTo24H(a.time) === normalizeTimeTo24H(rescheduleForm.time) &&
+      (String(a.nutritionist) === String(rescheduleForm.nutritionistId))
+    );
+
+    if (isSlotTaken) {
+      alert(`⚠️ The slot ${normalizeTimeToLabel(rescheduleForm.time)} on ${rescheduleForm.date} is already booked. Please choose an open slot.`);
+      return;
+    }
+
     setIsSaving(true);
     try {
       const updatedAppts = appointments.map(a => String(a.id) === String(rescheduleForm.id) ? { ...a, date: rescheduleForm.date, time: rescheduleForm.time, status: 'RESCHEDULED' } : a);
@@ -266,7 +404,184 @@ const ClinicManagerDashboard = () => {
     } finally { setIsSaving(false); }
   };
 
+
+  const generateGoogleMeetLink = () => {
+    const chars = 'abcdefghijklmnopqrstuvwxyz';
+    const seg1 = Array.from({length: 3}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+    const seg2 = Array.from({length: 4}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+    const seg3 = Array.from({length: 3}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+    return `https://meet.google.com/${seg1}-${seg2}-${seg3}`;
+  };
+
+  const openMeetModal = (appt) => {
+    const patientObj = patients.find(p => String(p.id) === String(appt.patient));
+    const pName = patientObj ? `${patientObj.first_name} ${patientObj.last_name}` : `Patient #${appt.patient}`;
+    const nutObj = nutritionists.find(n => String(n.id) === String(appt.nutritionist));
+    const nName = nutObj ? `Dr. ${nutObj.first_name} ${nutObj.last_name}` : 'Assigned Doctor';
+    
+    const existingLink = appt.meet_link || generateGoogleMeetLink();
+    setMeetForm({
+      id: appt.id,
+      patientId: appt.patient,
+      patientName: pName,
+      nutritionistId: appt.nutritionist,
+      nutritionistName: nName,
+      date: appt.date,
+      time: appt.time,
+      meet_link: existingLink
+    });
+    setCopiedLink(false);
+    setShowMeetModal(true);
+  };
+
+  const handleSaveAndSendMeetLink = async (e) => {
+    e.preventDefault();
+    if (!meetForm.meet_link.trim()) {
+      alert("Please provide a valid Google Meet link.");
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const link = meetForm.meet_link.trim();
+      const updatedAppts = appointments.map(a => 
+        String(a.id) === String(meetForm.id) ? { ...a, meet_link: link } : a
+      );
+      setAppointments(updatedAppts);
+      localStorage.setItem('healora_all_appointments', JSON.stringify(updatedAppts));
+
+      // Try patching backend API
+      try {
+        await fetch(`/api/appointments/${meetForm.id}/`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ meet_link: link })
+        });
+      } catch (err) {
+        console.warn("Backend update failed, persisted locally", err);
+      }
+
+      // 1. Send High-Priority In-App Notification to Patient
+      sendNotificationToUser(
+        meetForm.patientId,
+        "🎥 Telehealth Google Meet Link",
+        `Your online video consultation with ${meetForm.nutritionistName} on ${meetForm.date} at ${meetForm.time} is ready! Room Link: ${link}`
+      );
+
+      // 2. Send In-App Notification to Nutritionist
+      if (meetForm.nutritionistId) {
+        sendNotificationToUser(
+          meetForm.nutritionistId,
+          "🎥 Telehealth Consultation Link",
+          `Google Meet room generated for consultation with ${meetForm.patientName} on ${meetForm.date} at ${meetForm.time}: ${link}`
+        );
+      }
+
+      // 3. Post to system chat feed for the patient
+      const allChats = JSON.parse(localStorage.getItem('healora_chats')) || [];
+      allChats.push({
+        id: Date.now(),
+        patientId: String(meetForm.patientId),
+        patientName: meetForm.patientName,
+        senderRole: 'SYSTEM',
+        text: `🎥 Google Meet Consultation Room Scheduled: ${link} (${meetForm.date} at ${meetForm.time} with ${meetForm.nutritionistName}). Please join on time.`,
+        meetLink: link,
+        time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+        read: false
+      });
+      localStorage.setItem('healora_chats', JSON.stringify(allChats));
+      setChats(allChats);
+
+      setShowMeetModal(false);
+      alert(`✅ Google Meet Link successfully assigned and dispatched to both Patient (${meetForm.patientName}) and ${meetForm.nutritionistName}!`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSendAppointmentReminder = (appt) => {
+    const patientObj = patients.find(p => String(p.id) === String(appt.patient));
+    const pName = patientObj ? `${patientObj.first_name} ${patientObj.last_name}` : `Patient #${appt.patient}`;
+    const nObj = nutritionists.find(n => String(n.id) === String(appt.nutritionist));
+    const nName = nObj ? `Dr. ${nObj.first_name} ${nObj.last_name}` : 'Assigned Doctor';
+    
+    const meetMsg = appt.meet_link ? ` Google Meet link: ${appt.meet_link}` : '';
+
+    // 1. Notify Patient
+    sendNotificationToUser(
+      appt.patient,
+      "🔔 Today's Consultation Reminder",
+      `Reminder: You have a scheduled ${appt.mode === 'ONLINE' ? 'Online' : 'In-Clinic'} consultation today at ${appt.time} with ${nName}.${meetMsg}`
+    );
+
+    // 2. Notify Nutritionist
+    if (appt.nutritionist && appt.nutritionist !== 'AUTO') {
+      sendNotificationToUser(
+        appt.nutritionist,
+        "🔔 Today's Consultation Reminder",
+        `Reminder: You have a consultation session today at ${appt.time} with patient ${pName}.${meetMsg}`
+      );
+    }
+
+    // 3. Drop chat message in patient thread
+    const allChats = JSON.parse(localStorage.getItem('healora_chats')) || [];
+    const reminderMsg = {
+      id: Date.now(),
+      patientId: String(appt.patient),
+      contactId: 'manager',
+      senderRole: 'SYSTEM',
+      chatPartner: 'manager',
+      text: `🔔 Consultation Reminder: Today at ${appt.time} with ${nName}.${appt.mode === 'ONLINE' && appt.meet_link ? ` Join Room: ${appt.meet_link}` : ''}`,
+      meetLink: appt.meet_link || null,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+    allChats.push(reminderMsg);
+    localStorage.setItem('healora_chats', JSON.stringify(allChats));
+
+    alert(`✅ Reminder notification sent to both Patient (${pName}) and Doctor (${nName})!`);
+  };
+
+  const handleSendRemindersToAllToday = () => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    const localToday = `${y}-${m}-${d}`;
+    const isoToday = now.toISOString().split('T')[0];
+
+    const todayAppointments = appointments.filter(a => a.date === localToday || a.date === isoToday);
+    if (todayAppointments.length === 0) {
+      alert("No appointments scheduled for today.");
+      return;
+    }
+
+    todayAppointments.forEach(appt => {
+      const patientObj = patients.find(p => String(p.id) === String(appt.patient));
+      const pName = patientObj ? `${patientObj.first_name} ${patientObj.last_name}` : `Patient #${appt.patient}`;
+      const nObj = nutritionists.find(n => String(n.id) === String(appt.nutritionist));
+      const nName = nObj ? `Dr. ${nObj.first_name} ${nObj.last_name}` : 'Assigned Doctor';
+      const meetMsg = appt.meet_link ? ` Google Meet link: ${appt.meet_link}` : '';
+
+      sendNotificationToUser(
+        appt.patient,
+        "🔔 Today's Consultation Reminder",
+        `Reminder: You have a scheduled ${appt.mode === 'ONLINE' ? 'Online' : 'In-Clinic'} consultation today at ${appt.time} with ${nName}.${meetMsg}`
+      );
+
+      if (appt.nutritionist && appt.nutritionist !== 'AUTO') {
+        sendNotificationToUser(
+          appt.nutritionist,
+          "🔔 Today's Consultation Reminder",
+          `Reminder: You have a consultation session today at ${appt.time} with patient ${pName}.${meetMsg}`
+        );
+      }
+    });
+
+    alert(`✅ Reminders dispatched to all ${todayAppointments.length} patient(s) & nutritionist(s) scheduled for today!`);
+  };
+
   const handleLogout = () => { localStorage.removeItem('access_token'); navigate('/', { replace: true }); };
+
+
 
   const handleSelectChatThread = (peerId) => {
     setSelectedChatUser(peerId);
@@ -351,21 +666,60 @@ const ClinicManagerDashboard = () => {
             <p className="text-xs text-[#5A6B60] mb-6">Collect payment at desk and generate invoice.</p>
             <form onSubmit={handleWalkinAppt} className="space-y-5">
               <div><label className="block text-[11px] font-bold text-[#5A6B60] uppercase mb-2 tracking-widest">Select Patient</label>
-                <select required value={walkinForm.patient} onChange={e=>setWalkinForm({...walkinForm, patient: e.target.value})} className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-3.5 text-sm outline-none focus:ring-2 focus:ring-[#456A50]/20 focus:border-[#456A50] transition">
+                <select required value={walkinForm.patient} onChange={e=>setWalkinForm({...walkinForm, patient: e.target.value})} className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-3.5 text-sm outline-none focus:ring-2 focus:ring-[#456A50]/20 focus:border-[#456A50] transition font-medium">
                   <option value="" disabled>Select Patient...</option>
-                  {patients.map(p => <option key={p.id} value={p.id}>{p.first_name} {p.last_name}</option>)}
+                  {patients.map(p => {
+                    const phone = p.phone_number || p.phone;
+                    return (
+                      <option key={p.id} value={p.id}>
+                        {p.first_name} {p.last_name} {phone ? `• 📞 ${phone}` : p.email ? `• (${p.email})` : ''}
+                      </option>
+                    );
+                  })}
                 </select>
                 {patients.length === 0 && <p className="text-red-500 text-[10px] mt-1 font-bold">No patients available. Please Register a patient first.</p>}
               </div>
+
               <div><label className="block text-[11px] font-bold text-[#5A6B60] uppercase mb-2 tracking-widest">Assign Nutritionist</label>
                 <select required value={walkinForm.nutritionist} onChange={e=>setWalkinForm({...walkinForm, nutritionist: e.target.value})} className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-3.5 text-sm outline-none focus:ring-2 focus:ring-[#456A50]/20 focus:border-[#456A50] transition">
                   <option value="" disabled>Select Nutritionist...</option>
                   {nutritionists.map(n => <option key={n.id} value={n.id}>Dr. {n.first_name} {n.last_name}</option>)}
                 </select>
               </div>
-              <div className="grid grid-cols-2 gap-4"><div><label className="block text-[11px] font-bold text-[#5A6B60] uppercase mb-2 tracking-widest">Date</label><input type="date" required min={new Date().toISOString().split('T')[0]} value={walkinForm.date} onChange={e=>setWalkinForm({...walkinForm, date: e.target.value})} className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-3.5 text-sm outline-none focus:ring-2 focus:ring-[#456A50]/20 focus:border-[#456A50] transition" /></div><div><label className="block text-[11px] font-bold text-[#5A6B60] uppercase mb-2 tracking-widest">Time</label><input type="time" required value={walkinForm.time} onChange={e=>setWalkinForm({...walkinForm, time: e.target.value})} className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-3.5 text-sm outline-none focus:ring-2 focus:ring-[#456A50]/20 focus:border-[#456A50] transition" /></div></div>
-              <div className="bg-[#EAF0EC] border border-[#456A50]/20 rounded-2xl p-5 flex justify-between items-center mt-2 shadow-sm"><span className="font-bold text-[#456A50] text-sm">Collect Cash/Card:</span><span className="font-black text-2xl text-[#1C2C22]">₹ 500</span></div>
-              <button type="submit" disabled={isSaving || patients.length === 0} className="w-full bg-[#1C2C22] text-white py-4 rounded-xl font-bold text-sm hover:bg-[#456A50] transition shadow-lg mt-2 flex justify-center items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">{isSaving ? 'Processing...' : <><IndianRupee size={16}/> Confirm Payment & Print Invoice</>}</button>
+              <div>
+                <label className="block text-[11px] font-bold text-[#5A6B60] uppercase mb-2 tracking-widest">Consultation Date</label>
+                <input 
+                  type="date" 
+                  required 
+                  min={new Date().toISOString().split('T')[0]} 
+                  value={walkinForm.date} 
+                  onChange={e=>setWalkinForm({...walkinForm, date: e.target.value, time: ''})} 
+                  className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-3.5 text-sm outline-none focus:ring-2 focus:ring-[#456A50]/20 focus:border-[#456A50] transition" 
+                />
+              </div>
+
+              <div>
+                <TimeSlotPicker 
+                  selectedDate={walkinForm.date}
+                  selectedTime={walkinForm.time}
+                  onSelectTime={(slotId) => setWalkinForm({...walkinForm, time: slotId})}
+                  selectedNutritionistId={walkinForm.nutritionist}
+                  existingAppointments={appointments}
+                />
+              </div>
+
+              <div className="bg-[#EAF0EC] border border-[#456A50]/20 rounded-2xl p-5 flex justify-between items-center mt-2 shadow-sm">
+                <span className="font-bold text-[#456A50] text-sm">Collect Cash/Card:</span>
+                <span className="font-black text-2xl text-[#1C2C22]">₹ 500</span>
+              </div>
+              <button 
+                type="submit" 
+                disabled={isSaving || patients.length === 0 || !walkinForm.date || !walkinForm.time} 
+                className="w-full bg-[#1C2C22] text-white py-4 rounded-xl font-bold text-sm hover:bg-[#456A50] transition shadow-lg mt-2 flex justify-center items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                {isSaving ? 'Processing...' : <><IndianRupee size={16}/> Confirm Payment & Print Invoice</>}
+              </button>
+
             </form>
           </div>
         </div>
@@ -394,6 +748,96 @@ const ClinicManagerDashboard = () => {
         </div>
       )}
 
+      {/* 🌟 CLINIC HOLIDAY & STAFF LEAVE MODAL 🌟 */}
+      {showHolidayModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl w-full max-w-lg p-8 shadow-2xl relative border border-[#EBE9E0]">
+            <button onClick={() => setShowHolidayModal(false)} className="absolute top-6 right-6 text-gray-400 hover:text-gray-800 bg-gray-100 rounded-full p-2 transition"><X size={18} /></button>
+            <div className="flex items-center gap-3 mb-6 border-b border-[#EBE9E0] pb-4">
+              <div className="p-3 bg-red-100 text-red-600 rounded-2xl">
+                <CalendarX size={24} />
+              </div>
+              <div>
+                <h2 className="text-2xl font-black text-[#1C2C22]">Mark Holiday / Leave</h2>
+                <p className="text-xs text-[#5A6B60]">Block appointment bookings for clinic or specific staff.</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleCreateHoliday} className="space-y-5">
+              <div>
+                <label className="block text-[11px] font-bold text-[#5A6B60] uppercase tracking-widest mb-2">Schedule Event Type</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div 
+                    onClick={() => setHolidayForm({...holidayForm, holiday_type: 'CLINIC_HOLIDAY'})}
+                    className={`cursor-pointer p-4 rounded-2xl border-2 transition flex flex-col items-start ${holidayForm.holiday_type === 'CLINIC_HOLIDAY' ? 'border-red-500 bg-red-50/70' : 'border-[#EBE9E0] bg-white'}`}
+                  >
+                    <span className="text-xs font-black text-red-700 uppercase tracking-wider">Full Clinic Holiday</span>
+                    <span className="text-[11px] text-gray-500 mt-1">Entire clinic is closed. All bookings blocked.</span>
+                  </div>
+                  <div 
+                    onClick={() => setHolidayForm({...holidayForm, holiday_type: 'NUTRITIONIST_LEAVE'})}
+                    className={`cursor-pointer p-4 rounded-2xl border-2 transition flex flex-col items-start ${holidayForm.holiday_type === 'NUTRITIONIST_LEAVE' ? 'border-amber-500 bg-amber-50/70' : 'border-[#EBE9E0] bg-white'}`}
+                  >
+                    <span className="text-xs font-black text-amber-700 uppercase tracking-wider">Nutritionist Leave</span>
+                    <span className="text-[11px] text-gray-500 mt-1">Specific doctor is away. Others remain open.</span>
+                  </div>
+                </div>
+              </div>
+
+              {holidayForm.holiday_type === 'NUTRITIONIST_LEAVE' && (
+                <div className="animate-in fade-in">
+                  <label className="block text-[11px] font-bold text-[#5A6B60] uppercase tracking-widest mb-2">Select Nutritionist</label>
+                  <select 
+                    required 
+                    value={holidayForm.nutritionist} 
+                    onChange={e => setHolidayForm({...holidayForm, nutritionist: e.target.value})}
+                    className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-3.5 text-sm outline-none focus:ring-2 focus:ring-[#456A50]/20 focus:border-[#456A50] transition shadow-sm"
+                  >
+                    <option value="" disabled>Choose Doctor / Nutritionist...</option>
+                    {nutritionists.map(n => (
+                      <option key={n.id} value={n.id}>Dr. {n.first_name} {n.last_name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[11px] font-bold text-[#5A6B60] uppercase tracking-widest mb-2">Select Date</label>
+                <input 
+                  type="date" 
+                  required 
+                  min={new Date().toISOString().split('T')[0]} 
+                  value={holidayForm.date} 
+                  onChange={e => setHolidayForm({...holidayForm, date: e.target.value})}
+                  className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-3.5 text-sm outline-none focus:ring-2 focus:ring-[#456A50]/20 focus:border-[#456A50] transition shadow-sm" 
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-[#5A6B60] uppercase tracking-widest mb-2">Reason / Public Description</label>
+                <input 
+                  type="text" 
+                  required 
+                  placeholder="e.g. National Holiday / Medical Conference / Personal Leave"
+                  value={holidayForm.reason} 
+                  onChange={e => setHolidayForm({...holidayForm, reason: e.target.value})}
+                  className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-3.5 text-sm outline-none focus:ring-2 focus:ring-[#456A50]/20 focus:border-[#456A50] transition shadow-sm" 
+                />
+                <p className="text-[10px] text-[#5A6B60] mt-1">This message will be shown to patients if they attempt to book this date.</p>
+              </div>
+
+              <button 
+                type="submit" 
+                disabled={isSaving}
+                className="w-full bg-[#1C2C22] text-white py-4 rounded-xl font-bold text-sm hover:bg-[#456A50] transition shadow-lg mt-4 flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {isSaving ? 'Registering...' : <><CalendarX size={16} /> Save Holiday / Leave</>}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* 🌟 PREMIUM ORANGE RESCHEDULE MODAL 🌟 */}
       {showRescheduleModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center animate-in fade-in p-4">
@@ -404,32 +848,151 @@ const ClinicManagerDashboard = () => {
             <p className="text-sm text-[#5A6B60] mt-1 mb-8">Updating booking for <b className="text-[#1C2C22]">{rescheduleForm.patientName}</b>.</p>
             
             <form onSubmit={handleRescheduleAppt} className="space-y-5">
-              <div className="grid grid-cols-2 gap-5">
-                <div>
-                  <label className="block text-[10px] font-black text-[#5A6B60] uppercase tracking-widest mb-2">New Date</label>
-                  <div className="relative">
-                    <input type="date" required min={new Date().toISOString().split('T')[0]} value={rescheduleForm.date} onChange={e => setRescheduleForm({...rescheduleForm, date: e.target.value})} className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-3.5 pr-10 text-sm outline-none focus:ring-2 focus:ring-[#f97316]/20 focus:border-[#f97316] transition shadow-sm css-date-icon-hide" />
-                    <Calendar size={16} className="absolute right-4 top-4 text-[#1C2C22] pointer-events-none" />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-black text-[#5A6B60] uppercase tracking-widest mb-2">New Time</label>
-                  <div className="relative">
-                    <input type="time" required value={rescheduleForm.time} onChange={e => setRescheduleForm({...rescheduleForm, time: e.target.value})} className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-3.5 pr-10 text-sm outline-none focus:ring-2 focus:ring-[#f97316]/20 focus:border-[#f97316] transition shadow-sm css-time-icon-hide" />
-                    <Clock size={16} className="absolute right-4 top-4 text-[#1C2C22] pointer-events-none" />
-                  </div>
+              <div>
+                <label className="block text-[10px] font-black text-[#5A6B60] uppercase tracking-widest mb-2">New Date</label>
+                <div className="relative">
+                  <input 
+                    type="date" 
+                    required 
+                    min={new Date().toISOString().split('T')[0]} 
+                    value={rescheduleForm.date} 
+                    onChange={e => setRescheduleForm({...rescheduleForm, date: e.target.value, time: ''})} 
+                    className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-3.5 pr-10 text-sm outline-none focus:ring-2 focus:ring-[#f97316]/20 focus:border-[#f97316] transition shadow-sm css-date-icon-hide" 
+                  />
+                  <Calendar size={16} className="absolute right-4 top-4 text-[#1C2C22] pointer-events-none" />
                 </div>
               </div>
+
+              <div>
+                <TimeSlotPicker 
+                  selectedDate={rescheduleForm.date}
+                  selectedTime={rescheduleForm.time}
+                  onSelectTime={(slotId) => setRescheduleForm({...rescheduleForm, time: slotId})}
+                  selectedNutritionistId={rescheduleForm.nutritionistId}
+                  existingAppointments={appointments}
+                  excludeAppointmentId={rescheduleForm.id}
+                />
+              </div>
               
-              <button type="submit" disabled={isSaving} className="w-full bg-[#f97316] text-white py-4 rounded-xl font-black text-sm hover:bg-[#ea580c] transition shadow-lg mt-4 shadow-orange-500/30">
+              <button 
+                type="submit" 
+                disabled={isSaving || !rescheduleForm.date || !rescheduleForm.time} 
+                className="w-full bg-[#f97316] text-white py-4 rounded-xl font-black text-sm hover:bg-[#ea580c] transition shadow-lg mt-4 shadow-orange-500/30 disabled:opacity-50 cursor-pointer"
+              >
                 {isSaving ? 'Updating...' : 'Update & Notify Patient'}
               </button>
+
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 🌟 TELEHEALTH GOOGLE MEET SCHEDULER MODAL 🌟 */}
+      {showMeetModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl w-full max-w-lg p-8 shadow-2xl relative border border-[#EBE9E0]">
+            <button onClick={() => setShowMeetModal(false)} className="absolute top-6 right-6 text-gray-400 hover:text-gray-800 bg-gray-100 rounded-full p-2 transition cursor-pointer"><X size={18} /></button>
+            
+            <div className="flex items-center gap-3 mb-6 border-b border-[#EBE9E0] pb-4">
+              <div className="p-3 bg-emerald-100 text-emerald-700 rounded-2xl">
+                <Video size={24} />
+              </div>
+              <div>
+                <h2 className="text-2xl font-black text-[#1C2C22]">Schedule Google Meet</h2>
+                <p className="text-xs text-[#5A6B60]">Assign video room & send link to patient and nutritionist.</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleSaveAndSendMeetLink} className="space-y-5">
+              <div className="bg-[#FDFCF8] border border-[#EBE9E0] rounded-2xl p-4 space-y-2">
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-500 font-bold uppercase tracking-wider">Patient:</span>
+                  <span className="font-black text-[#1C2C22]">{meetForm.patientName}</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-500 font-bold uppercase tracking-wider">Nutritionist:</span>
+                  <span className="font-black text-[#456A50]">{meetForm.nutritionistName}</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-500 font-bold uppercase tracking-wider">Date & Time:</span>
+                  <span className="font-black text-gray-800">{meetForm.date} at {meetForm.time}</span>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex justify-between items-center mb-2">
+                  <label className="block text-[11px] font-bold text-[#5A6B60] uppercase tracking-widest">Google Meet Link</label>
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      const newLink = generateGoogleMeetLink();
+                      setMeetForm(prev => ({ ...prev, meet_link: newLink }));
+                    }}
+                    className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-1 cursor-pointer bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 transition"
+                  >
+                    ⚡ Regenerate Link
+                  </button>
+                </div>
+                <div className="relative">
+                  <input 
+                    type="url" 
+                    required 
+                    value={meetForm.meet_link} 
+                    onChange={e => setMeetForm({...meetForm, meet_link: e.target.value})} 
+                    placeholder="https://meet.google.com/abc-defg-hij" 
+                    className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-3.5 pr-20 text-sm font-mono outline-none focus:ring-2 focus:ring-[#456A50]/20 focus:border-[#456A50] transition shadow-sm" 
+                  />
+                  <div className="absolute right-2 top-2 flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(meetForm.meet_link);
+                        setCopiedLink(true);
+                        setTimeout(() => setCopiedLink(false), 2000);
+                      }}
+                      title="Copy Link"
+                      className="p-2 text-gray-500 hover:text-[#456A50] bg-white rounded-lg border border-[#EBE9E0] shadow-xs cursor-pointer transition"
+                    >
+                      {copiedLink ? <Check size={14} className="text-green-600" /> : <Copy size={14} />}
+                    </button>
+                    {meetForm.meet_link && (
+                      <a
+                        href={meetForm.meet_link}
+                        target="_blank"
+                        rel="noreferrer"
+                        title="Test Room in New Tab"
+                        className="p-2 text-gray-500 hover:text-blue-600 bg-white rounded-lg border border-[#EBE9E0] shadow-xs cursor-pointer transition"
+                      >
+                        <ExternalLink size={14} />
+                      </a>
+                    )}
+                  </div>
+                </div>
+                <p className="text-[10px] text-gray-400 mt-1.5 font-medium">Managers can use the generated Google Meet room link or paste an existing link from Google Calendar.</p>
+              </div>
+
+              <div className="bg-emerald-50/70 border border-emerald-200 p-3.5 rounded-2xl text-xs text-emerald-900 font-medium">
+                <p className="font-black flex items-center gap-1.5 text-emerald-800 mb-0.5"><Video size={14}/> Automatic Multi-Channel Delivery</p>
+                Saving will instantly dispatch the Google Meet room link via in-app push alerts and internal chat to both the patient and the nutritionist.
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setShowMeetModal(false)} className="w-1/3 bg-gray-100 text-gray-700 py-3.5 rounded-xl font-bold text-sm hover:bg-gray-200 transition cursor-pointer">Cancel</button>
+                <button 
+                  type="submit" 
+                  disabled={isSaving}
+                  className="w-2/3 bg-[#456A50] text-white py-3.5 rounded-xl font-bold text-sm hover:bg-[#35533E] transition shadow-lg flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {isSaving ? 'Sending...' : <><Send size={16} /> Send Meet Link</>}
+                </button>
+              </div>
             </form>
           </div>
         </div>
       )}
 
       {/* SIDEBAR NAVIGATION */}
+
       <aside className="w-64 bg-white border-r border-[#EBE9E0] flex flex-col hidden lg:flex shadow-sm z-10 flex-shrink-0 h-full">
         <div className="p-6 flex items-center gap-2 cursor-pointer border-b border-[#EBE9E0]" onClick={() => navigate('/')}>
           <div className="bg-[#456A50] text-white rounded-xl p-2 shadow-sm"><HeartPulse size={24} /></div>
@@ -440,6 +1003,7 @@ const ClinicManagerDashboard = () => {
           <NavItem icon={<LayoutDashboard size={18} />} label="Dashboard" tab="dashboard" activeTab={activeTab} setTab={setActiveTab} />
           <NavItem icon={<Users size={18} />} label="Patient Records" tab="patients" activeTab={activeTab} setTab={setActiveTab} />
           <NavItem icon={<Calendar size={18} />} label="Appointments" tab="appointments" activeTab={activeTab} setTab={setActiveTab} />
+          <NavItem icon={<CalendarDays size={18} />} label="Clinic Holidays & Leaves" tab="holidays" activeTab={activeTab} setTab={setActiveTab} />
           
           <button onClick={() => setActiveTab('notifications')} className={`w-full relative flex items-center gap-3 px-4 py-3 rounded-xl transition text-sm ${activeTab === 'notifications' ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'}`}>
             <MessageSquare size={18} /> Internal Comms
@@ -450,6 +1014,7 @@ const ClinicManagerDashboard = () => {
             )}
           </button>
         </nav>
+
         <div className="p-6 border-t border-[#EBE9E0] bg-[#FDFCF8]/50">
           <div className="flex items-center gap-3 mb-5 px-1 relative group cursor-pointer">
             <div className="w-11 h-11 rounded-full border-2 border-white overflow-hidden shrink-0 bg-gray-100 flex items-center justify-center shadow-sm">
@@ -471,18 +1036,20 @@ const ClinicManagerDashboard = () => {
               <h1 className="text-4xl font-black tracking-tight text-[#1C2C22]">Manager Portal.</h1>
               <p className="text-[#5A6B60] mt-2 font-serif italic text-base">Welcome back, {managerName}. Manage cross-platform data.</p>
             </div>
-            <div className="flex items-center gap-4">
-              <button onClick={() => setShowWalkinModal(true)} className="bg-[#456A50] text-white px-5 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-[#35533E] shadow-lg shadow-[#456A50]/20 text-sm transition"><CalendarPlus size={16} /> Book Walk-in</button>
-              <button onClick={() => { setPatientForm({ first_name: '', last_name: '', email: '', phone: '', password: '' }); setFormErrors({}); setShowAddPatient(true); }} className="bg-white border border-[#EBE9E0] text-[#5A6B60] px-5 py-3 rounded-xl font-bold text-sm hover:bg-gray-50 transition shadow-sm flex items-center gap-2"><UserPlus size={16} /> Register</button>
+            <div className="flex items-center gap-3">
+              <button onClick={() => setShowHolidayModal(true)} className="bg-red-50 text-red-700 border border-red-200 px-4 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-red-100 text-sm transition shadow-sm cursor-pointer"><CalendarX size={16} /> Mark Holiday</button>
+              <button onClick={() => setShowWalkinModal(true)} className="bg-[#456A50] text-white px-5 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-[#35533E] shadow-lg shadow-[#456A50]/20 text-sm transition cursor-pointer"><CalendarPlus size={16} /> Book Walk-in</button>
+              <button onClick={() => { setPatientForm({ first_name: '', last_name: '', email: '', phone: '', password: '' }); setFormErrors({}); setShowAddPatient(true); }} className="bg-white border border-[#EBE9E0] text-[#5A6B60] px-5 py-3 rounded-xl font-bold text-sm hover:bg-gray-50 transition shadow-sm flex items-center gap-2 cursor-pointer"><UserPlus size={16} /> Register</button>
               
               {/* 🌟 MANAGER NOTIFICATION BELL 🌟 */}
-              <div className="relative cursor-pointer group ml-2" onClick={() => {setShowNotifications(true); markManagerNotifsRead();}}>
+              <div className="relative cursor-pointer group ml-1" onClick={() => {setShowNotifications(true); markManagerNotifsRead();}}>
                 <div className="bg-white border border-[#EBE9E0] p-3.5 rounded-xl shadow-sm hover:bg-gray-50 transition">
                   <Bell size={20} className="text-[#1C2C22]" />
                 </div>
                 {unreadNotifCount > 0 && <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-black w-6 h-6 rounded-full flex items-center justify-center border-2 border-[#FDFCF8] shadow-sm">{unreadNotifCount}</span>}
               </div>
             </div>
+
           </div>
 
           {isLoading ? (
@@ -492,29 +1059,146 @@ const ClinicManagerDashboard = () => {
               {activeTab === 'dashboard' && (
                 <div className="space-y-6 animate-in fade-in">
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <MetricCard title="Total Appointments" count={appointments.length} icon={<Calendar size={20} />} color="text-blue-600" bg="bg-blue-50" />
-                    <MetricCard title="Total Conversations" count={[...new Set(chats.map(c=>c.patientId || c.senderId))].length} icon={<MessageSquare size={20} />} color="text-orange-600" bg="bg-orange-50" />
-                    <MetricCard title="Completed Consults" count={appointments.filter(a => a.status === 'COMPLETED').length} icon={<CheckCircle2 size={20} />} color="text-green-600" bg="bg-green-50" />
-                    <MetricCard title="Registered Patients" count={patients.length} icon={<Users size={20} />} color="text-[#456A50]" bg="bg-[#EAF0EC]" />
+                    {(() => {
+                      const now = new Date();
+                      const y = now.getFullYear();
+                      const m = String(now.getMonth() + 1).padStart(2, '0');
+                      const d = String(now.getDate()).padStart(2, '0');
+                      const localToday = `${y}-${m}-${d}`;
+                      const isoToday = now.toISOString().split('T')[0];
+                      const todayCount = appointments.filter(a => a.date === localToday || a.date === isoToday).length;
+
+                      return (
+                        <>
+                          <MetricCard title="Today's Bookings" count={todayCount} icon={<Calendar size={20} />} color="text-blue-600" bg="bg-blue-50" />
+                          <MetricCard title="Total Appointments" count={appointments.length} icon={<CalendarDays size={20} />} color="text-purple-600" bg="bg-purple-50" />
+                          <MetricCard title="Total Conversations" count={[...new Set(chats.map(c=>c.patientId || c.senderId))].length} icon={<MessageSquare size={20} />} color="text-orange-600" bg="bg-orange-50" />
+                          <MetricCard title="Registered Patients" count={patients.length} icon={<Users size={20} />} color="text-[#456A50]" bg="bg-[#EAF0EC]" />
+                        </>
+                      );
+                    })()}
                   </div>
                   
                   <div className="mt-8 bg-white rounded-3xl shadow-sm border border-[#EBE9E0] overflow-hidden">
-                    <div className="p-6 border-b border-[#EBE9E0] bg-[#FDFCF8]"><h3 className="font-black text-xl text-[#1C2C22]">Today's Schedule</h3><p className="text-xs text-[#5A6B60] mt-1">Live monitoring of incoming appointments.</p></div>
+                    <div className="p-6 border-b border-[#EBE9E0] bg-[#FDFCF8] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                      <div>
+                        <h3 className="font-black text-xl text-[#1C2C22]">Today's Schedule</h3>
+                        <p className="text-xs text-[#5A6B60] mt-1">Live monitoring of sessions scheduled for today ({new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}).</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs font-black px-3 py-1.5 rounded-full bg-[#EAF0EC] text-[#456A50]">
+                          {(() => {
+                            const now = new Date();
+                            const y = now.getFullYear();
+                            const m = String(now.getMonth() + 1).padStart(2, '0');
+                            const d = String(now.getDate()).padStart(2, '0');
+                            const localToday = `${y}-${m}-${d}`;
+                            const isoToday = now.toISOString().split('T')[0];
+                            return appointments.filter(a => a.date === localToday || a.date === isoToday).length;
+                          })()} Scheduled Today
+                        </span>
+                        <button 
+                          onClick={handleSendRemindersToAllToday}
+                          className="bg-[#456A50] hover:bg-[#35533E] text-white px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-sm cursor-pointer"
+                          title="Send reminder notifications to all scheduled patients and nutritionists for today"
+                        >
+                          <Bell size={13} /> Remind All Today
+                        </button>
+                      </div>
+                    </div>
                     <div className="overflow-y-auto max-h-96">
                       <table className="w-full text-left text-sm text-[#1C2C22]">
-                        <thead className="bg-white text-[10px] uppercase font-extrabold text-[#5A6B60] tracking-widest border-b sticky top-0"><tr><th className="py-4 px-6">Date & Time</th><th className="py-4 px-6">Patient</th><th className="py-4 px-6">Mode</th><th className="py-4 px-6">Status</th></tr></thead>
+                        <thead className="bg-white text-[10px] uppercase font-extrabold text-[#5A6B60] tracking-widest border-b sticky top-0">
+                          <tr>
+                            <th className="py-4 px-6">Time</th>
+                            <th className="py-4 px-6">Patient</th>
+                            <th className="py-4 px-6">Mode</th>
+                            <th className="py-4 px-6">Telehealth Meet</th>
+                            <th className="py-4 px-6">Status</th>
+                            <th className="py-4 px-6 text-right">Reminder</th>
+                          </tr>
+                        </thead>
                         <tbody className="divide-y divide-[#EBE9E0]">
-                          {appointments.slice(0,5).map(a => {
-                            const pName = patients.find(p => String(p.id) === String(a.patient))?.first_name || `Patient #${a.patient}`;
-                            return (
-                            <tr key={a.id} className="hover:bg-[#FDFCF8] transition group">
-                              <td className="py-5 px-6 font-bold text-[#456A50]">{a.date} at {a.time}</td>
-                              <td className="py-5 px-6 font-black text-[#1C2C22]">{pName}</td>
-                              <td className="py-5 px-6"><span className={`px-3 py-1.5 rounded-lg text-[10px] font-bold tracking-widest uppercase ${a.mode === 'ONLINE' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>{a.mode}</span></td>
-                              <td className="py-5 px-6"><span className={`px-3 py-1.5 rounded-lg text-[10px] font-bold tracking-widest uppercase ${a.status === 'SCHEDULED' ? 'bg-orange-100 text-orange-700' : a.status === 'RESCHEDULED' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>{a.status}</span></td>
-                            </tr>
-                          )})}
-                          {appointments.length === 0 && <tr><td colSpan="4" className="py-12 text-center text-gray-400 italic font-medium">No schedule for today.</td></tr>}
+                          {(() => {
+                            const now = new Date();
+                            const y = now.getFullYear();
+                            const m = String(now.getMonth() + 1).padStart(2, '0');
+                            const d = String(now.getDate()).padStart(2, '0');
+                            const localToday = `${y}-${m}-${d}`;
+                            const isoToday = now.toISOString().split('T')[0];
+
+                            const todayAppointments = appointments.filter(a => a.date === localToday || a.date === isoToday);
+
+                            if (todayAppointments.length === 0) {
+                              return (
+                                <tr>
+                                  <td colSpan="6" className="py-12 text-center text-gray-400 italic font-medium">
+                                    No appointments scheduled for today ({localToday}).
+                                  </td>
+                                </tr>
+                              );
+                            }
+
+                            return todayAppointments.map(a => {
+                              const patientObj = patients.find(p => String(p.id) === String(a.patient));
+                              const pName = patientObj ? `${patientObj.first_name} ${patientObj.last_name}` : `Patient #${a.patient}`;
+                              const pPhone = patientObj?.phone_number || patientObj?.phone;
+                              return (
+                                <tr key={a.id} className="hover:bg-[#FDFCF8] transition group">
+                                  <td className="py-5 px-6 font-bold text-[#456A50]">
+                                    {a.time || 'Time pending'}
+                                  </td>
+                                  <td className="py-5 px-6">
+                                    <span className="font-black text-[#1C2C22] block">{pName}</span>
+                                    {pPhone && <span className="text-[11px] text-gray-500 font-medium">📞 {pPhone}</span>}
+                                  </td>
+                                  <td className="py-5 px-6"><span className={`px-3 py-1.5 rounded-lg text-[10px] font-bold tracking-widest uppercase ${a.mode === 'ONLINE' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>{a.mode}</span></td>
+                                  <td className="py-5 px-6">
+                                    {a.mode === 'ONLINE' ? (
+                                      a.meet_link ? (
+                                        <div className="flex items-center gap-2">
+                                          <a 
+                                            href={a.meet_link} 
+                                            target="_blank" 
+                                            rel="noreferrer" 
+                                            className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-xs"
+                                          >
+                                            <Video size={13} /> Join Meet <ExternalLink size={11} />
+                                          </a>
+                                          <button 
+                                            onClick={() => openMeetModal(a)} 
+                                            className="text-gray-400 hover:text-gray-700 p-1.5 rounded-lg hover:bg-gray-100 transition cursor-pointer"
+                                            title="Edit Meet Link"
+                                          >
+                                            <Edit3 size={13} />
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <button 
+                                          onClick={() => openMeetModal(a)} 
+                                          className="bg-[#456A50] text-white hover:bg-[#35533E] px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-sm animate-pulse cursor-pointer"
+                                        >
+                                          <Video size={13} /> Send Meet Link
+                                        </button>
+                                      )
+                                    ) : (
+                                      <span className="text-gray-400 text-xs font-medium">In-Clinic</span>
+                                    )}
+                                  </td>
+                                  <td className="py-5 px-6"><span className={`px-3 py-1.5 rounded-lg text-[10px] font-bold tracking-widest uppercase ${a.status === 'SCHEDULED' ? 'bg-orange-100 text-orange-700' : a.status === 'RESCHEDULED' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>{a.status}</span></td>
+                                  <td className="py-5 px-6 text-right">
+                                    <button 
+                                      onClick={() => handleSendAppointmentReminder(a)}
+                                      className="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-3 py-1.5 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
+                                      title="Send reminder to Patient and Nutritionist"
+                                    >
+                                      <Bell size={13} /> Send Reminder
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            });
+                          })()}
                         </tbody>
                       </table>
                     </div>
@@ -522,16 +1206,19 @@ const ClinicManagerDashboard = () => {
                 </div>
               )}
 
+
+
               {/* 🌟 TAB 2: PATIENT DIRECTORY (WITH PROFILE IMAGES) 🌟 */}
               {activeTab === 'patients' && (
                 <div className="bg-white rounded-3xl shadow-sm border border-[#EBE9E0] p-8 animate-in fade-in h-[75vh] flex flex-col">
                   <div className="flex justify-between items-center mb-6"><div><h2 className="text-2xl font-black text-[#1C2C22]">Registered Patients</h2><p className="text-sm text-[#5A6B60] mt-1">Live data from system database.</p></div></div>
                   <div className="overflow-y-auto flex-1 border border-[#EBE9E0] rounded-2xl custom-scrollbar">
                     <table className="w-full text-left text-sm text-[#1C2C22] whitespace-nowrap">
-                      <thead className="bg-[#FDFCF8] text-[10px] uppercase font-extrabold text-[#5A6B60] tracking-widest border-b sticky top-0"><tr><th className="py-4 px-6">User ID</th><th className="py-4 px-6">Patient Name</th><th className="py-4 px-6">Email</th><th className="py-4 px-6">Status</th></tr></thead>
+                      <thead className="bg-[#FDFCF8] text-[10px] uppercase font-extrabold text-[#5A6B60] tracking-widest border-b sticky top-0"><tr><th className="py-4 px-6">User ID</th><th className="py-4 px-6">Patient Name</th><th className="py-4 px-6">Phone Number</th><th className="py-4 px-6">Email</th><th className="py-4 px-6">Status</th></tr></thead>
                       <tbody className="divide-y divide-[#EBE9E0]">
                         {patients.map(p => {
                           const imgUrl = getProfileImg(p.id);
+                          const phone = p.phone_number || p.phone;
                           return (
                           <tr key={p.id} className="hover:bg-[#FDFCF8] transition">
                             <td className="py-5 px-6 font-bold text-[#456A50]">#{p.id}</td>
@@ -543,22 +1230,26 @@ const ClinicManagerDashboard = () => {
                               )}
                               {p.first_name || 'No Name'} {p.last_name || ''}
                             </td>
+                            <td className="py-5 px-6 font-bold text-gray-700">
+                              {phone ? `📞 ${phone}` : <span className="text-gray-400 font-normal italic">Not provided</span>}
+                            </td>
                             <td className="py-5 px-6 text-gray-500">{p.email}</td>
                             <td className="py-5 px-6">{p.is_active ? <span className="bg-green-100 text-green-700 px-3 py-1.5 rounded-lg text-[10px] font-bold tracking-widest uppercase">Active</span> : <span className="bg-red-100 text-red-700 px-3 py-1.5 rounded-lg text-[10px] font-bold tracking-widest uppercase">Suspended</span>}</td>
                           </tr>
                         )})}
                       </tbody>
                     </table>
+
                   </div>
                 </div>
               )}
 
               {activeTab === 'appointments' && (
                 <div className="bg-white rounded-3xl shadow-sm border border-[#EBE9E0] p-8 animate-in fade-in h-[75vh] flex flex-col">
-                  <div className="flex justify-between items-center mb-6"><div><h2 className="text-2xl font-black text-[#1C2C22]">All Appointments</h2><p className="text-sm text-[#5A6B60] mt-1">View patient bookings and manage rescheduling.</p></div></div>
+                  <div className="flex justify-between items-center mb-6"><div><h2 className="text-2xl font-black text-[#1C2C22]">All Appointments</h2><p className="text-sm text-[#5A6B60] mt-1">View patient bookings, attach Google Meet telehealth links, and manage rescheduling.</p></div></div>
                   <div className="overflow-y-auto flex-1 border border-[#EBE9E0] rounded-2xl custom-scrollbar">
                     <table className="w-full text-left text-sm text-[#1C2C22] whitespace-nowrap">
-                      <thead className="bg-[#FDFCF8] text-[10px] uppercase font-extrabold text-[#5A6B60] tracking-widest border-b sticky top-0"><tr><th className="py-4 px-6">Booking ID</th><th className="py-4 px-6">Patient</th><th className="py-4 px-6">Nutritionist</th><th className="py-4 px-6">Date & Time</th><th className="py-4 px-6">Status</th><th className="py-4 px-6 text-right">Actions</th></tr></thead>
+                      <thead className="bg-[#FDFCF8] text-[10px] uppercase font-extrabold text-[#5A6B60] tracking-widest border-b sticky top-0"><tr><th className="py-4 px-6">Booking ID</th><th className="py-4 px-6">Patient</th><th className="py-4 px-6">Nutritionist</th><th className="py-4 px-6">Date & Time</th><th className="py-4 px-6">Mode & Telehealth</th><th className="py-4 px-6">Status</th><th className="py-4 px-6 text-right">Actions</th></tr></thead>
                       <tbody className="divide-y divide-[#EBE9E0]">
                         {appointments.map(a => {
                           const pName = patients.find(p => String(p.id) === String(a.patient))?.first_name || `Patient #${a.patient}`;
@@ -569,22 +1260,185 @@ const ClinicManagerDashboard = () => {
                             <td className="py-5 px-6 font-black text-[#1C2C22]">{pName}</td>
                             <td className="py-5 px-6 font-bold text-[#456A50] flex items-center gap-1.5 mt-1"><Apple size={14}/> Dr. {nName}</td>
                             <td className="py-5 px-6 font-bold text-[#1C2C22]">{a.date} <span className="text-[#5A6B60] font-normal mx-1">at</span> {a.time}</td>
+                            <td className="py-5 px-6">
+                              {a.mode === 'ONLINE' ? (
+                                a.meet_link ? (
+                                  <div className="flex items-center gap-1.5">
+                                    <a 
+                                      href={a.meet_link} 
+                                      target="_blank" 
+                                      rel="noreferrer" 
+                                      className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition shadow-xs"
+                                    >
+                                      <Video size={13} /> Meet Ready <ExternalLink size={11} />
+                                    </a>
+                                  </div>
+                                ) : (
+                                  <button 
+                                    onClick={() => openMeetModal(a)} 
+                                    className="bg-[#456A50] text-white hover:bg-[#35533E] px-3 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition shadow-sm animate-pulse cursor-pointer"
+                                  >
+                                    <Video size={13} /> Schedule Meet
+                                  </button>
+                                )
+                              ) : (
+                                <span className="bg-gray-100 text-gray-700 px-3 py-1.5 rounded-lg text-[10px] font-bold tracking-widest uppercase">In-Clinic</span>
+                              )}
+                            </td>
                             <td className="py-5 px-6"><span className={`px-3 py-1.5 rounded-lg text-[10px] font-bold tracking-widest uppercase ${a.status === 'SCHEDULED' ? 'bg-orange-100 text-orange-700' : a.status === 'RESCHEDULED' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>{a.status}</span></td>
                             <td className="py-5 px-6 text-right flex justify-end gap-2">
-                              <button onClick={() => openReschedule(a)} className="bg-white text-orange-600 px-4 py-2 rounded-xl text-[11px] font-bold hover:bg-orange-50 flex items-center gap-1.5 ml-auto transition shadow-sm border border-orange-200"><Clock size={14}/> Reschedule</button>
-                              <button onClick={() => generateInvoice(a)} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-xl text-[11px] font-bold hover:bg-gray-200 flex items-center gap-1.5 transition"><Download size={14}/></button>
+                              {a.mode === 'ONLINE' && (
+                                <button 
+                                  onClick={() => openMeetModal(a)} 
+                                  className="bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200 px-3 py-2 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition cursor-pointer"
+                                  title="Manage Google Meet Link"
+                                >
+                                  <Video size={14}/> {a.meet_link ? 'Meet Link' : 'Add Meet'}
+                                </button>
+                              )}
+                              <button onClick={() => openReschedule(a)} className="bg-white text-orange-600 px-4 py-2 rounded-xl text-[11px] font-bold hover:bg-orange-50 flex items-center gap-1.5 transition shadow-sm border border-orange-200 cursor-pointer"><Clock size={14}/> Reschedule</button>
+                              <button onClick={() => generateInvoice(a)} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-xl text-[11px] font-bold hover:bg-gray-200 flex items-center gap-1.5 transition cursor-pointer"><Download size={14}/></button>
                             </td>
                           </tr>
                         )})}
-                        {appointments.length === 0 && (<tr><td colSpan="6" className="py-12 text-center text-gray-400 italic font-medium">No appointments booked yet.</td></tr>)}
+                        {appointments.length === 0 && (<tr><td colSpan="7" className="py-12 text-center text-gray-400 italic font-medium">No appointments booked yet.</td></tr>)}
                       </tbody>
                     </table>
                   </div>
                 </div>
               )}
 
+
+              {/* 🌟 TAB: CLINIC HOLIDAYS & LEAVES MANAGEMENT 🌟 */}
+              {activeTab === 'holidays' && (
+                <div className="space-y-6 animate-in fade-in">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <MetricCard 
+                      title="Marked Clinic Holidays" 
+                      count={clinicHolidays.filter(h => h.holiday_type === 'CLINIC_HOLIDAY').length} 
+                      icon={<CalendarX size={20} />} 
+                      color="text-red-600" 
+                      bg="bg-red-50" 
+                    />
+                    <MetricCard 
+                      title="Active Staff Leaves" 
+                      count={clinicHolidays.filter(h => h.holiday_type === 'NUTRITIONIST_LEAVE').length} 
+                      icon={<CalendarDays size={20} />} 
+                      color="text-amber-600" 
+                      bg="bg-amber-50" 
+                    />
+                    <div className="bg-white rounded-2xl shadow-sm border border-[#EBE9E0] p-6 flex flex-col justify-between">
+                      <div>
+                        <p className="text-[10px] font-bold text-[#5A6B60] uppercase tracking-widest">Default Clinic Policy</p>
+                        <h4 className="text-sm font-black text-[#1C2C22] mt-1">Closed Sundays & 2nd Saturdays</h4>
+                        <p className="text-xs text-[#5A6B60] mt-1">Automatically applied across all patient booking calendars.</p>
+                      </div>
+                      <button 
+                        onClick={() => setShowHolidayModal(true)}
+                        className="mt-4 bg-[#456A50] text-white py-2.5 px-4 rounded-xl text-xs font-bold hover:bg-[#35533E] transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Plus size={14} /> Add New Holiday / Leave
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                    {/* Left: Interactive Calendar Preview */}
+                    <div className="lg:col-span-6 space-y-4">
+                      <div className="bg-white rounded-3xl shadow-sm border border-[#EBE9E0] p-6">
+                        <div className="mb-4">
+                          <h3 className="text-lg font-black text-[#1C2C22]">Live Calendar Schedule Preview</h3>
+                          <p className="text-xs text-[#5A6B60]">View how holidays & leaves appear to patients during booking.</p>
+                        </div>
+                        <BookingCalendarPicker 
+                          selectedDate=""
+                          onSelectDate={(date) => {
+                            setHolidayForm({ ...holidayForm, date });
+                            setShowHolidayModal(true);
+                          }}
+                          holidays={clinicHolidays}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Right: Table of Marked Holidays & Leaves */}
+                    <div className="lg:col-span-6 bg-white rounded-3xl shadow-sm border border-[#EBE9E0] p-6 flex flex-col h-[600px]">
+                      <div className="flex justify-between items-center mb-4 border-b border-[#EBE9E0] pb-4">
+                        <div>
+                          <h3 className="text-lg font-black text-[#1C2C22]">Registered Holidays & Leaves</h3>
+                          <p className="text-xs text-[#5A6B60]">Manage all active overrides.</p>
+                        </div>
+                        <span className="text-xs font-bold px-3 py-1 bg-[#EAF0EC] text-[#456A50] rounded-full">
+                          {clinicHolidays.length} Total
+                        </span>
+                      </div>
+
+                      <div className="overflow-y-auto flex-1 custom-scrollbar">
+                        <table className="w-full text-left text-sm text-[#1C2C22]">
+                          <thead className="bg-[#FDFCF8] text-[10px] uppercase font-extrabold text-[#5A6B60] tracking-widest border-b sticky top-0">
+                            <tr>
+                              <th className="py-3 px-4">Date</th>
+                              <th className="py-3 px-4">Type & Details</th>
+                              <th className="py-3 px-4 text-right">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-[#EBE9E0]">
+                            {clinicHolidays.map(h => (
+                              <tr key={h.id} className="hover:bg-[#FDFCF8] transition group">
+                                <td className="py-4 px-4 font-black text-[#1C2C22] whitespace-nowrap">
+                                  {h.date}
+                                </td>
+                                <td className="py-4 px-4">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${
+                                      h.holiday_type === 'CLINIC_HOLIDAY' 
+                                        ? 'bg-red-100 text-red-800 border border-red-200' 
+                                        : 'bg-amber-100 text-amber-800 border border-amber-200'
+                                    }`}>
+                                      {h.holiday_type === 'CLINIC_HOLIDAY' ? 'Clinic Holiday' : 'Staff Leave'}
+                                    </span>
+                                    {h.nutritionist_name && (
+                                      <span className="text-xs font-bold text-[#456A50] truncate">
+                                        {h.nutritionist_name}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-xs text-gray-600 leading-snug font-medium">
+                                    {h.reason}
+                                  </p>
+                                </td>
+                                <td className="py-4 px-4 text-right">
+                                  <button 
+                                    onClick={() => handleDeleteHoliday(h.id, h.date)}
+                                    className="text-gray-400 hover:text-red-600 p-2 rounded-xl hover:bg-red-50 transition cursor-pointer"
+                                    title="Delete Holiday"
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+
+                            {clinicHolidays.length === 0 && (
+                              <tr>
+                                <td colSpan="3" className="py-16 text-center text-gray-400">
+                                  <CalendarX size={36} className="mx-auto mb-2 opacity-30" />
+                                  <p className="text-xs font-bold">No custom holidays or leaves added yet.</p>
+                                  <p className="text-[10px] text-gray-400 mt-1">Click "Add New Holiday / Leave" to schedule one.</p>
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* 🌟 TAB 3: INTERNAL COMMUNICATIONS (DUAL CHAT SYSTEM) 🌟 */}
               {activeTab === 'notifications' && (
+
                 <div className="bg-white rounded-3xl shadow-sm border border-[#EBE9E0] overflow-hidden flex h-[75vh] animate-in fade-in">
                   
                   {/* Contacts Sidebar */}

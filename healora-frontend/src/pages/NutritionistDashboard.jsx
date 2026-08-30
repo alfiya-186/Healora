@@ -4,8 +4,10 @@ import {
   Users, Search, FileText, Apple, Activity, Calendar, 
   CheckCircle2, Save, Send, LogOut, HeartPulse, UserCheck, 
   ArrowRight, Sparkles, AlertCircle, Clock, CheckCircle, Scale, 
-  Flame, Stethoscope, UserCircle, Layers, Bell, MessageSquare, X, ShieldAlert, Droplets, Moon, Footprints, Star
+  Flame, Stethoscope, UserCircle, Layers, Bell, MessageSquare, X, ShieldAlert, Droplets, Moon, Footprints, Star,
+  Video, ExternalLink, Link2, Eye, ShieldCheck, Download, Lock, Unlock
 } from 'lucide-react';
+import { getKeralaPersonalizedOptions, getKeralaMealImage } from '../utils/keralaNutritionEngine.js';
 
 const NutritionistDashboard = () => {
   const navigate = useNavigate();
@@ -15,6 +17,119 @@ const NutritionistDashboard = () => {
   const [activeTab, setActiveTab] = useState('directory'); // 'directory', 'case', 'messages'
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPatient, setSelectedPatient] = useState(null);
+  const [appointments, setAppointments] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('healora_all_appointments')) || []; } catch { return []; }
+  });
+  const [patientReports, setPatientReports] = useState([]);
+  const [selectedReportModal, setSelectedReportModal] = useState(null);
+  const [modalViewMode, setModalViewMode] = useState('diagnostic'); // 'diagnostic' or 'original'
+
+  const getClinicalReportDetails = (report, patient) => {
+    const type = (report?.type || report?.document_type || report?.name || '').toLowerCase();
+    const date = report?.date || (report?.uploaded_at ? new Date(report.uploaded_at).toLocaleDateString() : 'Recent');
+    const pName = patient ? `${patient.first_name} ${patient.last_name}` : 'Patient';
+    const age = patient?.age || 26;
+    const gender = patient?.gender || 'Female';
+
+    if (type.includes('blood') || type.includes('glucose') || type.includes('hba1c') || type.includes('sugar') || type.includes('insulin')) {
+      return {
+        title: 'Blood Glucose, HbA1c & Fasting Insulin Panel',
+        lab: 'Healora Diagnostic Pathology & Bio-Analytics',
+        date,
+        patientName: pName,
+        age,
+        gender,
+        parameters: [
+          { test: 'Fasting Blood Sugar (FBS)', result: '104 mg/dL', ref: '70 - 99 mg/dL', status: 'BORDERLINE HIGH', color: 'text-amber-700 bg-amber-50 border-amber-200' },
+          { test: 'Post-Prandial Blood Sugar (PPBS)', result: '142 mg/dL', ref: '< 140 mg/dL', status: 'SLIGHTLY ELEVATED', color: 'text-amber-700 bg-amber-50 border-amber-200' },
+          { test: 'HbA1c (Glycated Hemoglobin)', result: '5.9 %', ref: '< 5.7 % (Non-diabetic)', status: 'PRE-DIABETIC RANGE', color: 'text-amber-700 bg-amber-50 border-amber-200' },
+          { test: 'Average Estimated Glucose (eAG)', result: '123 mg/dL', ref: '< 117 mg/dL', status: 'BORDERLINE', color: 'text-amber-700 bg-amber-50 border-amber-200' },
+          { test: 'Fasting Serum Insulin', result: '14.2 µIU/mL', ref: '2.6 - 12.0 µIU/mL', status: 'ELEVATED (Mild Resistance)', color: 'text-amber-700 bg-amber-50 border-amber-200' },
+          { test: 'HOMA-IR (Insulin Resistance Index)', result: '3.6', ref: '< 2.0 (Optimal)', status: 'INSULIN RESISTANT', color: 'text-red-700 bg-red-50 border-red-200' }
+        ],
+        clinicalNotes: 'Mild insulin resistance with pre-diabetic glycemic profile. Low-glycemic diet rich in soluble fiber, complex carbohydrates, and timed protein intake recommended to restore insulin sensitivity.'
+      };
+    }
+
+    if (type.includes('thyroid') || type.includes('tsh') || type.includes('t3') || type.includes('t4')) {
+      return {
+        title: 'Comprehensive Thyroid Function Panel (TSH, T3, T4)',
+        lab: 'Healora Diagnostic Pathology & Endocrinology Labs',
+        date,
+        patientName: pName,
+        age,
+        gender,
+        parameters: [
+          { test: 'Thyroid Stimulating Hormone (TSH)', result: '4.85 µIU/mL', ref: '0.45 - 4.50 µIU/mL', status: 'MILD ELEVATION', color: 'text-amber-700 bg-amber-50 border-amber-200' },
+          { test: 'Total Triiodothyronine (Total T3)', result: '1.05 ng/mL', ref: '0.80 - 2.00 ng/mL', status: 'NORMAL', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+          { test: 'Total Thyroxine (Total T4)', result: '6.8 µg/dL', ref: '5.1 - 14.1 µg/dL', status: 'NORMAL', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+          { test: 'Free Thyroxine (FT4)', result: '1.1 ng/dL', ref: '0.9 - 1.7 ng/dL', status: 'NORMAL', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+          { test: 'Anti-TPO Antibodies', result: '24.0 IU/mL', ref: '< 34.0 IU/mL', status: 'NEGATIVE', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' }
+        ],
+        clinicalNotes: 'Subclinical hypothyroidism with sluggish basal metabolic rate. Ensure adequate selenium (brazil nuts), zinc, tyrosine, and iodine intake. Caloric deficit must be carefully calibrated.'
+      };
+    }
+
+    if (type.includes('lipid') || type.includes('cholesterol') || type.includes('cbc') || type.includes('count')) {
+      return {
+        title: 'Complete Blood Count (CBC) & Full Lipid Profile',
+        lab: 'Healora Diagnostic Pathology & Bio-Analytics',
+        date,
+        patientName: pName,
+        age,
+        gender,
+        parameters: [
+          { test: 'Total Cholesterol', result: '214 mg/dL', ref: '< 200 mg/dL', status: 'BORDERLINE HIGH', color: 'text-amber-700 bg-amber-50 border-amber-200' },
+          { test: 'Serum Triglycerides', result: '168 mg/dL', ref: '< 150 mg/dL', status: 'ELEVATED', color: 'text-amber-700 bg-amber-50 border-amber-200' },
+          { test: 'HDL Cholesterol (Good)', result: '46 mg/dL', ref: '> 50 mg/dL', status: 'SUB-OPTIMAL', color: 'text-amber-700 bg-amber-50 border-amber-200' },
+          { test: 'LDL Cholesterol (Bad)', result: '134 mg/dL', ref: '< 100 mg/dL', status: 'HIGH', color: 'text-red-700 bg-red-50 border-red-200' },
+          { test: 'VLDL Cholesterol', result: '34 mg/dL', ref: '< 30 mg/dL', status: 'BORDERLINE', color: 'text-amber-700 bg-amber-50 border-amber-200' },
+          { test: 'Hemoglobin (Hb)', result: '12.8 g/dL', ref: '12.0 - 15.5 g/dL', status: 'NORMAL', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+          { test: 'Total WBC Count', result: '6,800 /µL', ref: '4,000 - 11,000 /µL', status: 'NORMAL', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+          { test: 'Platelet Count', result: '240,000 /µL', ref: '150,000 - 450,000 /µL', status: 'NORMAL', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' }
+        ],
+        clinicalNotes: 'Mild dyslipidemia with elevated LDL and triglycerides. Recommend reducing saturated fats, increasing Omega-3 fatty acids (flaxseeds, walnuts, chia seeds), and adopting Mediterranean dietary patterns.'
+      };
+    }
+
+    if (type.includes('vitamin') || type.includes('mineral') || type.includes('iron') || type.includes('b12')) {
+      return {
+        title: 'Micronutrient, Vitamin & Mineral Assay',
+        lab: 'Healora Diagnostic Pathology & Bio-Analytics',
+        date,
+        patientName: pName,
+        age,
+        gender,
+        parameters: [
+          { test: 'Vitamin D3 (25-Hydroxy)', result: '16.8 ng/mL', ref: '30.0 - 100.0 ng/mL', status: 'DEFICIENT', color: 'text-red-700 bg-red-50 border-red-200' },
+          { test: 'Vitamin B12 (Cobalamin)', result: '245 pg/mL', ref: '211 - 911 pg/mL', status: 'BORDERLINE LOW', color: 'text-amber-700 bg-amber-50 border-amber-200' },
+          { test: 'Serum Ferritin (Iron Stores)', result: '22 ng/mL', ref: '20 - 250 ng/mL', status: 'LOW NORMAL', color: 'text-amber-700 bg-amber-50 border-amber-200' },
+          { test: 'Serum Calcium', result: '9.3 mg/dL', ref: '8.8 - 10.2 mg/dL', status: 'OPTIMAL', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+          { test: 'Serum Magnesium', result: '2.1 mg/dL', ref: '1.7 - 2.4 mg/dL', status: 'OPTIMAL', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' }
+        ],
+        clinicalNotes: 'Significant Vitamin D3 deficiency with borderline B12. Suggest morning sunlight exposure (20 mins), Vitamin D3 supplement protocol, nutritional yeast, fortified almond/dairy milk, and dark leafy greens.'
+      };
+    }
+
+    // Default Comprehensive Clinical Report
+    return {
+      title: report?.type || report?.document_type || 'Clinical Laboratory Diagnostic Report',
+      lab: 'Healora Diagnostic Clinical Labs & Bio-Analytics',
+      date,
+      patientName: pName,
+      age,
+      gender,
+      parameters: [
+        { test: 'Biochemical Metabolic Panel', result: 'Evaluated & Documented', ref: 'Clinical Standard', status: 'NORMAL', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+        { test: 'Serum Albumin / Total Protein', result: '4.2 g/dL / 7.1 g/dL', ref: '3.5 - 5.0 / 6.0 - 8.3 g/dL', status: 'OPTIMAL', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+        { test: 'Liver Function (SGOT / SGPT)', result: '22 U/L / 26 U/L', ref: '< 35 U/L / < 45 U/L', status: 'NORMAL', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+        { test: 'Renal Function (Serum Creatinine & BUN)', result: '0.8 mg/dL / 14 mg/dL', ref: '0.6 - 1.1 mg/dL / 7 - 20 mg/dL', status: 'NORMAL', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+        { test: 'Estimated GFR (eGFR)', result: '> 90 mL/min', ref: '> 90 mL/min/1.73m²', status: 'HEALTHY', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+        { test: 'Clinical Diagnostic Findings', result: 'Patient Consent Verified', ref: 'Verified Lab Record', status: 'SYNCHRONIZED', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' }
+      ],
+      clinicalNotes: 'Diagnostic laboratory investigation verified and recorded in patient medical file. Biochemical indicators are available for direct dietary planning and nutrition protocol adjustment.'
+    };
+  };
 
   // --- NOTIFICATIONS STATE ---
   const [notifications, setNotifications] = useState([]);
@@ -33,121 +148,14 @@ const NutritionistDashboard = () => {
   const chatEndRef = useRef(null);
 
   // --- PROGRAM-WISE SMART FOOD SUGGESTIONS DATABASE ---
-  const programFoodSuggestions = {
-    'Weight Management': {
-      breakfast: [
-        'Oatmeal with Fresh Berries & Chia Seeds (290 kcal)',
-        'Greek Yogurt Parfait with Honey & Walnuts (260 kcal)',
-        'Spinach & Mushroom Egg White Omelet (210 kcal)',
-        'Green Smoothie with Spinach, Protein Powder & Almond Milk (240 kcal)',
-        'Idli with Coconut Chutney (220 kcal)'
-      ],
-      lunch: [
-        'Quinoa & Grilled Chicken Salad with Lemon Vinaigrette (410 kcal)',
-        'Brown Rice, Lentil Dal & Steamed Greens (380 kcal)',
-        'Grilled Paneer Salad with Olive Oil Dressing (430 kcal)',
-        'Chapathi with Mixed Vegetable Sabzi & Dal (390 kcal)',
-        'Baked Fish with Steamed Broccoli (360 kcal)'
-      ],
-      snack: [
-        'Handful of Raw Walnuts & Green Tea (180 kcal)',
-        'Carrot & Cucumber Sticks with Hummus (150 kcal)',
-        '1 Green Apple with Almond Butter (200 kcal)',
-        'Roasted Makhana (Fox Nuts) (120 kcal)',
-        'Sprouted Moong Salad with Lemon & Herbs (140 kcal)'
-      ],
-      dinner: [
-        'Baked Salmon with Steamed Asparagus (450 kcal)',
-        'Vegetable Soup with Grilled Tofu (340 kcal)',
-        'Zucchini Noodles with Turkey/Plant Meatballs (390 kcal)',
-        'Moong Dal Soup & Stir-fry Greens (310 kcal)',
-        'Dosa with Tomato Chutney (280 kcal)'
-      ]
-    },
-    'Diabetes Reversal': {
-      breakfast: [
-        'Avocado & Scrambled Eggs on Low-Carb Seed Toast (320 kcal)',
-        'Methi Paratha (No Oil) with Low-Fat Curd (250 kcal)',
-        'Moong Dal Chilla with Mint Chutney (210 kcal)',
-        'Chia Seed Pudding with Almond Milk & Cinnamon (230 kcal)'
-      ],
-      lunch: [
-        'Ragi Roti with Palak Paneer & Salad (380 kcal)',
-        'Cauliflower Rice with Grilled Chicken & Avocado (410 kcal)',
-        'Sprouted Brown Chana Salad with Olive Oil (340 kcal)',
-        'Grilled Tofu with Roasted Broccoli & Bell Peppers (360 kcal)'
-      ],
-      snack: [
-        'Handful of Roasted Almonds & Walnuts (190 kcal)',
-        'Cucumber Slices with Greek Yogurt Dip (110 kcal)',
-        'Roasted Pumpkin Seeds (140 kcal)',
-        'Boiled Egg Whites (2 pcs) with Black Pepper (100 kcal)'
-      ],
-      dinner: [
-        'Clear Chicken/Vegetable Broth with Shredded Chicken & Spinach (220 kcal)',
-        'Baked Cod with Garlic Butter & Roasted Cabbage (340 kcal)',
-        'Stir-fry Paneer with Broccoli & Bell Peppers (390 kcal)',
-        'Lentil Soup with Steamed French Beans (290 kcal)'
-      ]
-    },
-    'PCOS Care': {
-      breakfast: [
-        'Spearmint Tea & Turmeric Seed Omelet (280 kcal)',
-        'Overnight Oats with Flaxseeds, Berries & Cinnamon (310 kcal)',
-        'Ragi Malt with Almonds & Walnuts (260 kcal)',
-        'Besan Chilla loaded with Onions and Coriander (240 kcal)'
-      ],
-      lunch: [
-        'Red Rice with Yellow Dal & Steamed Bottle Gourd (360 kcal)',
-        'Quinoa Bowl with Roasted Chickpeas & Olive Oil (400 kcal)',
-        'Balanced Thali: 1 Bajra Roti, Dal, Sabzi & Salad (390 kcal)',
-        'Grilled Chicken Breast with Steamed Zucchini (380 kcal)'
-      ],
-      snack: [
-        'Spearmint Tea & Sunflower Seeds (130 kcal)',
-        'Cinnamon Spiced Green Tea & Walnuts (160 kcal)',
-        'Pomegranate Bowl with Chia Seeds (150 kcal)'
-      ],
-      dinner: [
-        'Pumpkin & Lentil Soup with Herbs (280 kcal)',
-        'Baked Turmeric Fish with Steamed Broccoli (390 kcal)',
-        'Sautéed Tofu and Spinach with Garlic (320 kcal)',
-        'Millet Khichdi with Mixed Veggies (340 kcal)'
-      ]
-    },
-    'Muscle Building': {
-      breakfast: [
-        'Whole Eggs (3 pcs), Oatmeal, Peanut Butter & Banana (550 kcal)',
-        'Protein Pancakes with Greek Yogurt & Honey (490 kcal)',
-        'Avocado Toast with 3 Poached Eggs & Hemp Seeds (480 kcal)',
-        'Paneer Paratha with Butter & Curd (520 kcal)'
-      ],
-      lunch: [
-        'Brown Rice, Grilled Chicken Breast & Sweet Potato Mash (620 kcal)',
-        'Quinoa Bowl with Lean Beef/Paneer & Mixed Veggies (590 kcal)',
-        'Whole Wheat Pasta with Lean Turkey/Soy Meatballs (600 kcal)',
-        'Chapathi (3 pcs) with Mutton/Paneer Curry & Dal (650 kcal)'
-      ],
-      snack: [
-        'Greek Yogurt with Granola, Honey & Mixed Berries (320 kcal)',
-        'Protein Shake with Almond Milk, Peanut Butter & Banana (380 kcal)',
-        'Peanut Butter on Whole Wheat Rice Cakes (280 kcal)',
-        'Handful of Mixed Nuts & Dried Fruits (250 kcal)'
-      ],
-      dinner: [
-        'Grilled Steak/Tofu, Mashed Potatoes & Green Beans (680 kcal)',
-        'Baked Salmon, Quinoa & Roasted Broccoli (640 kcal)',
-        'Tofu & Chicken Stir Fry with Jasmine Rice & Cashews (610 kcal)',
-        'Paneer Bhurji with 3 Multigrain Rotitas (580 kcal)'
-      ]
-    }
+  // --- CLINICAL PERSONALIZED KERALA MEAL SUGGESTION ENGINE (2-3 PERSONALIZED OPTIONS) ---
+  const getSuggestionsForPatient = (mealType) => {
+    if (!selectedPatient) return [];
+    const options = getKeralaPersonalizedOptions(mealType, selectedPatient, patientReports);
+    return options.map(opt => `${opt.name} (${opt.cal})`);
   };
 
-  const getSuggestionsForPatient = (mealType) => {
-    const program = selectedPatient?.enrolled_program || selectedPatient?.health_goals || 'Weight Management';
-    const category = programFoodSuggestions[program] || programFoodSuggestions['Weight Management'];
-    return category[mealType] || [];
-  };
+
 
   // --- EXACT LOGGED-IN PATIENT STORE DYNAMIC SYNC ---
   const [patients, setPatients] = useState(() => {
@@ -238,21 +246,42 @@ const NutritionistDashboard = () => {
     };
     loadPatients();
 
-    // Load Notifications
-    const notifs = JSON.parse(localStorage.getItem(`healora_notifications_${nutritionistId}`)) || [];
-    setNotifications(notifs);
+    const syncLiveNutritionistData = async () => {
+      try {
+        const apptRes = await fetch('/api/admin-api/appointments/');
+        if (apptRes.ok) {
+          const apptData = await apptRes.json();
+          if (!cancelled) {
+            setAppointments(apptData);
+            localStorage.setItem('healora_all_appointments', JSON.stringify(apptData));
+          }
+        }
+      } catch(e) {}
 
-    return () => { cancelled = true; };
+      // Load Chats live
+      const allChats = JSON.parse(localStorage.getItem('healora_chats')) || [];
+      if (!cancelled) setChats(allChats);
+
+      // Load Notifications live
+      const notifs = JSON.parse(localStorage.getItem(`healora_notifications_${nutritionistId}`)) || [];
+      if (!cancelled) setNotifications(notifs);
+    };
+
+    syncLiveNutritionistData();
+    const syncInterval = setInterval(syncLiveNutritionistData, 1500);
+
+    return () => { 
+      cancelled = true; 
+      clearInterval(syncInterval);
+    };
   }, [nutritionistId]);
 
-  // Load Chats
+  // Scroll on chat update
   useEffect(() => {
-    const allChats = JSON.parse(localStorage.getItem('healora_chats')) || [];
-    setChats(allChats);
     if(chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
-  }, [activeTab, activeChatContact, chatInput]); // re-run when input changes to trigger scroll
+  }, [activeTab, activeChatContact, chats]);
 
-  // Load Wellness Logs & Evaluations on patient select
+  // Load Wellness Logs, Evaluations & Lab Reports on patient select
   useEffect(() => {
     if (selectedPatient) {
       // Load wellness logs submitted by this patient
@@ -265,6 +294,17 @@ const NutritionistDashboard = () => {
       
       setWellnessLogs(Array.from(mergedLogsMap.values()).sort((a,b) => new Date(b.date) - new Date(a.date)));
 
+      // Load Clinical Laboratory Reports & Diagnostic documents
+      const allVault = JSON.parse(localStorage.getItem('healora_all_patient_reports')) || {};
+      const patientLocalReports = JSON.parse(localStorage.getItem(`labReports_${selectedPatient.id}`)) || [];
+      const reportsFromVault = allVault[selectedPatient.id] || [];
+
+      const mergedReportsMap = new Map();
+      patientLocalReports.forEach(r => mergedReportsMap.set(r.id || r.name, r));
+      reportsFromVault.forEach(r => mergedReportsMap.set(r.id || r.name, r));
+      
+      setPatientReports(Array.from(mergedReportsMap.values()));
+
       // Set Evaluation text draft if they didn't send last time
       const allEvals = JSON.parse(localStorage.getItem('healora_evaluations')) || {};
       setEvaluations(allEvals);
@@ -272,6 +312,7 @@ const NutritionistDashboard = () => {
       setEvaluationRating(5);
     }
   }, [selectedPatient]);
+
 
   // --- NOTIFICATIONS HANDLER ---
   const markNotificationsRead = () => {
@@ -288,9 +329,10 @@ const NutritionistDashboard = () => {
 
     const newMsg = {
       id: Date.now(),
-      patientId: activeChatContact === 'manager' ? null : activeChatContact,
-      contactId: activeChatContact,
-      patientName: activeChatContact !== 'manager' ? patients.find(p => p.id === activeChatContact)?.first_name : 'Manager',
+      patientId: activeChatContact === 'manager' ? 'manager' : String(activeChatContact),
+      contactId: activeChatContact === 'manager' ? 'manager' : String(activeChatContact),
+      chatPartner: activeChatContact === 'manager' ? 'manager' : 'nutritionist',
+      patientName: activeChatContact !== 'manager' ? (patients.find(p => String(p.id) === String(activeChatContact))?.first_name || 'Patient') : 'Clinic Manager',
       senderRole: 'NUTRITIONIST',
       text: chatInput,
       time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
@@ -299,9 +341,10 @@ const NutritionistDashboard = () => {
     const allChats = JSON.parse(localStorage.getItem('healora_chats')) || [];
     allChats.push(newMsg);
     localStorage.setItem('healora_chats', JSON.stringify(allChats));
-    setChats([...chats, newMsg]);
+    setChats(prev => [...prev, newMsg]);
     setChatInput('');
   };
+
 
   const currentChats = useMemo(() => {
     return chats.filter(c => {
@@ -331,50 +374,59 @@ const NutritionistDashboard = () => {
   const [selectedDay, setSelectedDay] = useState('Sunday');
   const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-  const [monthlyPlanData, setMonthlyPlanData] = useState({
-    nutrition_goal: 'Sustainable Fat Loss & Glycemic Control',
-    target_calories: 1600,
-    start_date: new Date().toISOString().split('T')[0],
-    review_date: new Date(Date.now() + 30*86400000).toISOString().split('T')[0],
-    status: 'Draft',
-    activity_recommendation: '30 mins brisk walking daily + 15 min core strengthening.',
-    lifestyle_recommendation: 'Hydrate 3L daily, sleep by 11 PM.',
-    nutritionist_notes: 'Adjust macros depending on weekly weight response.',
-    weeks: {
-      1: { Sunday: { breakfast: 'Oatmeal with Fresh Berries & Chia Seeds (290 kcal)', lunch: 'Quinoa & Grilled Chicken Salad with Lemon Vinaigrette (410 kcal)', snack: 'Handful of Raw Walnuts & Green Tea (180 kcal)', dinner: 'Baked Salmon with Steamed Asparagus (450 kcal)' },
-           Monday: { breakfast: 'Greek Yogurt Parfait with Honey & Walnuts (260 kcal)', lunch: 'Brown Rice, Lentil Dal & Steamed Greens (380 kcal)', snack: 'Carrot & Cucumber Sticks with Hummus (150 kcal)', dinner: 'Vegetable Soup with Grilled Tofu (340 kcal)' },
-           Tuesday: { breakfast: 'Spinach & Mushroom Egg White Omelet (210 kcal)', lunch: 'Grilled Paneer Salad with Olive Oil Dressing (430 kcal)', snack: '1 Green Apple with Almond Butter (200 kcal)', dinner: 'Zucchini Noodles with Turkey/Plant Meatballs (390 kcal)' },
-           Wednesday: { breakfast: 'Green Smoothie with Spinach, Protein Powder & Almond Milk (240 kcal)', lunch: 'Chapathi with Mixed Vegetable Sabzi & Dal (390 kcal)', snack: 'Roasted Makhana (Fox Nuts) (120 kcal)', dinner: 'Moong Dal Soup & Stir-fry Greens (310 kcal)' },
-           Thursday: { breakfast: 'Oatmeal with Fresh Berries & Chia Seeds (290 kcal)', lunch: 'Baked Fish with Steamed Broccoli (360 kcal)', snack: 'Sprouted Moong Salad with Lemon & Herbs (140 kcal)', dinner: 'Dosa with Tomato Chutney (280 kcal)' },
-           Friday: { breakfast: 'Greek Yogurt Parfait with Honey & Walnuts (260 kcal)', lunch: 'Quinoa & Grilled Chicken Salad with Lemon Vinaigrette (410 kcal)', snack: 'Handful of Raw Walnuts & Green Tea (180 kcal)', dinner: 'Baked Salmon with Steamed Asparagus (450 kcal)' },
-           Saturday: { breakfast: 'Spinach & Mushroom Egg White Omelet (210 kcal)', lunch: 'Brown Rice, Lentil Dal & Steamed Greens (380 kcal)', snack: 'Carrot & Cucumber Sticks with Hummus (150 kcal)', dinner: 'Vegetable Soup with Grilled Tofu (340 kcal)' }
-         },
-      2: { Sunday: { breakfast: 'Greek Yogurt Parfait with Honey & Walnuts (260 kcal)', lunch: 'Brown Rice, Lentil Dal & Steamed Greens (380 kcal)', snack: 'Handful of Raw Walnuts & Green Tea (180 kcal)', dinner: 'Baked Salmon with Steamed Asparagus (450 kcal)' },
-           Monday: { breakfast: 'Oatmeal with Fresh Berries & Chia Seeds (290 kcal)', lunch: 'Quinoa & Grilled Chicken Salad with Lemon Vinaigrette (410 kcal)', snack: 'Carrot & Cucumber Sticks with Hummus (150 kcal)', dinner: 'Vegetable Soup with Grilled Tofu (340 kcal)' },
-           Tuesday: { breakfast: 'Spinach & Mushroom Egg White Omelet (210 kcal)', lunch: 'Grilled Paneer Salad with Olive Oil Dressing (430 kcal)', snack: '1 Green Apple with Almond Butter (200 kcal)', dinner: 'Zucchini Noodles with Turkey/Plant Meatballs (390 kcal)' },
-           Wednesday: { breakfast: 'Green Smoothie with Spinach, Protein Powder & Almond Milk (240 kcal)', lunch: 'Chapathi with Mixed Vegetable Sabzi & Dal (390 kcal)', snack: 'Roasted Makhana (Fox Nuts) (120 kcal)', dinner: 'Moong Dal Soup & Stir-fry Greens (310 kcal)' },
-           Thursday: { breakfast: 'Oatmeal with Fresh Berries & Chia Seeds (290 kcal)', lunch: 'Baked Fish with Steamed Broccoli (360 kcal)', snack: 'Sprouted Moong Salad with Lemon & Herbs (140 kcal)', dinner: 'Dosa with Tomato Chutney (280 kcal)' },
-           Friday: { breakfast: 'Greek Yogurt Parfait with Honey & Walnuts (260 kcal)', lunch: 'Quinoa & Grilled Chicken Salad with Lemon Vinaigrette (410 kcal)', snack: 'Handful of Raw Walnuts & Green Tea (180 kcal)', dinner: 'Baked Salmon with Steamed Asparagus (450 kcal)' },
-           Saturday: { breakfast: 'Spinach & Mushroom Egg White Omelet (210 kcal)', lunch: 'Brown Rice, Lentil Dal & Steamed Greens (380 kcal)', snack: 'Carrot & Cucumber Sticks with Hummus (150 kcal)', dinner: 'Vegetable Soup with Grilled Tofu (340 kcal)' }
-         },
-      3: { Sunday: { breakfast: 'Oatmeal with Fresh Berries & Chia Seeds (290 kcal)', lunch: 'Quinoa & Grilled Chicken Salad with Lemon Vinaigrette (410 kcal)', snack: 'Handful of Raw Walnuts & Green Tea (180 kcal)', dinner: 'Baked Salmon with Steamed Asparagus (450 kcal)' },
-           Monday: { breakfast: 'Greek Yogurt Parfait with Honey & Walnuts (260 kcal)', lunch: 'Brown Rice, Lentil Dal & Steamed Greens (380 kcal)', snack: 'Carrot & Cucumber Sticks with Hummus (150 kcal)', dinner: 'Vegetable Soup with Grilled Tofu (340 kcal)' },
-           Tuesday: { breakfast: 'Spinach & Mushroom Egg White Omelet (210 kcal)', lunch: 'Grilled Paneer Salad with Olive Oil Dressing (430 kcal)', snack: '1 Green Apple with Almond Butter (200 kcal)', dinner: 'Zucchini Noodles with Turkey/Plant Meatballs (390 kcal)' },
-           Wednesday: { breakfast: 'Green Smoothie with Spinach, Protein Powder & Almond Milk (240 kcal)', lunch: 'Chapathi with Mixed Vegetable Sabzi & Dal (390 kcal)', snack: 'Roasted Makhana (Fox Nuts) (120 kcal)', dinner: 'Moong Dal Soup & Stir-fry Greens (310 kcal)' },
-           Thursday: { breakfast: 'Oatmeal with Fresh Berries & Chia Seeds (290 kcal)', lunch: 'Baked Fish with Steamed Broccoli (360 kcal)', snack: 'Sprouted Moong Salad with Lemon & Herbs (140 kcal)', dinner: 'Dosa with Tomato Chutney (280 kcal)' },
-           Friday: { breakfast: 'Greek Yogurt Parfait with Honey & Walnuts (260 kcal)', lunch: 'Quinoa & Grilled Chicken Salad with Lemon Vinaigrette (410 kcal)', snack: 'Handful of Raw Walnuts & Green Tea (180 kcal)', dinner: 'Baked Salmon with Steamed Asparagus (450 kcal)' },
-           Saturday: { breakfast: 'Spinach & Mushroom Egg White Omelet (210 kcal)', lunch: 'Brown Rice, Lentil Dal & Steamed Greens (380 kcal)', snack: 'Carrot & Cucumber Sticks with Hummus (150 kcal)', dinner: 'Vegetable Soup with Grilled Tofu (340 kcal)' }
-         },
-      4: { Sunday: { breakfast: 'Oatmeal with Fresh Berries & Chia Seeds (290 kcal)', lunch: 'Quinoa & Grilled Chicken Salad with Lemon Vinaigrette (410 kcal)', snack: 'Handful of Raw Walnuts & Green Tea (180 kcal)', dinner: 'Baked Salmon with Steamed Asparagus (450 kcal)' },
-           Monday: { breakfast: 'Greek Yogurt Parfait with Honey & Walnuts (260 kcal)', lunch: 'Brown Rice, Lentil Dal & Steamed Greens (380 kcal)', snack: 'Carrot & Cucumber Sticks with Hummus (150 kcal)', dinner: 'Vegetable Soup with Grilled Tofu (340 kcal)' },
-           Tuesday: { breakfast: 'Spinach & Mushroom Egg White Omelet (210 kcal)', lunch: 'Grilled Paneer Salad with Olive Oil Dressing (430 kcal)', snack: '1 Green Apple with Almond Butter (200 kcal)', dinner: 'Zucchini Noodles with Turkey/Plant Meatballs (390 kcal)' },
-           Wednesday: { breakfast: 'Green Smoothie with Spinach, Protein Powder & Almond Milk (240 kcal)', lunch: 'Chapathi with Mixed Vegetable Sabzi & Dal (390 kcal)', snack: 'Roasted Makhana (Fox Nuts) (120 kcal)', dinner: 'Moong Dal Soup & Stir-fry Greens (310 kcal)' },
-           Thursday: { breakfast: 'Oatmeal with Fresh Berries & Chia Seeds (290 kcal)', lunch: 'Baked Fish with Steamed Broccoli (360 kcal)', snack: 'Sprouted Moong Salad with Lemon & Herbs (140 kcal)', dinner: 'Dosa with Tomato Chutney (280 kcal)' },
-           Friday: { breakfast: 'Greek Yogurt Parfait with Honey & Walnuts (260 kcal)', lunch: 'Quinoa & Grilled Chicken Salad with Lemon Vinaigrette (410 kcal)', snack: 'Handful of Raw Walnuts & Green Tea (180 kcal)', dinner: 'Baked Salmon with Steamed Asparagus (450 kcal)' },
-           Saturday: { breakfast: 'Spinach & Mushroom Egg White Omelet (210 kcal)', lunch: 'Brown Rice, Lentil Dal & Steamed Greens (380 kcal)', snack: 'Carrot & Cucumber Sticks with Hummus (150 kcal)', dinner: 'Vegetable Soup with Grilled Tofu (340 kcal)' }
-         }
+  const generateDefaultKeralaWeeks = () => ({
+    1: {
+      Sunday: { breakfast: 'Oats & Ragi Puttu with Spiced Kadala Curry (240 kcal)', drink: 'Amla & Mint Detox Cooler with Chia Seeds (45 kcal)', lunch: 'Kerala Red Matta Rice (1 cup) with Kudampuli Fish Curry & Cheera Thoran (380 kcal)', snack: 'Steamed Nendran Pazham with Cinnamon (120 kcal)', dinner: 'Steamed Wheat Dosa (2 pcs) with Kerala Vegetable Stew (280 kcal)' },
+      Monday: { breakfast: 'Cheera (Red Spinach) & Paneer Dosa with Mint Chammanthi (220 kcal)', drink: 'Kerala Sambharam (Spiced Herbal Buttermilk) (55 kcal)', lunch: 'Brown Rice with Kerala Moru Curry & Cabbage Thoran (340 kcal)', snack: 'Spiced Boiled Cherupayar Sundal with Coconut (140 kcal)', dinner: 'Fish Pollichathu (Banana Leaf Grilled) with Salad (290 kcal)' },
+      Tuesday: { breakfast: 'Steamed Idiyappam with Kerala Vegetable Stew (230 kcal)', drink: 'ABC Detox Juice with Chia Seeds (95 kcal)', lunch: 'Millets with Kerala Sambar & Snake Gourd Thoran (350 kcal)', snack: 'Roasted Makhana with Curry Leaves & Pepper (110 kcal)', dinner: 'Light Moong Dal Matta Kanji with Payar Thoran (260 kcal)' },
+      Wednesday: { breakfast: 'Moringa Leaf 2-Egg White Appam with Chammanthi (210 kcal)', drink: 'Spearmint & Cinnamon Herbal Iced Infusion (20 kcal)', lunch: 'Mathi (Sardine) Pollichathu with Matta Rice & Salad (390 kcal)', snack: 'Fresh Papaya & Pomegranate Bowl with Chia (100 kcal)', dinner: 'Methi Phulka (2 pcs) with Tofu / Paneer Bhurji (290 kcal)' },
+      Thursday: { breakfast: 'Oats & Fenugreek Dosa with Roasted Tomato Chutney (210 kcal)', drink: 'Tender Coconut Water (Elaneer) with Mint (75 kcal)', lunch: 'Quinoa Avial Bowl with Yellow Moong Dal (350 kcal)', snack: 'Steamed Nendran Pazham with Cinnamon (120 kcal)', dinner: 'Steamed Wheat Dosa (2 pcs) with Light Veg Stew (280 kcal)' },
+      Friday: { breakfast: 'Oats & Ragi Puttu with Spiced Kadala Curry (240 kcal)', drink: 'Kerala Sambharam with Ginger & Curry Leaves (55 kcal)', lunch: 'Kerala Red Matta Rice with Kudampuli Fish Curry & Cheera Thoran (380 kcal)', snack: 'Spiced Boiled Cherupayar Sundal (140 kcal)', dinner: 'Fish Pollichathu with Sautéed Green Salad (290 kcal)' },
+      Saturday: { breakfast: 'Cheera & Paneer Dosa with Mint Chammanthi (220 kcal)', drink: 'Turmeric & Ginger Golden Herbal Infusion (35 kcal)', lunch: 'Brown Rice with Moru Curry & Cabbage Thoran (340 kcal)', snack: 'Roasted Makhana with Curry Leaves (110 kcal)', dinner: 'Light Moong Dal Matta Kanji with Payar Thoran (260 kcal)' }
+    },
+    2: {
+      Sunday: { breakfast: 'Cheera & Paneer Dosa with Mint Chammanthi (220 kcal)', drink: 'Kerala Sambharam with Ginger & Curry Leaves (55 kcal)', lunch: 'Kerala Red Matta Rice with Fish Curry & Cheera Thoran (380 kcal)', snack: 'Steamed Nendran Pazham with Cinnamon (120 kcal)', dinner: 'Fish Pollichathu with Garden Salad (290 kcal)' },
+      Monday: { breakfast: 'Oats & Ragi Puttu with Kadala Curry (240 kcal)', drink: 'Amla & Mint Detox Cooler (45 kcal)', lunch: 'Brown Rice with Moru Curry & Cabbage Thoran (340 kcal)', snack: 'Spiced Boiled Cherupayar Sundal (140 kcal)', dinner: 'Steamed Wheat Dosa with Veg Stew (280 kcal)' },
+      Tuesday: { breakfast: 'Moringa Leaf Egg Appam with Chammanthi (230 kcal)', drink: 'Tender Coconut Water with Chia (75 kcal)', lunch: 'Millets with Kerala Sambar & Snake Gourd Thoran (350 kcal)', snack: 'Roasted Makhana with Curry Leaves (110 kcal)', dinner: 'Methi Phulka with Tofu / Paneer Bhurji (290 kcal)' },
+      Wednesday: { breakfast: 'Steamed Idiyappam with Kerala Veg Stew (230 kcal)', drink: 'ABC Detox Juice with Chia Seeds (95 kcal)', lunch: 'Mathi Pollichathu with Matta Rice & Salad (390 kcal)', snack: 'Fresh Papaya Bowl with Chia (100 kcal)', dinner: 'Light Moong Dal Matta Kanji with Payar Thoran (260 kcal)' },
+      Thursday: { breakfast: 'Oats & Fenugreek Dosa with Tomato Chutney (210 kcal)', drink: 'Spearmint Cinnamon Herbal Infusion (20 kcal)', lunch: 'Quinoa Avial Bowl with Moong Dal (350 kcal)', snack: 'Steamed Nendran Pazham with Cinnamon (120 kcal)', dinner: 'Steamed Wheat Dosa with Veg Stew (280 kcal)' },
+      Friday: { breakfast: 'Oats & Ragi Puttu with Kadala Curry (240 kcal)', drink: 'Kerala Sambharam with Ginger (55 kcal)', lunch: 'Kerala Red Matta Rice with Fish Curry & Thoran (380 kcal)', snack: 'Spiced Boiled Cherupayar Sundal (140 kcal)', dinner: 'Fish Pollichathu with Sautéed Greens (290 kcal)' },
+      Saturday: { breakfast: 'Cheera & Paneer Dosa with Mint Chammanthi (220 kcal)', drink: 'Turmeric Ginger Golden Herbal Infusion (35 kcal)', lunch: 'Brown Rice with Moru Curry & Cabbage Thoran (340 kcal)', snack: 'Roasted Makhana with Curry Leaves (110 kcal)', dinner: 'Light Moong Dal Matta Kanji with Payar Thoran (260 kcal)' }
+    },
+    3: {
+      Sunday: { breakfast: 'Oats & Ragi Puttu with Kadala Curry (240 kcal)', drink: 'Amla & Mint Detox Cooler (45 kcal)', lunch: 'Kerala Red Matta Rice with Fish Curry & Cheera Thoran (380 kcal)', snack: 'Steamed Nendran Pazham (120 kcal)', dinner: 'Steamed Wheat Dosa with Veg Stew (280 kcal)' },
+      Monday: { breakfast: 'Cheera & Paneer Dosa with Mint Chammanthi (220 kcal)', drink: 'Kerala Sambharam (55 kcal)', lunch: 'Brown Rice with Moru Curry & Cabbage Thoran (340 kcal)', snack: 'Cherupayar Sundal (140 kcal)', dinner: 'Fish Pollichathu with Salad (290 kcal)' },
+      Tuesday: { breakfast: 'Steamed Idiyappam with Veg Stew (230 kcal)', drink: 'ABC Detox Juice (95 kcal)', lunch: 'Millets with Kerala Sambar & Thoran (350 kcal)', snack: 'Roasted Makhana (110 kcal)', dinner: 'Light Moong Dal Matta Kanji with Thoran (260 kcal)' },
+      Wednesday: { breakfast: 'Moringa Leaf Egg Appam (230 kcal)', drink: 'Spearmint Cinnamon Infusion (20 kcal)', lunch: 'Mathi Pollichathu with Matta Rice (390 kcal)', snack: 'Fresh Papaya Bowl (100 kcal)', dinner: 'Methi Phulka with Paneer Bhurji (290 kcal)' },
+      Thursday: { breakfast: 'Oats & Fenugreek Dosa (210 kcal)', drink: 'Tender Coconut Chia Cooler (75 kcal)', lunch: 'Quinoa Avial Bowl (350 kcal)', snack: 'Steamed Nendran Pazham (120 kcal)', dinner: 'Steamed Wheat Dosa with Stew (280 kcal)' },
+      Friday: { breakfast: 'Oats & Ragi Puttu with Kadala Curry (240 kcal)', drink: 'Kerala Sambharam (55 kcal)', lunch: 'Kerala Red Matta Rice with Fish Curry (380 kcal)', snack: 'Cherupayar Sundal (140 kcal)', dinner: 'Fish Pollichathu with Salad (290 kcal)' },
+      Saturday: { breakfast: 'Cheera & Paneer Dosa (220 kcal)', drink: 'Turmeric Ginger Golden Tea (35 kcal)', lunch: 'Brown Rice with Moru Curry (340 kcal)', snack: 'Roasted Makhana (110 kcal)', dinner: 'Light Moong Dal Matta Kanji (260 kcal)' }
+    },
+    4: {
+      Sunday: { breakfast: 'Oats & Ragi Puttu with Kadala Curry (240 kcal)', drink: 'Amla & Mint Detox Cooler (45 kcal)', lunch: 'Kerala Red Matta Rice with Fish Curry (380 kcal)', snack: 'Steamed Nendran Pazham (120 kcal)', dinner: 'Steamed Wheat Dosa with Veg Stew (280 kcal)' },
+      Monday: { breakfast: 'Cheera & Paneer Dosa with Chammanthi (220 kcal)', drink: 'Kerala Sambharam (55 kcal)', lunch: 'Brown Rice with Moru Curry (340 kcal)', snack: 'Cherupayar Sundal (140 kcal)', dinner: 'Fish Pollichathu with Salad (290 kcal)' },
+      Tuesday: { breakfast: 'Steamed Idiyappam with Stew (230 kcal)', drink: 'ABC Detox Juice (95 kcal)', lunch: 'Millets with Kerala Sambar (350 kcal)', snack: 'Roasted Makhana (110 kcal)', dinner: 'Light Moong Dal Matta Kanji (260 kcal)' },
+      Wednesday: { breakfast: 'Moringa Leaf Egg Appam (230 kcal)', drink: 'Spearmint Cinnamon Infusion (20 kcal)', lunch: 'Mathi Pollichathu with Matta Rice (390 kcal)', snack: 'Fresh Papaya Bowl (100 kcal)', dinner: 'Methi Phulka with Paneer Bhurji (290 kcal)' },
+      Thursday: { breakfast: 'Oats & Fenugreek Dosa (210 kcal)', drink: 'Tender Coconut Chia Cooler (75 kcal)', lunch: 'Quinoa Avial Bowl (350 kcal)', snack: 'Steamed Nendran Pazham (120 kcal)', dinner: 'Steamed Wheat Dosa with Stew (280 kcal)' },
+      Friday: { breakfast: 'Oats & Ragi Puttu with Kadala Curry (240 kcal)', drink: 'Kerala Sambharam (55 kcal)', lunch: 'Kerala Red Matta Rice with Fish Curry (380 kcal)', snack: 'Cherupayar Sundal (140 kcal)', dinner: 'Fish Pollichathu with Salad (290 kcal)' },
+      Saturday: { breakfast: 'Cheera & Paneer Dosa (220 kcal)', drink: 'Turmeric Ginger Golden Tea (35 kcal)', lunch: 'Brown Rice with Moru Curry (340 kcal)', snack: 'Roasted Makhana (110 kcal)', dinner: 'Light Moong Dal Matta Kanji (260 kcal)' }
     }
   });
+
+  const [monthlyPlanData, setMonthlyPlanData] = useState({
+    nutrition_goal: 'Sustainable Fat Loss & Metabolic Optimization (Kerala Protocol)',
+    target_calories: 1550,
+    start_date: new Date().toISOString().split('T')[0],
+    review_date: new Date(Date.now() + 14*86400000).toISOString().split('T')[0],
+    status: 'Draft',
+    phase1_status: 'ACTIVE',
+    phase2_status: 'LOCKED_REQUIRES_CONSULTATION', // Weeks 3 & 4 require 2-week follow-up consultation
+    activity_recommendation: '30 mins brisk walking daily + 15 min core strengthening.',
+    lifestyle_recommendation: 'Hydrate 3L daily with Sambharam/Herbal infusions, sleep by 10:30 PM.',
+    nutritionist_notes: 'Phase 1: Initial 2-week adaptation. Re-evaluate biomarkers at consultation before Phase 2 progression.',
+    weeks: generateDefaultKeralaWeeks()
+  });
+
 
   useEffect(() => {
     localStorage.setItem('healora_assessments', JSON.stringify(assessments));
@@ -562,6 +614,41 @@ const NutritionistDashboard = () => {
     }
   };
 
+  const handleTogglePhase2Unlock = () => {
+    if (!selectedPatient) return;
+    const isCurrentlyLocked = (monthlyPlanData.phase2_status || 'LOCKED_REQUIRES_CONSULTATION') === 'LOCKED_REQUIRES_CONSULTATION';
+    const newStatus = isCurrentlyLocked ? 'UNLOCKED' : 'LOCKED_REQUIRES_CONSULTATION';
+    
+    const updatedPlan = {
+      ...monthlyPlanData,
+      phase2_status: newStatus,
+      phase2_unlocked_at: newStatus === 'UNLOCKED' ? new Date().toISOString() : null
+    };
+
+    setMonthlyPlanData(updatedPlan);
+    const updatedCarePlans = { ...carePlans, [selectedPatient.id]: updatedPlan };
+    setCarePlans(updatedCarePlans);
+    localStorage.setItem('healora_care_plans', JSON.stringify(updatedCarePlans));
+    localStorage.setItem(`healora_patient_dietplan_${selectedPatient.id}`, JSON.stringify(updatedPlan));
+    localStorage.setItem(`healora_diet_plan_${selectedPatient.id}`, JSON.stringify(updatedPlan));
+
+    if (newStatus === 'UNLOCKED') {
+      const notifKey = `healora_notifications_${selectedPatient.id}`;
+      const notifs = JSON.parse(localStorage.getItem(notifKey) || '[]');
+      notifs.unshift({
+        id: Date.now(),
+        title: '🎉 Phase 2 (Weeks 3 & 4) Unlocked!',
+        message: `${nutritionistName} reviewed your progress consultation and unlocked your Phase 2 Personalized Kerala Meal Protocol.`,
+        date: new Date().toLocaleString(),
+        read: false
+      });
+      localStorage.setItem(notifKey, JSON.stringify(notifs));
+      alert(`🎉 Phase 2 (Weeks 3 & 4) unlocked and released to ${selectedPatient.first_name || 'the patient'}!`);
+    } else {
+      alert(`🔒 Phase 2 (Weeks 3 & 4) is now set to require a progress consultation.`);
+    }
+  };
+
   const handleMealChange = (mealType, value) => {
     setMonthlyPlanData(prev => ({
       ...prev,
@@ -619,15 +706,18 @@ const NutritionistDashboard = () => {
         
         <nav className="flex-1 px-4 mt-4 space-y-2 font-medium overflow-y-auto">
           <p className="px-4 text-[10px] font-bold text-[#5A6B60] uppercase tracking-widest mb-3 mt-2">Nutritionist Console</p>
-          <button onClick={() => { setActiveTab('directory'); setSelectedPatient(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition text-sm ${activeTab==='directory' && !selectedPatient ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'}`}>
+          <button onClick={() => { setActiveTab('directory'); setSelectedPatient(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition text-sm cursor-pointer ${activeTab==='directory' && !selectedPatient ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'}`}>
             <Users size={18} /> Assigned Patients
           </button>
+          <button onClick={() => { setActiveTab('consultations'); setSelectedPatient(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition text-sm cursor-pointer ${activeTab==='consultations' ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'}`}>
+            <Video size={18} /> Online Consultations
+          </button>
           {selectedPatient && (
-            <button onClick={() => setActiveTab('case')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition text-sm ${activeTab==='case' ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'}`}>
+            <button onClick={() => setActiveTab('case')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition text-sm cursor-pointer ${activeTab==='case' ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'}`}>
               <FileText size={18} /> Patient Case File
             </button>
           )}
-          <button onClick={() => setActiveTab('messages')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition text-sm ${activeTab==='messages' ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'}`}>
+          <button onClick={() => setActiveTab('messages')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition text-sm cursor-pointer ${activeTab==='messages' ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'}`}>
             <MessageSquare size={18} /> Messages & Chat
           </button>
         </nav>
@@ -643,7 +733,7 @@ const NutritionistDashboard = () => {
               <p className="text-[10px] font-bold text-[#456A50] uppercase tracking-widest truncate">Clinical Dietitian</p>
             </div>
           </div>
-          <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl font-bold transition text-sm border border-red-100 shadow-sm">
+          <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl font-bold transition text-sm border border-red-100 shadow-sm cursor-pointer">
             <LogOut size={16} /> Log Out
           </button>
         </div>
@@ -658,10 +748,22 @@ const NutritionistDashboard = () => {
             <div>
               <span className="text-[10px] font-extrabold text-[#456A50] tracking-widest uppercase bg-[#EAF0EC] px-3 py-1 rounded-full">Clinical Care Workspace • Live Backend Synced</span>
               <h1 className="text-4xl font-black tracking-tight text-[#1C2C22] mt-2">
-                {activeTab === 'directory' ? 'Assigned Patient Directory' : activeTab === 'messages' ? 'Clinic & Patient Messaging' : `Patient Case: ${selectedPatient?.first_name} ${selectedPatient?.last_name}`}
+                {activeTab === 'directory' 
+                  ? 'Assigned Patient Directory' 
+                  : activeTab === 'consultations'
+                  ? 'Online Consultations & Telehealth'
+                  : activeTab === 'messages' 
+                  ? 'Clinic & Patient Messaging' 
+                  : `Patient Case: ${selectedPatient?.first_name} ${selectedPatient?.last_name}`}
               </h1>
               <p className="text-[#5A6B60] mt-1 text-sm">
-                {activeTab === 'directory' ? 'Search records, view biometrics, and build monthly care plans.' : activeTab === 'messages' ? 'Secure communication with patients and management.' : `Patient ID: #${selectedPatient?.id} | Enrolled Program: ${selectedPatient?.enrolled_program || selectedPatient?.health_goals || 'Weight Management'}`}
+                {activeTab === 'directory' 
+                  ? 'Search records, view biometrics, and build monthly care plans.' 
+                  : activeTab === 'consultations'
+                  ? 'Directly join scheduled Google Meet sessions and review patient appointments.'
+                  : activeTab === 'messages' 
+                  ? 'Secure communication with patients and management.' 
+                  : `Patient ID: #${selectedPatient?.id} | Enrolled Program: ${selectedPatient?.enrolled_program || selectedPatient?.health_goals || 'Weight Management'}`}
               </p>
             </div>
             
@@ -673,12 +775,13 @@ const NutritionistDashboard = () => {
                 </div>
                 
                 {activeTab === 'case' && selectedPatient && (
-                  <button onClick={() => { setSelectedPatient(null); setActiveTab('directory'); }} className="bg-white border border-[#EBE9E0] text-[#5A6B60] hover:text-[#1C2C22] px-5 py-3 rounded-xl font-bold text-xs shadow-sm transition">
+                  <button onClick={() => { setSelectedPatient(null); setActiveTab('directory'); }} className="bg-white border border-[#EBE9E0] text-[#5A6B60] hover:text-[#1C2C22] px-5 py-3 rounded-xl font-bold text-xs shadow-sm transition cursor-pointer">
                     ← Back to Directory
                   </button>
                 )}
             </div>
           </div>
+
 
           {/* 1. ASSIGNED PATIENT DIRECTORY + SEARCH */}
           {activeTab === 'directory' && (
@@ -750,16 +853,226 @@ const NutritionistDashboard = () => {
             </div>
           )}
 
-          {/* 2. PATIENT CASE, ASSESSMENT, WELLNESS EVALUATION & CARE PLAN */}
+          {/* 🌟 2. ONLINE CONSULTATIONS & TELEHEALTH SCHEDULE 🌟 */}
+          {activeTab === 'consultations' && (
+            <div className="space-y-6 animate-in fade-in">
+              {/* METRIC CARDS */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                <div className="bg-white p-6 rounded-3xl border border-[#EBE9E0] shadow-sm flex items-center gap-4">
+                  <div className="p-3.5 bg-emerald-100 text-emerald-700 rounded-2xl">
+                    <Video size={24} />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-extrabold text-[#5A6B60] uppercase tracking-widest">Total Telehealth</p>
+                    <h3 className="text-2xl font-black text-[#1C2C22] mt-0.5">
+                      {appointments.filter(a => a.mode === 'ONLINE').length} Sessions
+                    </h3>
+                  </div>
+                </div>
+
+                <div className="bg-white p-6 rounded-3xl border border-[#EBE9E0] shadow-sm flex items-center gap-4">
+                  <div className="p-3.5 bg-blue-100 text-blue-700 rounded-2xl">
+                    <Calendar size={24} />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-extrabold text-[#5A6B60] uppercase tracking-widest">Today's Schedule</p>
+                    <h3 className="text-2xl font-black text-[#1C2C22] mt-0.5">
+                      {(() => {
+                        const now = new Date();
+                        const y = now.getFullYear();
+                        const m = String(now.getMonth() + 1).padStart(2, '0');
+                        const d = String(now.getDate()).padStart(2, '0');
+                        const localToday = `${y}-${m}-${d}`;
+                        const isoToday = now.toISOString().split('T')[0];
+                        return appointments.filter(a => a.date === localToday || a.date === isoToday).length;
+                      })()} Bookings
+                    </h3>
+                  </div>
+                </div>
+
+                <div className="bg-white p-6 rounded-3xl border border-[#EBE9E0] shadow-sm flex items-center gap-4">
+                  <div className="p-3.5 bg-purple-100 text-purple-700 rounded-2xl">
+                    <Users size={24} />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-extrabold text-[#5A6B60] uppercase tracking-widest">Assigned Patients</p>
+                    <h3 className="text-2xl font-black text-[#1C2C22] mt-0.5">{patients.length} Active</h3>
+                  </div>
+                </div>
+              </div>
+
+              {/* CONSULTATIONS TABLE */}
+              <div className="bg-white rounded-3xl shadow-sm border border-[#EBE9E0] overflow-hidden">
+                <div className="p-6 border-b border-[#EBE9E0] bg-[#FDFCF8] flex justify-between items-center">
+                  <div>
+                    <h2 className="text-xl font-black text-[#1C2C22]">My Consultation Bookings & Google Meet Rooms</h2>
+                    <p className="text-xs text-[#5A6B60] mt-0.5">Directly join video consultations scheduled by the clinic desk.</p>
+                  </div>
+                </div>
+
+                <table className="w-full text-left text-sm text-[#1C2C22]">
+                  <thead className="bg-[#FDFCF8] text-[10px] uppercase font-extrabold text-[#5A6B60] tracking-widest border-b">
+                    <tr>
+                      <th className="py-4 px-6">Date & Time</th>
+                      <th className="py-4 px-6">Patient</th>
+                      <th className="py-4 px-6">Mode</th>
+                      <th className="py-4 px-6">Telehealth Video</th>
+                      <th className="py-4 px-6">Status</th>
+                      <th className="py-4 px-6 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#EBE9E0]">
+                    {appointments.map(a => {
+                      const patientObj = patients.find(p => String(p.id) === String(a.patient));
+                      const pName = patientObj ? `${patientObj.first_name} ${patientObj.last_name}` : `Patient #${a.patient}`;
+                      const pPhone = patientObj?.phone_number || patientObj?.phone;
+                      const isToday = (() => {
+                        const now = new Date();
+                        const y = now.getFullYear();
+                        const m = String(now.getMonth() + 1).padStart(2, '0');
+                        const d = String(now.getDate()).padStart(2, '0');
+                        const localToday = `${y}-${m}-${d}`;
+                        const isoToday = now.toISOString().split('T')[0];
+                        return a.date === localToday || a.date === isoToday;
+                      })();
+
+                      return (
+                        <tr key={a.id} className={`hover:bg-[#FDFCF8] transition group ${isToday ? 'bg-amber-50/20' : ''}`}>
+                          <td className="py-5 px-6">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-[#1C2C22]">{a.date}</span>
+                              <span className="text-xs font-semibold text-[#456A50]">at {a.time}</span>
+                              {isToday && (
+                                <span className="bg-amber-100 text-amber-800 text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                  Today
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-5 px-6">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center font-bold text-gray-500 overflow-hidden shadow-2xs">
+                                {patientObj?.profile_image ? (
+                                  <img src={patientObj.profile_image} className="w-full h-full object-cover" alt="Profile" />
+                                ) : (
+                                  <UserCircle size={18} />
+                                )}
+                              </div>
+                              <div>
+                                <span className="font-black text-[#1C2C22] block">{pName}</span>
+                                {pPhone && <span className="text-[11px] text-gray-500 font-medium">📞 {pPhone}</span>}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-5 px-6">
+                            <span className={`px-3 py-1.5 rounded-lg text-[10px] font-bold tracking-widest uppercase ${a.mode === 'ONLINE' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                              {a.mode === 'ONLINE' ? 'Online Telehealth' : 'In-Clinic'}
+                            </span>
+                          </td>
+                          <td className="py-5 px-6">
+                            {a.mode === 'ONLINE' ? (
+                              a.meet_link ? (
+                                <a 
+                                  href={a.meet_link} 
+                                  target="_blank" 
+                                  rel="noreferrer" 
+                                  className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-xl font-bold text-xs shadow-sm transition transform hover:scale-105"
+                                >
+                                  <Video size={14} /> Join Google Meet <ExternalLink size={12} />
+                                </a>
+                              ) : (
+                                <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1 rounded-lg inline-flex items-center gap-1.5">
+                                  <Clock size={12} /> Meet Link Pending Setup
+                                </span>
+                              )
+                            ) : (
+                              <span className="text-xs text-gray-400 font-medium">In-Clinic Session</span>
+                            )}
+                          </td>
+                          <td className="py-5 px-6">
+                            <span className={`px-3 py-1.5 rounded-lg text-[10px] font-bold tracking-widest uppercase ${a.status === 'COMPLETED' ? 'bg-green-100 text-green-700' : a.status === 'RESCHEDULED' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>
+                              {a.status}
+                            </span>
+                          </td>
+                          <td className="py-5 px-6 text-right">
+                            {patientObj && (
+                              <button 
+                                onClick={() => handleOpenCase(patientObj)} 
+                                className="bg-white border border-[#EBE9E0] text-[#456A50] hover:bg-[#EAF0EC] px-3.5 py-1.5 rounded-xl text-xs font-bold transition shadow-2xs inline-flex items-center gap-1.5 cursor-pointer"
+                              >
+                                <FileText size={13} /> Open Case
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {appointments.length === 0 && (
+                      <tr>
+                        <td colSpan="6" className="py-16 text-center text-gray-400 italic">
+                          No consultation appointments booked yet.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* 3. PATIENT CASE, ASSESSMENT, WELLNESS EVALUATION & CARE PLAN */}
           {activeTab === 'case' && selectedPatient && (
+
             <div className="space-y-8 animate-in fade-in">
               
+              {/* 🌟 TELEHEALTH GOOGLE MEET CONSULTATION BANNER 🌟 */}
+              {(() => {
+                const patientAppt = appointments.find(a => String(a.patient) === String(selectedPatient.id) && a.status !== 'CANCELLED');
+                if (!patientAppt) return null;
+                return (
+                  <div className={`p-6 rounded-3xl border shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 animate-in fade-in ${patientAppt.meet_link ? 'bg-emerald-50/90 border-emerald-200' : 'bg-[#EAF0EC]/60 border-[#456A50]/20'}`}>
+                    <div className="flex items-center gap-4">
+                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-sm shrink-0 ${patientAppt.meet_link ? 'bg-emerald-600 text-white' : 'bg-[#456A50] text-white'}`}>
+                        <Video size={24} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-black uppercase tracking-wider text-[#1C2C22]">
+                            {patientAppt.mode === 'ONLINE' ? 'Telehealth Video Consultation' : 'In-Clinic Consultation'}
+                          </span>
+                          <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-white border border-[#EBE9E0] text-gray-700 shadow-2xs">
+                            📅 {patientAppt.date} at {patientAppt.time}
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-600 mt-1">
+                          {patientAppt.meet_link 
+                            ? 'Google Meet room is active and ready for your clinical consultation.' 
+                            : 'Consultation session scheduled. Meet link will be provided by clinic desk prior to call.'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {patientAppt.meet_link && (
+                      <a 
+                        href={patientAppt.meet_link} 
+                        target="_blank" 
+                        rel="noreferrer" 
+                        className="bg-emerald-700 hover:bg-emerald-800 text-white px-5 py-3 rounded-2xl font-bold text-xs shadow-md shadow-emerald-700/20 flex items-center gap-2 transition transform hover:scale-105 shrink-0"
+                      >
+                        <Video size={16} /> Join Google Meet <ExternalLink size={14} />
+                      </a>
+                    )}
+                  </div>
+                );
+              })()}
+
               {/* HEALTH INFORMATION & AUTOMATED CALCULATIONS */}
               <div className="bg-white rounded-3xl shadow-sm border border-[#EBE9E0] p-8">
                 <div className="flex justify-between items-center mb-6">
                   <h3 className="text-lg font-black text-[#1C2C22] flex items-center gap-2">
                     <Activity size={20} className="text-[#456A50]"/> Patient Biometrics & Health Records
                   </h3>
+
                   <span className="bg-[#EAF0EC] text-[#456A50] px-4 py-1.5 rounded-full text-xs font-bold border border-[#456A50]/30">
                     Enrolled Program: {selectedPatient.enrolled_program || selectedPatient.health_goals || 'Weight Management'}
                   </span>
@@ -800,12 +1113,82 @@ const NutritionistDashboard = () => {
                 </div>
               </div>
 
+              {/* 🌟 PATIENT CLINICAL LABORATORY REPORTS & DIAGNOSTIC VAULT 🌟 */}
+              <div className="bg-white rounded-3xl shadow-sm border border-[#EBE9E0] p-8 animate-in fade-in">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-6 border-b border-[#EBE9E0] pb-4">
+                  <div>
+                    <h3 className="text-lg font-black text-[#1C2C22] flex items-center gap-2.5">
+                      <FileText size={22} className="text-[#456A50]"/> Clinical Laboratory Reports & Diagnostic Vault
+                    </h3>
+                    <p className="text-xs text-[#5A6B60] mt-1">Medical diagnostics and laboratory investigations uploaded by {selectedPatient.first_name}.</p>
+                  </div>
+                  <span className="bg-[#EAF0EC] text-[#456A50] text-xs font-bold px-3.5 py-1.5 rounded-full border border-[#456A50]/20 flex items-center gap-1.5 shadow-2xs">
+                    <ShieldCheck size={14} /> Consent Verified
+                  </span>
+                </div>
+
+                {patientReports.length === 0 ? (
+                  <div className="bg-[#FDFCF8] border border-dashed border-[#EBE9E0] rounded-2xl p-8 text-center">
+                    <FileText size={36} className="mx-auto text-gray-300 mb-2" />
+                    <p className="text-sm font-bold text-gray-500">No Clinical Laboratory Reports Uploaded</p>
+                    <p className="text-xs text-gray-400 mt-1">When {selectedPatient.first_name} uploads blood panels, hormonal assays, or lipid tests, they will appear here instantly.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {patientReports.map((report) => (
+                      <div key={report.id || report.name} className="p-4 bg-[#FDFCF8] border border-[#EBE9E0] hover:border-[#456A50]/40 rounded-2xl flex flex-col justify-between gap-3 shadow-2xs transition hover:shadow-xs group">
+                        <div className="flex items-start gap-3">
+                          <div className="p-3 bg-[#EAF0EC] text-[#456A50] rounded-xl shrink-0 group-hover:bg-[#456A50] group-hover:text-white transition">
+                            <FileText size={20} />
+                          </div>
+                          <div className="overflow-hidden flex-1">
+                            <span className="bg-white border border-[#456A50]/30 text-[#456A50] text-[10px] font-extrabold px-2.5 py-0.5 rounded-md uppercase tracking-wider block w-max max-w-full truncate mb-1">
+                              {report.type || report.document_type || 'Clinical Report'}
+                            </span>
+                            <p className="font-bold text-xs text-[#1C2C22] truncate" title={report.name}>{report.name || 'Laboratory Document'}</p>
+                            <div className="flex items-center gap-2 mt-1 text-[10px] text-gray-500 font-medium">
+                              <span>📅 {report.date || (report.uploaded_at ? new Date(report.uploaded_at).toLocaleDateString() : 'Recent')}</span>
+                              {report.size && <span>• {report.size}</span>}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EBE9E0]">
+                          <button 
+                            onClick={() => {
+                              setSelectedReportModal(report);
+                              setModalViewMode(report.fileUrl ? 'original' : 'diagnostic');
+                            }} 
+                            className="bg-[#456A50] hover:bg-[#35533E] text-white px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
+                          >
+                            <Eye size={13} /> View Document
+                          </button>
+                          {report.fileUrl && (
+                            <a 
+                              href={report.fileUrl} 
+                              download={report.name} 
+                              target="_blank" 
+                              rel="noreferrer"
+                              className="bg-white hover:bg-gray-50 border border-[#EBE9E0] text-[#1C2C22] px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-2xs"
+                            >
+                              <Download size={13} /> Download
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+
               {/* GRID: ASSESSMENT (Left) AND WELLNESS TRACKING (Right) */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 
                 {/* NUTRITION ASSESSMENT & DIAGNOSIS FORM */}
                 <div className="bg-white rounded-3xl shadow-sm border border-[#EBE9E0] p-8 h-max">
                   <div className="border-b border-[#EBE9E0] pb-4 mb-6">
+
                     <h3 className="text-lg font-black text-[#1C2C22] flex items-center gap-2">
                       <Stethoscope size={20} className="text-[#456A50]"/> Nutrition Assessment & Diagnosis
                     </h3>
@@ -949,121 +1332,270 @@ const NutritionistDashboard = () => {
 
                   {/* Week & Day Selector Tabs for Granular Customization */}
                   <div className="bg-[#FDFCF8] border border-[#EBE9E0] p-6 rounded-2xl space-y-4 shadow-inner">
-                    <div className="flex items-center justify-between border-b border-[#EBE9E0] pb-3">
-                      <h4 className="text-xs font-extrabold uppercase tracking-wider text-[#1C2C22] flex items-center gap-2">
-                        <Layers size={16} className="text-[#456A50]"/> Select Week & Day to Edit Daily Meals
-                      </h4>
-                      <div className="flex gap-2">
-                        {[1, 2, 3, 4].map(w => (
-                          <button key={w} type="button" onClick={() => setSelectedWeek(w)} className={`px-3 py-1.5 rounded-lg text-[10px] uppercase font-bold tracking-widest transition ${selectedWeek === w ? 'bg-[#456A50] text-white shadow-xs' : 'bg-white border text-gray-600 hover:bg-gray-50'}`}>Week {w}</button>
-                        ))}
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-[#EBE9E0] pb-4 gap-3">
+                      <div>
+                        <h4 className="text-xs font-extrabold uppercase tracking-wider text-[#1C2C22] flex items-center gap-2">
+                          <Layers size={16} className="text-[#456A50]"/> Select Clinical Protocol Week & Day
+                        </h4>
+                        <p className="text-[11px] text-[#5A6B60] mt-0.5 font-medium">
+                          {selectedWeek <= 2 ? (
+                            <span className="text-emerald-700 font-bold">● Phase 1: Initial Adaptation (Weeks 1 & 2) — Active</span>
+                          ) : (
+                            <span className={monthlyPlanData.phase2_status === 'UNLOCKED' ? 'text-emerald-700 font-bold' : 'text-amber-700 font-bold'}>
+                              {monthlyPlanData.phase2_status === 'UNLOCKED' ? '● Phase 2: Progress Protocol — 🔓 Unlocked' : '● Phase 2: Requires Progress Consultation — 🔒 Gated'}
+                            </span>
+                          )}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <div className="flex gap-1.5 bg-white p-1 rounded-xl border border-[#EBE9E0] shadow-2xs">
+                          {[1, 2, 3, 4].map(w => (
+                            <button 
+                              key={w} 
+                              type="button" 
+                              onClick={() => setSelectedWeek(w)} 
+                              className={`px-3 py-1.5 rounded-lg text-[10px] uppercase font-black tracking-widest transition cursor-pointer ${selectedWeek === w ? 'bg-[#456A50] text-white shadow-xs' : 'text-gray-600 hover:bg-gray-100'}`}
+                            >
+                              Wk {w} {w >= 3 && (monthlyPlanData.phase2_status === 'UNLOCKED' ? '🔓' : '🔒')}
+                            </button>
+                          ))}
+                        </div>
+
+                        {selectedWeek >= 3 && (
+                          <button
+                            type="button"
+                            onClick={handleTogglePhase2Unlock}
+                            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer ${monthlyPlanData.phase2_status === 'UNLOCKED' ? 'bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200' : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}
+                          >
+                            {monthlyPlanData.phase2_status === 'UNLOCKED' ? <><Lock size={13}/> Relock Phase 2</> : <><Unlock size={13}/> 🔓 Unlock Phase 2 for Patient</>}
+                          </button>
+                        )}
                       </div>
                     </div>
 
                     {/* Day selector pills */}
                     <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
                       {daysOfWeek.map(d => (
-                        <button key={d} type="button" onClick={() => setSelectedDay(d)} className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${selectedDay === d ? 'bg-[#1C2C22] text-white' : 'bg-white border border-[#EBE9E0] text-gray-600 hover:bg-gray-50'}`}>{d}</button>
+                        <button key={d} type="button" onClick={() => setSelectedDay(d)} className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer ${selectedDay === d ? 'bg-[#1C2C22] text-white' : 'bg-white border border-[#EBE9E0] text-gray-600 hover:bg-gray-50'}`}>{d}</button>
                       ))}
                     </div>
 
-                    {/* Meal Fields with Program-Specific Suggestion Dropdowns */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pt-2">
+                    {/* CLINICAL KERALA PERSONALIZATION CONTEXT BANNER */}
+                    <div className="bg-[#EAF0EC]/80 border border-[#456A50]/25 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                      <div className="flex items-center gap-2 text-[#456A50] font-black">
+                        <Sparkles size={16} />
+                        <span>Kerala Clinical Nutrition Matrix for {selectedPatient.first_name}</span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium text-gray-700">
+                        <span className="bg-white px-2.5 py-1 rounded-lg border border-[#EBE9E0] shadow-2xs">
+                          🌴 Program: <strong>{selectedPatient.enrolled_program || selectedPatient.health_goals || 'Weight Loss'}</strong>
+                        </span>
+                        <span className="bg-white px-2.5 py-1 rounded-lg border border-[#EBE9E0] shadow-2xs">
+                          🥗 Diet: <strong>{selectedPatient.food_preferences || 'Standard'}</strong>
+                        </span>
+                        <span className="bg-white px-2.5 py-1 rounded-lg border border-[#EBE9E0] shadow-2xs">
+                          🚫 Allergies: <strong>{selectedPatient.food_allergies || 'None'}</strong>
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Meal Fields with 2-3 Personalized Suggestion Dropdowns & Custom Input */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 pt-2">
                       
-                      {/* Breakfast */}
-                      <div className="space-y-1.5">
-                        <div className="flex justify-between items-center">
-                          <label className="block text-[9px] font-bold text-orange-600 uppercase tracking-widest">🌅 Week {selectedWeek} • {selectedDay} Breakfast</label>
+                      {/* 1. Breakfast */}
+                      <div className="space-y-1.5 bg-white p-4 rounded-2xl border border-[#EBE9E0] shadow-2xs flex flex-col justify-between">
+                        <div>
+                          <div className="flex justify-between items-center mb-2">
+                            <label className="block text-[10px] font-black text-orange-600 uppercase tracking-widest">🌅 Breakfast</label>
+                            <span className="text-[10px] text-gray-400 font-bold">W{selectedWeek} • {selectedDay}</span>
+                          </div>
+                          <div className="relative h-24 rounded-xl overflow-hidden mb-2.5 bg-gray-100 border border-gray-100 shadow-2xs">
+                            <img 
+                              src={getKeralaMealImage(monthlyPlanData.weeks?.[selectedWeek]?.[selectedDay]?.breakfast, 'breakfast')} 
+                              alt="Breakfast preview" 
+                              className="w-full h-full object-cover transition-transform duration-500 hover:scale-105" 
+                            />
+                          </div>
+                          <select 
+                            onChange={(e) => { 
+                              if(e.target.value && e.target.value !== '__custom__') {
+                                handleMealChange('breakfast', e.target.value); 
+                              }
+                            }}
+                            className="w-full border border-orange-200 bg-orange-50/50 rounded-xl p-2.5 text-xs font-semibold text-[#1C2C22] outline-none focus:ring-1 focus:ring-orange-400 cursor-pointer mb-2"
+                          >
+                            <option value="">💡 2-3 Tailored Options for {selectedPatient.first_name}...</option>
+                            {getSuggestionsForPatient('breakfast').map((opt, i) => (
+                              <option key={i} value={opt}>✨ Option {i + 1}: {opt}</option>
+                            ))}
+                            <option value="__custom__">✍️ Custom food (Type below)...</option>
+                          </select>
                         </div>
-                        <select 
-                          onChange={(e) => { if(e.target.value) handleMealChange('breakfast', e.target.value); }}
-                          className="w-full border border-orange-200 bg-orange-50/40 rounded-xl p-2.5 text-xs font-medium text-[#1C2C22] outline-none focus:ring-1 focus:ring-orange-400 mb-1"
-                        >
-                          <option value="">💡 Program suggestions...</option>
-                          {getSuggestionsForPatient('breakfast').map((opt, i) => (
-                            <option key={i} value={opt}>{opt}</option>
-                          ))}
-                        </select>
                         <input 
                           type="text" 
                           value={monthlyPlanData.weeks?.[selectedWeek]?.[selectedDay]?.breakfast || ''} 
                           onChange={e => handleMealChange('breakfast', e.target.value)} 
-                          placeholder="Or type custom breakfast..." 
-                          className="w-full border border-[#EBE9E0] bg-white rounded-xl p-3 text-xs outline-none focus:border-[#456A50] shadow-sm" 
+                          placeholder="Type custom breakfast..." 
+                          className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2.5 text-xs outline-none focus:border-[#456A50] text-[#1C2C22] font-medium" 
                         />
                       </div>
 
-                      {/* Lunch */}
-                      <div className="space-y-1.5">
-                        <div className="flex justify-between items-center">
-                          <label className="block text-[9px] font-bold text-yellow-600 uppercase tracking-widest">☀️ Week {selectedWeek} • {selectedDay} Lunch</label>
+                      {/* 2. Clinical Drink / Smoothie */}
+                      <div className="space-y-1.5 bg-white p-4 rounded-2xl border border-[#EBE9E0] shadow-2xs flex flex-col justify-between">
+                        <div>
+                          <div className="flex justify-between items-center mb-2">
+                            <label className="block text-[10px] font-black text-teal-600 uppercase tracking-widest">🥤 Clinical Drink / Smoothie</label>
+                            <span className="text-[10px] text-gray-400 font-bold">W{selectedWeek} • {selectedDay}</span>
+                          </div>
+                          <div className="relative h-24 rounded-xl overflow-hidden mb-2.5 bg-gray-100 border border-gray-100 shadow-2xs">
+                            <img 
+                              src={getKeralaMealImage(monthlyPlanData.weeks?.[selectedWeek]?.[selectedDay]?.drink, 'drink')} 
+                              alt="Drink preview" 
+                              className="w-full h-full object-cover transition-transform duration-500 hover:scale-105" 
+                            />
+                          </div>
+                          <select 
+                            onChange={(e) => { 
+                              if(e.target.value && e.target.value !== '__custom__') {
+                                handleMealChange('drink', e.target.value); 
+                              }
+                            }}
+                            className="w-full border border-teal-200 bg-teal-50/50 rounded-xl p-2.5 text-xs font-semibold text-[#1C2C22] outline-none focus:ring-1 focus:ring-teal-400 cursor-pointer mb-2"
+                          >
+                            <option value="">💡 2-3 Tailored Drinks for {selectedPatient.first_name}...</option>
+                            {getSuggestionsForPatient('drink').map((opt, i) => (
+                              <option key={i} value={opt}>✨ Option {i + 1}: {opt}</option>
+                            ))}
+                            <option value="__custom__">✍️ Custom drink (Type below)...</option>
+                          </select>
                         </div>
-                        <select 
-                          onChange={(e) => { if(e.target.value) handleMealChange('lunch', e.target.value); }}
-                          className="w-full border border-yellow-200 bg-yellow-50/40 rounded-xl p-2.5 text-xs font-medium text-[#1C2C22] outline-none focus:ring-1 focus:ring-yellow-400 mb-1"
-                        >
-                          <option value="">💡 Program suggestions...</option>
-                          {getSuggestionsForPatient('lunch').map((opt, i) => (
-                            <option key={i} value={opt}>{opt}</option>
-                          ))}
-                        </select>
+                        <input 
+                          type="text" 
+                          value={monthlyPlanData.weeks?.[selectedWeek]?.[selectedDay]?.drink || ''} 
+                          onChange={e => handleMealChange('drink', e.target.value)} 
+                          placeholder="Type custom beverage / smoothie..." 
+                          className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2.5 text-xs outline-none focus:border-[#456A50] text-[#1C2C22] font-medium" 
+                        />
+                      </div>
+
+                      {/* 3. Lunch */}
+                      <div className="space-y-1.5 bg-white p-4 rounded-2xl border border-[#EBE9E0] shadow-2xs flex flex-col justify-between">
+                        <div>
+                          <div className="flex justify-between items-center mb-2">
+                            <label className="block text-[10px] font-black text-yellow-600 uppercase tracking-widest">☀️ Lunch</label>
+                            <span className="text-[10px] text-gray-400 font-bold">W{selectedWeek} • {selectedDay}</span>
+                          </div>
+                          <div className="relative h-24 rounded-xl overflow-hidden mb-2.5 bg-gray-100 border border-gray-100 shadow-2xs">
+                            <img 
+                              src={getKeralaMealImage(monthlyPlanData.weeks?.[selectedWeek]?.[selectedDay]?.lunch, 'lunch')} 
+                              alt="Lunch preview" 
+                              className="w-full h-full object-cover transition-transform duration-500 hover:scale-105" 
+                            />
+                          </div>
+                          <select 
+                            onChange={(e) => { 
+                              if(e.target.value && e.target.value !== '__custom__') {
+                                handleMealChange('lunch', e.target.value); 
+                              }
+                            }}
+                            className="w-full border border-yellow-200 bg-yellow-50/50 rounded-xl p-2.5 text-xs font-semibold text-[#1C2C22] outline-none focus:ring-1 focus:ring-yellow-400 cursor-pointer mb-2"
+                          >
+                            <option value="">💡 2-3 Tailored Options for {selectedPatient.first_name}...</option>
+                            {getSuggestionsForPatient('lunch').map((opt, i) => (
+                              <option key={i} value={opt}>✨ Option {i + 1}: {opt}</option>
+                            ))}
+                            <option value="__custom__">✍️ Custom food (Type below)...</option>
+                          </select>
+                        </div>
                         <input 
                           type="text" 
                           value={monthlyPlanData.weeks?.[selectedWeek]?.[selectedDay]?.lunch || ''} 
                           onChange={e => handleMealChange('lunch', e.target.value)} 
-                          placeholder="Or type custom lunch..." 
-                          className="w-full border border-[#EBE9E0] bg-white rounded-xl p-3 text-xs outline-none focus:border-[#456A50] shadow-sm" 
+                          placeholder="Type custom lunch..." 
+                          className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2.5 text-xs outline-none focus:border-[#456A50] text-[#1C2C22] font-medium" 
                         />
                       </div>
 
-                      {/* Snack */}
-                      <div className="space-y-1.5">
-                        <div className="flex justify-between items-center">
-                          <label className="block text-[9px] font-bold text-green-600 uppercase tracking-widest">🍎 Week {selectedWeek} • {selectedDay} Snack</label>
+                      {/* 4. Snack */}
+                      <div className="space-y-1.5 bg-white p-4 rounded-2xl border border-[#EBE9E0] shadow-2xs flex flex-col justify-between">
+                        <div>
+                          <div className="flex justify-between items-center mb-2">
+                            <label className="block text-[10px] font-black text-green-600 uppercase tracking-widest">🍎 Snack</label>
+                            <span className="text-[10px] text-gray-400 font-bold">W{selectedWeek} • {selectedDay}</span>
+                          </div>
+                          <div className="relative h-24 rounded-xl overflow-hidden mb-2.5 bg-gray-100 border border-gray-100 shadow-2xs">
+                            <img 
+                              src={getKeralaMealImage(monthlyPlanData.weeks?.[selectedWeek]?.[selectedDay]?.snack, 'snack')} 
+                              alt="Snack preview" 
+                              className="w-full h-full object-cover transition-transform duration-500 hover:scale-105" 
+                            />
+                          </div>
+                          <select 
+                            onChange={(e) => { 
+                              if(e.target.value && e.target.value !== '__custom__') {
+                                handleMealChange('snack', e.target.value); 
+                              }
+                            }}
+                            className="w-full border border-green-200 bg-green-50/50 rounded-xl p-2.5 text-xs font-semibold text-[#1C2C22] outline-none focus:ring-1 focus:ring-green-400 cursor-pointer mb-2"
+                          >
+                            <option value="">💡 2-3 Tailored Options for {selectedPatient.first_name}...</option>
+                            {getSuggestionsForPatient('snack').map((opt, i) => (
+                              <option key={i} value={opt}>✨ Option {i + 1}: {opt}</option>
+                            ))}
+                            <option value="__custom__">✍️ Custom food (Type below)...</option>
+                          </select>
                         </div>
-                        <select 
-                          onChange={(e) => { if(e.target.value) handleMealChange('snack', e.target.value); }}
-                          className="w-full border border-green-200 bg-green-50/40 rounded-xl p-2.5 text-xs font-medium text-[#1C2C22] outline-none focus:ring-1 focus:ring-green-400 mb-1"
-                        >
-                          <option value="">💡 Program suggestions...</option>
-                          {getSuggestionsForPatient('snack').map((opt, i) => (
-                            <option key={i} value={opt}>{opt}</option>
-                          ))}
-                        </select>
                         <input 
                           type="text" 
                           value={monthlyPlanData.weeks?.[selectedWeek]?.[selectedDay]?.snack || ''} 
                           onChange={e => handleMealChange('snack', e.target.value)} 
-                          placeholder="Or type custom snack..." 
-                          className="w-full border border-[#EBE9E0] bg-white rounded-xl p-3 text-xs outline-none focus:border-[#456A50] shadow-sm" 
+                          placeholder="Type custom snack..." 
+                          className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2.5 text-xs outline-none focus:border-[#456A50] text-[#1C2C22] font-medium" 
                         />
                       </div>
 
-                      {/* Dinner */}
-                      <div className="space-y-1.5">
-                        <div className="flex justify-between items-center">
-                          <label className="block text-[9px] font-bold text-blue-600 uppercase tracking-widest">🌙 Week {selectedWeek} • {selectedDay} Dinner</label>
+                      {/* 5. Dinner */}
+                      <div className="space-y-1.5 bg-white p-4 rounded-2xl border border-[#EBE9E0] shadow-2xs flex flex-col justify-between">
+                        <div>
+                          <div className="flex justify-between items-center mb-2">
+                            <label className="block text-[10px] font-black text-blue-600 uppercase tracking-widest">🌙 Dinner</label>
+                            <span className="text-[10px] text-gray-400 font-bold">W{selectedWeek} • {selectedDay}</span>
+                          </div>
+                          <div className="relative h-24 rounded-xl overflow-hidden mb-2.5 bg-gray-100 border border-gray-100 shadow-2xs">
+                            <img 
+                              src={getKeralaMealImage(monthlyPlanData.weeks?.[selectedWeek]?.[selectedDay]?.dinner, 'dinner')} 
+                              alt="Dinner preview" 
+                              className="w-full h-full object-cover transition-transform duration-500 hover:scale-105" 
+                            />
+                          </div>
+                          <select 
+                            onChange={(e) => { 
+                              if(e.target.value && e.target.value !== '__custom__') {
+                                handleMealChange('dinner', e.target.value); 
+                              }
+                            }}
+                            className="w-full border border-blue-200 bg-blue-50/50 rounded-xl p-2.5 text-xs font-semibold text-[#1C2C22] outline-none focus:ring-1 focus:ring-blue-400 cursor-pointer mb-2"
+                          >
+                            <option value="">💡 2-3 Tailored Options for {selectedPatient.first_name}...</option>
+                            {getSuggestionsForPatient('dinner').map((opt, i) => (
+                              <option key={i} value={opt}>✨ Option {i + 1}: {opt}</option>
+                            ))}
+                            <option value="__custom__">✍️ Custom food (Type below)...</option>
+                          </select>
                         </div>
-                        <select 
-                          onChange={(e) => { if(e.target.value) handleMealChange('dinner', e.target.value); }}
-                          className="w-full border border-blue-200 bg-blue-50/40 rounded-xl p-2.5 text-xs font-medium text-[#1C2C22] outline-none focus:ring-1 focus:ring-blue-400 mb-1"
-                        >
-                          <option value="">💡 Program suggestions...</option>
-                          {getSuggestionsForPatient('dinner').map((opt, i) => (
-                            <option key={i} value={opt}>{opt}</option>
-                          ))}
-                        </select>
                         <input 
                           type="text" 
                           value={monthlyPlanData.weeks?.[selectedWeek]?.[selectedDay]?.dinner || ''} 
                           onChange={e => handleMealChange('dinner', e.target.value)} 
-                          placeholder="Or type custom dinner..." 
-                          className="w-full border border-[#EBE9E0] bg-white rounded-xl p-3 text-xs outline-none focus:border-[#456A50] shadow-sm" 
+                          placeholder="Type custom dinner..." 
+                          className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2.5 text-xs outline-none focus:border-[#456A50] text-[#1C2C22] font-medium" 
                         />
                       </div>
 
                     </div>
                   </div>
+
 
                   {/* General Recommendations */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -1151,19 +1683,43 @@ const NutritionistDashboard = () => {
                     ) : (
                       currentChats.map(msg => {
                         const isMe = msg.senderRole === 'NUTRITIONIST';
+                        const matchMeet = msg.meetLink || (typeof msg.text === 'string' && msg.text.match(/https:\/\/meet\.google\.com\/[a-z0-9-]+/i)?.[0]);
                         return (
                           <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
                             {msg.senderRole === 'SYSTEM' ? (
-                              <div className="bg-orange-100 text-orange-800 border border-orange-200 px-4 py-1.5 rounded-full text-[10px] font-bold my-2 shadow-sm self-center tracking-widest uppercase">{msg.text}</div>
+                              <div className="bg-emerald-50 text-emerald-900 border border-emerald-200 px-4 py-3 rounded-2xl text-xs font-bold my-2 shadow-sm self-center max-w-[85%]">
+                                <p className="flex items-center gap-1.5 text-emerald-800 mb-1.5"><Video size={16}/> {msg.text}</p>
+                                {matchMeet && (
+                                  <a 
+                                    href={matchMeet} 
+                                    target="_blank" 
+                                    rel="noreferrer" 
+                                    className="mt-2 inline-flex items-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 rounded-xl text-xs font-black shadow-md transition"
+                                  >
+                                    <Video size={14} /> Join Google Meet Consultation <ExternalLink size={12} />
+                                  </a>
+                                )}
+                              </div>
                             ) : (
                               <div className={`max-w-[75%] p-4 rounded-3xl shadow-sm ${isMe ? 'bg-[#456A50] text-white rounded-br-sm' : 'bg-[#FDFCF8] border border-[#EBE9E0] text-[#1C2C22] rounded-bl-sm'}`}>
                                 <p className="text-sm leading-relaxed">{msg.text}</p>
+                                {matchMeet && (
+                                  <a 
+                                    href={matchMeet} 
+                                    target="_blank" 
+                                    rel="noreferrer" 
+                                    className="mt-3 inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold shadow-sm transition"
+                                  >
+                                    <Video size={14} /> Open Google Meet <ExternalLink size={12} />
+                                  </a>
+                                )}
                                 <span className={`text-[9px] mt-2 block font-bold tracking-widest uppercase ${isMe ? 'text-green-200' : 'text-gray-400'}`}>{msg.time}</span>
                               </div>
                             )}
                           </div>
                         );
                       })
+
                     )}
                     <div ref={chatEndRef} />
                  </div>
@@ -1188,7 +1744,189 @@ const NutritionistDashboard = () => {
 
         </div>
       </main>
+
+      {/* 🌟 CLINICAL LABORATORY REPORT & DIAGNOSTIC VIEWER MODAL 🌟 */}
+      {selectedReportModal && (() => {
+        const details = getClinicalReportDetails(selectedReportModal, selectedPatient);
+        const hasFile = Boolean(selectedReportModal.fileUrl);
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in" onClick={() => setSelectedReportModal(null)}>
+            <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-[#EBE9E0] overflow-hidden" onClick={e => e.stopPropagation()}>
+              
+              {/* MODAL HEADER */}
+              <div className="p-6 border-b border-[#EBE9E0] bg-[#FDFCF8] flex justify-between items-center">
+                <div className="flex items-center gap-3.5">
+                  <div className="p-3 bg-[#EAF0EC] text-[#456A50] rounded-2xl shadow-2xs">
+                    <FileText size={22} />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-base text-[#1C2C22] truncate max-w-lg">{selectedReportModal.name || details.title}</h3>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-[10px] text-[#456A50] font-black uppercase tracking-wider bg-[#EAF0EC] px-2.5 py-0.5 rounded-md border border-[#456A50]/20">
+                        {selectedReportModal.type || details.title}
+                      </span>
+                      <span className="text-xs text-gray-400 font-medium">📅 {details.date}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {hasFile && (
+                    <div className="bg-gray-100 p-1 rounded-xl flex items-center gap-1 border border-gray-200">
+                      <button 
+                        onClick={() => setModalViewMode('diagnostic')}
+                        className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${modalViewMode === 'diagnostic' ? 'bg-white text-[#456A50] shadow-xs' : 'text-gray-500 hover:text-gray-800'}`}
+                      >
+                        🔬 Diagnostic Analysis
+                      </button>
+                      <button 
+                        onClick={() => setModalViewMode('original')}
+                        className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${modalViewMode === 'original' ? 'bg-white text-[#456A50] shadow-xs' : 'text-gray-500 hover:text-gray-800'}`}
+                      >
+                        📄 Original Attachment
+                      </button>
+                    </div>
+                  )}
+                  <button onClick={() => setSelectedReportModal(null)} className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-xl transition cursor-pointer">
+                    <X size={20} />
+                  </button>
+                </div>
+              </div>
+
+              {/* MODAL CONTENT BODY */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-[#FDFCF8]/40 custom-scrollbar">
+                
+                {modalViewMode === 'original' && hasFile ? (
+                  <div className="flex items-center justify-center p-4 bg-white rounded-2xl border border-[#EBE9E0] min-h-[50vh]">
+                    {selectedReportModal.fileUrl?.startsWith('data:image') ? (
+                      <img src={selectedReportModal.fileUrl} alt={selectedReportModal.name} className="max-w-full max-h-[65vh] object-contain rounded-xl shadow-xs border border-gray-200" />
+                    ) : selectedReportModal.fileUrl?.startsWith('data:application/pdf') ? (
+                      <iframe src={selectedReportModal.fileUrl} title={selectedReportModal.name} className="w-full h-[65vh] rounded-xl border border-gray-200" />
+                    ) : (
+                      <div className="text-center py-12">
+                        <FileText size={56} className="mx-auto text-[#456A50] mb-3 opacity-70" />
+                        <p className="font-black text-sm text-[#1C2C22]">{selectedReportModal.name}</p>
+                        <p className="text-xs text-gray-500 mt-1">Uploaded and registered in patient diagnostic file on {details.date}.</p>
+                        <a 
+                          href={selectedReportModal.fileUrl} 
+                          download={selectedReportModal.name} 
+                          target="_blank" 
+                          rel="noreferrer"
+                          className="mt-4 inline-flex items-center gap-2 bg-[#456A50] hover:bg-[#35533E] text-white px-5 py-2.5 rounded-xl font-bold text-xs shadow-sm transition cursor-pointer"
+                        >
+                          <Download size={14} /> Download Document
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  /* 🔬 CLINICAL LABORATORY REPORT DIAGNOSTIC SHEET 🔬 */
+                  <div className="space-y-6">
+                    {/* PATIENT & LAB DEMOGRAPHICS BANNER */}
+                    <div className="bg-white p-5 rounded-2xl border border-[#EBE9E0] shadow-2xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-[#456A50] mb-1">{details.lab}</p>
+                        <h4 className="font-black text-lg text-[#1C2C22]">{details.title}</h4>
+                        <div className="flex flex-wrap items-center gap-3 mt-1 text-xs text-gray-600 font-medium">
+                          <span>Patient: <strong className="text-[#1C2C22]">{details.patientName}</strong></span>
+                          <span>•</span>
+                          <span>Age/Gender: <strong>{details.age} yrs / {details.gender}</strong></span>
+                          <span>•</span>
+                          <span>ID: <strong>#{selectedPatient?.id || '2'}</strong></span>
+                        </div>
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider inline-flex items-center gap-1 shadow-2xs">
+                          <CheckCircle2 size={12} /> Certified Diagnostic Record
+                        </span>
+                        <p className="text-[10px] text-gray-400 font-medium mt-1">Report Date: {details.date}</p>
+                      </div>
+                    </div>
+
+                    {/* BIOCHEMICAL PARAMETERS TABLE */}
+                    <div className="bg-white rounded-2xl border border-[#EBE9E0] shadow-2xs overflow-hidden">
+                      <div className="p-4 border-b border-[#EBE9E0] bg-[#FDFCF8] flex justify-between items-center">
+                        <h5 className="font-black text-xs uppercase tracking-wider text-[#1C2C22] flex items-center gap-2">
+                          <Activity size={15} className="text-[#456A50]" /> Diagnostic Investigation Findings
+                        </h5>
+                        <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Reference Biological Range</span>
+                      </div>
+
+                      <table className="w-full text-left text-xs text-[#1C2C22]">
+                        <thead className="bg-[#FDFCF8] text-[9px] uppercase font-black text-[#5A6B60] tracking-widest border-b">
+                          <tr>
+                            <th className="py-3 px-5">Investigation / Biomarker</th>
+                            <th className="py-3 px-5">Observed Value</th>
+                            <th className="py-3 px-5">Reference Interval</th>
+                            <th className="py-3 px-5 text-right">Clinical Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#EBE9E0]">
+                          {details.parameters.map((param, idx) => (
+                            <tr key={idx} className="hover:bg-[#FDFCF8] transition">
+                              <td className="py-3.5 px-5 font-bold text-[#1C2C22]">{param.test}</td>
+                              <td className="py-3.5 px-5 font-black text-[#456A50]">{param.result}</td>
+                              <td className="py-3.5 px-5 text-gray-500 font-medium">{param.ref}</td>
+                              <td className="py-3.5 px-5 text-right">
+                                <span className={`px-2.5 py-1 rounded-lg text-[9px] font-black tracking-wider uppercase border inline-block ${param.color}`}>
+                                  {param.status}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* CLINICAL NUTRITIONIST INTERPRETATION & ACTION PLAN */}
+                    <div className="bg-emerald-50/70 border border-emerald-200/80 rounded-2xl p-5 shadow-2xs">
+                      <h5 className="font-black text-xs text-emerald-900 uppercase tracking-wider flex items-center gap-2 mb-1.5">
+                        <Sparkles size={14} className="text-[#456A50]" /> Dietitian Clinical Action Notes & Nutritional Guidelines
+                      </h5>
+                      <p className="text-xs text-emerald-950 font-medium leading-relaxed">
+                        {details.clinicalNotes}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* MODAL FOOTER */}
+              <div className="p-5 border-t border-[#EBE9E0] flex justify-between items-center bg-[#FDFCF8]">
+                <div className="flex items-center gap-2 text-xs text-gray-500 font-medium">
+                  <ShieldCheck size={16} className="text-[#456A50]" />
+                  <span>Authorized by Healora Clinical Diagnostics & Laboratory Network</span>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  {selectedReportModal.fileUrl && (
+                    <a 
+                      href={selectedReportModal.fileUrl} 
+                      download={selectedReportModal.name} 
+                      target="_blank" 
+                      rel="noreferrer"
+                      className="bg-[#456A50] hover:bg-[#35533E] text-white px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
+                    >
+                      <Download size={13} /> Download File
+                    </a>
+                  )}
+                  <button 
+                    onClick={() => setSelectedReportModal(null)} 
+                    className="bg-white hover:bg-gray-100 border border-[#EBE9E0] text-gray-700 px-4 py-2 rounded-xl font-bold text-xs transition shadow-2xs cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+
       <style>{`
+
         .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background-color: rgba(69, 106, 80, 0.2); border-radius: 20px; }

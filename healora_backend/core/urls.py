@@ -5,7 +5,8 @@ from .views import (
     PatientDietPlanView, PatientAppointmentListCreateView, NutritionistListView,
     NutritionistPublishDietPlanView, NutritionistPatientListView, PatientDocumentListCreateView,
     AdminUserListView, AdminAppointmentListView, AdminDeleteUserView, 
-    AdminToggleUserStatusView, AdminEditUserView, AdminAuditLogListView
+    AdminToggleUserStatusView, AdminEditUserView, AdminAuditLogListView,
+    ClinicHolidayListCreateView, ClinicHolidayDeleteView, AppointmentUpdateView
 )
 from rest_framework_simplejwt.views import TokenRefreshView
 
@@ -20,11 +21,17 @@ urlpatterns = [
     path('patient/<int:user_id>/wellness/', WellnessLogListCreateView.as_view(), name='wellness-logs'),
     path('patient/<int:user_id>/diet/', PatientDietPlanView.as_view(), name='diet-plan'),
     path('patient/<int:user_id>/appointments/', PatientAppointmentListCreateView.as_view(), name='patient-appointments'),
+    path('appointments/<int:pk>/', AppointmentUpdateView.as_view(), name='appointment-update'),
     path('patient/<int:user_id>/documents/', PatientDocumentListCreateView.as_view(), name='patient-documents'),
+
     
     path('nutritionists/', NutritionistListView.as_view(), name='nutritionist-list'),
     path('nutritionist/patients/', NutritionistPatientListView.as_view(), name='nutritionist-patient-list'),
     path('nutritionist/patient/<int:user_id>/publish-diet/', NutritionistPublishDietPlanView.as_view(), name='publish-diet-plan'),
+
+    # --- CLINIC HOLIDAYS & LEAVES ROUTES ---
+    path('clinic-holidays/', ClinicHolidayListCreateView.as_view(), name='clinic-holidays'),
+    path('clinic-holidays/<int:pk>/', ClinicHolidayDeleteView.as_view(), name='clinic-holiday-delete'),
 
     # --- ADMIN ROUTES ---
     path('admin-api/users/', AdminUserListView.as_view(), name='admin-users'),
