@@ -1349,10 +1349,11 @@ const ClinicManagerDashboard = () => {
           <NavItem icon={<Ticket size={18} />} label="Live Queue & Tokens" tab="queue" activeTab={activeTab} setTab={setActiveTab} />
           <NavItem icon={<CalendarDays size={18} />} label="Clinic Holidays & Leaves" tab="holidays" activeTab={activeTab} setTab={setActiveTab} />
           
-          <button onClick={() => setActiveTab('notifications')} className={`w-full relative flex items-center gap-3 px-4 py-3 rounded-xl transition text-sm ${activeTab === 'notifications' ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'}`}>
-            <MessageSquare size={18} /> Internal Comms
+          <button onClick={() => setActiveTab('notifications')} className={`w-full relative flex items-center text-left gap-3 px-4 py-3 rounded-xl transition text-sm ${activeTab === 'notifications' ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'}`}>
+            <div className="shrink-0 flex items-center justify-center"><MessageSquare size={18} /></div>
+            <span className="text-left leading-tight">Internal Comms</span>
             {unreadMessageCount > 0 && (
-              <span className="absolute right-3 bg-red-500 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center">
+              <span className="ml-auto bg-red-500 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center">
                 {unreadMessageCount}
               </span>
             )}
@@ -1498,36 +1499,47 @@ const ClinicManagerDashboard = () => {
                                   </td>
                                   <td className="py-5 px-6"><span className={`px-3 py-1.5 rounded-lg text-[10px] font-bold tracking-widest uppercase ${a.mode === 'ONLINE' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>{a.mode}</span></td>
                                   <td className="py-5 px-6">
-                                    {a.mode === 'ONLINE' ? (
-                                      a.meet_link ? (
-                                        <div className="flex items-center gap-2">
-                                          <a 
-                                            href={a.meet_link} 
-                                            target="_blank" 
-                                            rel="noreferrer" 
-                                            className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-xs"
-                                          >
-                                            <Video size={13} /> Join Meet <ExternalLink size={11} />
-                                          </a>
-                                          <button 
-                                            onClick={() => openMeetModal(a)} 
-                                            className="text-gray-400 hover:text-gray-700 p-1.5 rounded-lg hover:bg-gray-100 transition cursor-pointer"
-                                            title="Edit Meet Link"
-                                          >
-                                            <Edit3 size={13} />
-                                          </button>
-                                        </div>
-                                      ) : (
-                                        <button 
-                                          onClick={() => openMeetModal(a)} 
-                                          className="bg-[#456A50] text-white hover:bg-[#35533E] px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-sm animate-pulse cursor-pointer"
-                                        >
-                                          <Video size={13} /> Send Meet Link
-                                        </button>
-                                      )
-                                    ) : (
-                                      <span className="text-gray-400 text-xs font-medium">In-Clinic</span>
-                                    )}
+                                     {a.mode === 'ONLINE' ? (
+                                       (() => {
+                                         const todayIso = new Date().toISOString().split('T')[0];
+                                         const isPast = a.date && a.date < todayIso;
+                                         if (isPast || a.status === 'COMPLETED' || a.status === 'CANCELLED') {
+                                           return (
+                                             <span className="text-[11px] font-bold text-gray-400 bg-gray-50 border border-gray-200 px-2.5 py-1 rounded-lg inline-flex items-center gap-1">
+                                               📅 Session Completed
+                                             </span>
+                                           );
+                                         }
+                                         return a.meet_link ? (
+                                           <div className="flex items-center gap-2">
+                                             <a 
+                                               href={a.meet_link} 
+                                               target="_blank" 
+                                               rel="noreferrer" 
+                                               className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-xs"
+                                             >
+                                               <Video size={13} /> Join Meet <ExternalLink size={11} />
+                                             </a>
+                                             <button 
+                                               onClick={() => openMeetModal(a)} 
+                                               className="text-gray-400 hover:text-gray-700 p-1.5 rounded-lg hover:bg-gray-100 transition cursor-pointer"
+                                               title="Edit Meet Link"
+                                             >
+                                               <Edit3 size={13} />
+                                             </button>
+                                           </div>
+                                         ) : (
+                                           <button 
+                                             onClick={() => openMeetModal(a)} 
+                                             className="bg-[#456A50] text-white hover:bg-[#35533E] px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-sm animate-pulse cursor-pointer"
+                                           >
+                                             <Video size={13} /> Send Meet Link
+                                           </button>
+                                         );
+                                       })()
+                                     ) : (
+                                       <span className="text-gray-400 text-xs font-medium">In-Clinic</span>
+                                     )}
                                   </td>
                                   <td className="py-5 px-6"><span className={`px-3 py-1.5 rounded-lg text-[10px] font-bold tracking-widest uppercase ${a.status === 'SCHEDULED' ? 'bg-orange-100 text-orange-700' : a.status === 'RESCHEDULED' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>{a.status}</span></td>
                                   <td className="py-5 px-6 text-right">
@@ -1670,25 +1682,36 @@ const ClinicManagerDashboard = () => {
                                 {isCancelled ? (
                                   <span className="text-xs text-gray-400 font-semibold italic">Session Cancelled</span>
                                 ) : a.mode === 'ONLINE' ? (
-                                  a.meet_link ? (
-                                    <div className="flex items-center gap-1.5">
-                                      <a 
-                                        href={a.meet_link} 
-                                        target="_blank" 
-                                        rel="noreferrer" 
-                                        className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition shadow-xs"
+                                  (() => {
+                                    const todayIso = new Date().toISOString().split('T')[0];
+                                    const isPast = a.date && a.date < todayIso;
+                                    if (isPast || a.status === 'COMPLETED') {
+                                      return (
+                                        <span className="text-[11px] font-bold text-gray-400 bg-gray-50 border border-gray-200 px-2.5 py-1 rounded-lg inline-flex items-center gap-1">
+                                          📅 Session Completed
+                                        </span>
+                                      );
+                                    }
+                                    return a.meet_link ? (
+                                      <div className="flex items-center gap-1.5">
+                                        <a 
+                                          href={a.meet_link} 
+                                          target="_blank" 
+                                          rel="noreferrer" 
+                                          className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition shadow-xs"
+                                        >
+                                          <Video size={13} /> Meet Ready <ExternalLink size={11} />
+                                        </a>
+                                      </div>
+                                    ) : (
+                                      <button 
+                                        onClick={() => openMeetModal(a)} 
+                                        className="bg-[#456A50] text-white hover:bg-[#35533E] px-3 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition shadow-sm animate-pulse cursor-pointer"
                                       >
-                                        <Video size={13} /> Meet Ready <ExternalLink size={11} />
-                                      </a>
-                                    </div>
-                                  ) : (
-                                    <button 
-                                      onClick={() => openMeetModal(a)} 
-                                      className="bg-[#456A50] text-white hover:bg-[#35533E] px-3 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition shadow-sm animate-pulse cursor-pointer"
-                                    >
-                                      <Video size={13} /> Schedule Meet
-                                    </button>
-                                  )
+                                        <Video size={13} /> Schedule Meet
+                                      </button>
+                                    );
+                                  })()
                                 ) : (
                                   <span className="bg-gray-100 text-gray-700 px-3 py-1.5 rounded-lg text-[10px] font-bold tracking-widest uppercase">In-Clinic</span>
                                 )}
@@ -2015,7 +2038,7 @@ const ClinicManagerDashboard = () => {
               {/* 🌟 TAB: CLINIC HOLIDAYS & LEAVES MANAGEMENT 🌟 */}
               {activeTab === 'holidays' && (
                 <div className="space-y-6 animate-in fade-in">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <MetricCard 
                       title="Marked Clinic Holidays" 
                       count={clinicHolidays.filter(h => h.holiday_type === 'CLINIC_HOLIDAY').length} 
@@ -2030,19 +2053,6 @@ const ClinicManagerDashboard = () => {
                       color="text-amber-600" 
                       bg="bg-amber-50" 
                     />
-                    <div className="bg-white rounded-2xl shadow-sm border border-[#EBE9E0] p-6 flex flex-col justify-between">
-                      <div>
-                        <p className="text-[10px] font-bold text-[#5A6B60] uppercase tracking-widest">Default Clinic Policy</p>
-                        <h4 className="text-sm font-black text-[#1C2C22] mt-1">Closed Sundays & 2nd Saturdays</h4>
-                        <p className="text-xs text-[#5A6B60] mt-1">Automatically applied across all patient booking calendars.</p>
-                      </div>
-                      <button 
-                        onClick={() => setShowHolidayModal(true)}
-                        className="mt-4 bg-[#456A50] text-white py-2.5 px-4 rounded-xl text-xs font-bold hover:bg-[#35533E] transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        <Plus size={14} /> Add New Holiday / Leave
-                      </button>
-                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -2232,7 +2242,17 @@ const ClinicManagerDashboard = () => {
 };
 
 const NavItem = ({ icon, label, tab, activeTab, setTab }) => (
-  <button onClick={() => setTab(tab)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition text-sm ${activeTab === tab ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'}`}>{icon} <span>{label}</span></button>
+  <button 
+    onClick={() => setTab(tab)} 
+    className={`w-full flex items-center text-left gap-3 px-4 py-3 rounded-xl transition text-sm ${
+      activeTab === tab 
+        ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' 
+        : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'
+    }`}
+  >
+    <div className="shrink-0 flex items-center justify-center">{icon}</div> 
+    <span className="text-left leading-tight">{label}</span>
+  </button>
 );
 const MetricCard = ({ title, count, icon, color, bg }) => (
   <div className="bg-white rounded-2xl shadow-sm border border-[#EBE9E0] p-6 flex items-center gap-4"><div className={`${bg} ${color} p-4 rounded-xl`}>{icon}</div><div><p className="text-[10px] font-bold text-[#5A6B60] uppercase tracking-widest">{title}</p><p className="text-3xl font-black text-[#1C2C22]">{count}</p></div></div>

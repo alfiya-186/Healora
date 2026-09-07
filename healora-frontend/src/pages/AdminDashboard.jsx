@@ -29,6 +29,10 @@ const AdminDashboard = () => {
     userRole: ""
   });
   
+  // 🌟 REVENUE LEDGER FILTERS 🌟
+  const [revenueSearch, setRevenueSearch] = useState("");
+  const [revenueModeFilter, setRevenueModeFilter] = useState("ALL");
+  
   // 🌟 SYSTEM TOAST ERROR NOTIFICATION STATE 🌟
   const [systemToast, setSystemToast] = useState(null);
 
@@ -42,35 +46,50 @@ const AdminDashboard = () => {
   const [form, setForm] = useState({ first_name: "", last_name: "", email: "", password: "" });
   const [programForm, setProgramForm] = useState({ id: null, name: "", description: "" });
 
+  const CLINICAL_SYSTEM_PROGRAMS = [
+    { id: 1, name: "Weight Loss", description: "Scientifically structured caloric deficit and metabolism optimization for sustainable fat reduction.", status: "Active", enrolled: 48 },
+    { id: 2, name: "Weight Gain", description: "Nutrient-dense, high-protein protocols designed for lean muscle building and healthy weight gain.", status: "Active", enrolled: 34 },
+    { id: 3, name: "PCOS Care", description: "Hormonal balancing, insulin resistance control, and anti-inflammatory clinical meal plans.", status: "Active", enrolled: 27 },
+    { id: 4, name: "Diabetic Care", description: "Strict glycemic control, HbA1c stabilization, low-GI foods, and timed carbohydrate management.", status: "Active", enrolled: 52 },
+    { id: 5, name: "Pregnancy Nutrition", description: "Trimester-calibrated nutrition, optimal micronutrient nourishment, folate, and fetal development support.", status: "Active", enrolled: 19 },
+    { id: 6, name: "Kids & Elderly", description: "Growth support, cognitive vitality, immune boosting for children, and bio-available nutrition for seniors.", status: "Active", enrolled: 23 }
+  ];
+
   const [programs, setPrograms] = useState(() => {
     try {
-      return JSON.parse(localStorage.getItem("healora_programs")) || [
-        { id: 1, name: "Weight Management", description: "Personalized diet plans to help you achieve and maintain your ideal body weight safely and sustainably.", status: "Active", enrolled: 48 },
-        { id: 2, name: "PCOS Nutrition", description: "Specialized nutritional guidance to manage PCOS symptoms, balance hormones naturally, and improve fertility.", status: "Active", enrolled: 27 },
-        { id: 3, name: "Diabetes Nutrition", description: "Blood sugar management through tailored meal planning, glycemic control strategies, and lifestyle adjustments.", status: "Active", enrolled: 52 },
-        { id: 4, name: "Pregnancy Nutrition", description: "Optimal nutritional support for expecting mothers to ensure healthy fetal development and maternal well-being.", status: "Active", enrolled: 19 }
-      ];
-    } catch { return []; }
+      const saved = JSON.parse(localStorage.getItem("healora_programs_v2")) || JSON.parse(localStorage.getItem("healora_programs"));
+      // Force migration if legacy 4-programs or "Weight Management" is found
+      if (saved && Array.isArray(saved) && saved.length >= 6 && saved.some(p => p.name === "Weight Loss")) {
+        return saved;
+      }
+      localStorage.setItem("healora_programs", JSON.stringify(CLINICAL_SYSTEM_PROGRAMS));
+      localStorage.setItem("healora_programs_v2", JSON.stringify(CLINICAL_SYSTEM_PROGRAMS));
+      return CLINICAL_SYSTEM_PROGRAMS;
+    } catch { 
+      return CLINICAL_SYSTEM_PROGRAMS; 
+    }
   });
 
-  useEffect(() => { localStorage.setItem("healora_programs", JSON.stringify(programs)); }, [programs]);
+  useEffect(() => { 
+    localStorage.setItem("healora_programs", JSON.stringify(programs)); 
+    localStorage.setItem("healora_programs_v2", JSON.stringify(programs));
+  }, [programs]);
 
   const triggerToast = (message, type = 'error') => {
     setSystemToast({ message, type });
     setTimeout(() => setSystemToast(null), 4000);
   };
 
-  const fetchData = async () => {
+  const fetchData = async (isBackground = false) => {
     try {
-      setLoading(true);
+      if (!isBackground) setLoading(true);
       const localUsers = JSON.parse(localStorage.getItem('healora_local_users')) || [];
       
       let localAppts = JSON.parse(localStorage.getItem('healora_all_appointments')) || [];
       localAppts = localAppts.map((appt, idx) => ({
         ...appt,
-        id: appt.id && String(appt.id).startsWith('APT-') ? appt.id.replace('APT-', '') : (101 + idx)
+        id: appt.id && String(appt.id).startsWith('APT-') ? appt.id.replace('APT-', '') : (appt.id || (101 + idx))
       }));
-      localStorage.setItem('healora_all_appointments', JSON.stringify(localAppts));
 
       const localAudit = JSON.parse(localStorage.getItem('healora_audit_logs')) || [];
       
@@ -85,18 +104,58 @@ const AdminDashboard = () => {
       if (a.ok) apiAppts = await a.json();
       if (l.ok) apiAudit = await l.json();
 
-      setUsers([...apiUsers, ...localUsers]);
-      setAppointments([...apiAppts, ...localAppts]);
-      setAuditLogs([...localAudit, ...apiAudit]);
+      // Deduplicate by ID / Email to ensure real-time accuracy without ghost duplicates
+      const mergedUsers = Array.from(
+        new Map([...localUsers, ...apiUsers].map(item => [String(item.id || item.email), item])).values()
+      );
+
+      const mergedAppts = Array.from(
+        new Map([...localAppts, ...apiAppts].map(item => [String(item.id), item])).values()
+      );
+
+      const mergedAudit = Array.from(
+        new Map([...localAudit, ...apiAudit].map(item => [String(item.id || item.created_at), item])).values()
+      );
+
+      setUsers(mergedUsers);
+      setAppointments(mergedAppts);
+      setAuditLogs(mergedAudit);
 
     } catch (err) { 
       console.error("Admin error:", err);
-      triggerToast("System Error: Failed to synchronize with database gateway.");
+      if (!isBackground) triggerToast("System Error: Failed to synchronize with database gateway.");
     } 
-    finally { setLoading(false); }
+    finally { 
+      if (!isBackground) setLoading(false); 
+    }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { 
+    fetchData(); 
+
+    // 🌟 REAL-TIME CROSS-TAB SYNC LISTENER 🌟
+    const handleStorageChange = (e) => {
+      if (
+        e.key === 'healora_all_appointments' || 
+        e.key === 'healora_local_users' || 
+        e.key === 'healora_audit_logs' || 
+        e.key === 'healora_programs'
+      ) {
+        fetchData(true);
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+
+    // 🌟 REAL-TIME 10-SECOND BACKGROUND REFRESH 🌟
+    const interval = setInterval(() => {
+      fetchData(true);
+    }, 10000);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      clearInterval(interval);
+    };
+  }, []);
 
   const logSystemEvent = (action, desc) => {
     const logs = JSON.parse(localStorage.getItem('healora_audit_logs')) || [];
@@ -109,6 +168,38 @@ const AdminDashboard = () => {
   const nutritionists = useMemo(() => users.filter(u => u.role === "NUTRITIONIST"), [users]);
   const managers = useMemo(() => users.filter(u => u.role === "MANAGER"), [users]);
   const activeUsers = useMemo(() => users.filter(u => u.is_active !== false), [users]);
+
+  // 🌟 REAL-TIME PROGRAM ENROLLMENT CALCULATOR 🌟
+  const getProgramEnrolledPatients = (programName) => {
+    if (!patients || patients.length === 0) return [];
+    const clean = (programName || '').toLowerCase().trim();
+    
+    return patients.filter(p => {
+      let pGoal = (p.health_goals || p.enrolled_program || p.primary_goal || '').toLowerCase().trim();
+      if (!pGoal) {
+        try {
+          const storedProf = JSON.parse(localStorage.getItem(`patientProfile_${p.id}`)) || 
+                             (String(localStorage.getItem('user_id')) === String(p.id) ? JSON.parse(localStorage.getItem('patientProfile')) : null);
+          if (storedProf && (storedProf.health_goals || storedProf.enrolled_program)) {
+            pGoal = (storedProf.health_goals || storedProf.enrolled_program).toLowerCase().trim();
+          }
+        } catch (e) {}
+      }
+
+      if (!pGoal) return clean === 'weight loss'; // default fallback for newly registered patients
+      if (clean === 'weight loss') return pGoal.includes('loss') || pGoal.includes('weight loss') || pGoal.includes('management');
+      if (clean === 'weight gain') return pGoal.includes('gain') || pGoal.includes('muscle');
+      if (clean === 'pcos care') return pGoal.includes('pcos');
+      if (clean === 'diabetic care') return pGoal.includes('diabet') || pGoal.includes('sugar') || pGoal.includes('glucose');
+      if (clean === 'pregnancy nutrition') return pGoal.includes('pregnan') || pGoal.includes('maternal');
+      if (clean === 'kids & elderly') return pGoal.includes('kid') || pGoal.includes('elder') || pGoal.includes('child') || pGoal.includes('senior');
+      return pGoal.includes(clean);
+    });
+  };
+
+  const getProgramEnrolledCount = (programName) => {
+    return getProgramEnrolledPatients(programName).length;
+  };
 
   const filteredUsers = useMemo(() => {
     const q = search.toLowerCase().trim();
@@ -123,6 +214,21 @@ const AdminDashboard = () => {
       return sum + (isNaN(amount) ? 500 : amount); 
     }, 0);
   }, [appointments]);
+
+  // 🌟 REVENUE LEDGER FILTERING WITH PATIENT NAME RESOLUTION 🌟
+  const filteredAppointments = useMemo(() => {
+    return appointments.filter(a => {
+      const patientObj = users.find(u => String(u.id) === String(a.patient));
+      const pName = patientObj ? `${patientObj.first_name || ''} ${patientObj.last_name || ''}`.toLowerCase() : '';
+      const pEmail = patientObj?.email?.toLowerCase() || '';
+      const aptId = `apt-${a.id}`.toLowerCase();
+      const q = revenueSearch.toLowerCase().trim();
+
+      const matchesSearch = !q || pName.includes(q) || pEmail.includes(q) || aptId.includes(q) || String(a.patient).includes(q);
+      const matchesMode = revenueModeFilter === "ALL" || (a.mode || 'ONLINE').toUpperCase() === revenueModeFilter;
+      return matchesSearch && matchesMode;
+    });
+  }, [appointments, users, revenueSearch, revenueModeFilter]);
 
   // 🌟 DYNAMIC AUDIT LOG FILTERING ENGINE 🌟
   const filteredAuditLogs = useMemo(() => {
@@ -187,16 +293,29 @@ const AdminDashboard = () => {
 
   const toggleUser = async (id, currentStatus) => {
     if (!window.confirm(`Are you sure you want to ${currentStatus ? "deactivate" : "activate"} this account?`)) return;
-    setUsers(prev => prev.map(u => u.id === id ? { ...u, is_active: !currentStatus } : u));
-    logSystemEvent('USER_STATUS_CHANGE', `Admin changed user ${id} status to ${!currentStatus ? 'Active' : 'Inactive'}.`);
-    try { await fetch(`/api/admin-api/users/${id}/toggle-status/`, { method: "PATCH" }); } catch (e) { triggerToast("Error communicating status change to server."); }
+    const newStatus = !currentStatus;
+    setUsers(prev => prev.map(u => String(u.id) === String(id) ? { ...u, is_active: newStatus } : u));
+    
+    // Update local storage for cross-platform persistence
+    const localUsers = JSON.parse(localStorage.getItem('healora_local_users')) || [];
+    const updatedLocal = localUsers.map(u => String(u.id) === String(id) ? { ...u, is_active: newStatus } : u);
+    localStorage.setItem('healora_local_users', JSON.stringify(updatedLocal));
+
+    logSystemEvent('USER_STATUS_CHANGE', `Admin changed user #${id} status to ${newStatus ? 'Active' : 'Inactive'}.`);
+    try { await fetch(`/api/admin-api/users/${id}/toggle-status/`, { method: "PATCH" }); } catch (e) { triggerToast("Warning: Status updated locally. Backend sync pending."); }
   };
 
   const deleteUser = async id => {
     if (!window.confirm("CRITICAL WARNING: Permanently delete this account? Use Deactivate instead for staff who have left.")) return;
-    setUsers(prev => prev.filter(u => u.id !== id));
-    logSystemEvent('CRITICAL_DELETE', `Admin permanently deleted user record ${id}.`);
-    try { await fetch(`/api/admin-api/users/${id}/delete/`, { method: "DELETE" }); } catch (e) { triggerToast("Error communicating deletion to server."); }
+    setUsers(prev => prev.filter(u => String(u.id) !== String(id)));
+    
+    // Remove from local storage for cross-platform persistence
+    const localUsers = JSON.parse(localStorage.getItem('healora_local_users')) || [];
+    const updatedLocal = localUsers.filter(u => String(u.id) !== String(id));
+    localStorage.setItem('healora_local_users', JSON.stringify(updatedLocal));
+
+    logSystemEvent('CRITICAL_DELETE', `Admin permanently deleted user record #${id}.`);
+    try { await fetch(`/api/admin-api/users/${id}/delete/`, { method: "DELETE" }); } catch (e) { triggerToast("Warning: Account removed locally. Backend sync pending."); }
   };
 
   const saveProgram = e => {
@@ -233,6 +352,39 @@ const AdminDashboard = () => {
     logSystemEvent('AUDIT_EXPORT', 'Administrator exported security audit trails as CSV for compliance review.');
   };
 
+  // 🌟 REVENUE LEDGER CSV EXPORT FOR ACCOUNTING & BOOKKEEPING 🌟
+  const downloadRevenueCSV = () => {
+    if (!filteredAppointments || filteredAppointments.length === 0) { 
+      triggerToast("No revenue records match your current filters.", "error"); 
+      return; 
+    }
+    const headers = ["Booking ID", "Patient ID", "Patient Name", "Email", "Date", "Time", "Mode", "Status", "Amount Paid (INR)"];
+    const rows = filteredAppointments.map(a => {
+      const p = users.find(u => String(u.id) === String(a.patient));
+      const pName = p ? `"${(p.first_name || '')} ${(p.last_name || '')}".trim()` : `"Patient #${a.patient}"`;
+      const pEmail = p?.email ? `"${p.email}"` : `"N/A"`;
+      const amt = parseFloat(a.amount_paid);
+      const finalAmt = isNaN(amt) ? 500 : amt;
+      return [
+        `"APT-${a.id}"`,
+        `"#${a.patient}"`,
+        pName,
+        pEmail,
+        `"${a.date || 'N/A'}"`,
+        `"${a.time || 'N/A'}"`,
+        `"${a.mode || 'ONLINE'}"`,
+        `"PAID"`,
+        finalAmt.toFixed(2)
+      ];
+    });
+    const csvContent = [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob); const link = document.createElement("a");
+    link.setAttribute("href", url); link.setAttribute("download", `Healora_Revenue_Ledger_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link); link.click(); document.body.removeChild(link); 
+    logSystemEvent('REVENUE_EXPORT', 'Administrator exported clinical revenue records as CSV for financial bookkeeping.');
+  };
+
   const logout = () => { localStorage.removeItem('access_token'); localStorage.removeItem('user_role'); navigate("/", { replace: true }); };
 
   const nav = [
@@ -246,15 +398,34 @@ const AdminDashboard = () => {
   return (
     <div className="healora">
       
-      {/* 🌟 SYSTEM ERROR NOTIFICATION TOAST BANNER 🌟 */}
+      {/* 🌟 SYSTEM NOTIFICATION TOAST BANNER (SUCCESS & ERROR) 🌟 */}
       {systemToast && (
-        <div className="fixed top-6 right-6 z-50 bg-red-950 border border-red-500 text-white px-5 py-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-top-4">
-          <AlertTriangle className="text-red-400 shrink-0" size={20} />
+        <div className={`fixed top-6 right-6 z-50 px-5 py-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-top-4 border ${
+          systemToast.type === 'success'
+            ? 'bg-emerald-950/95 border-emerald-500 text-white'
+            : 'bg-red-950/95 border-red-500 text-white'
+        }`}>
+          {systemToast.type === 'success' ? (
+            <CheckCircle2 className="text-emerald-400 shrink-0" size={20} />
+          ) : (
+            <AlertTriangle className="text-red-400 shrink-0" size={20} />
+          )}
           <div>
-            <p className="text-xs font-black uppercase tracking-widest text-red-300">System Alert</p>
-            <p className="text-xs font-medium text-red-100">{systemToast.message}</p>
+            <p className={`text-[10px] font-black uppercase tracking-widest ${
+              systemToast.type === 'success' ? 'text-emerald-300' : 'text-red-300'
+            }`}>
+              {systemToast.type === 'success' ? 'System Success' : 'System Alert'}
+            </p>
+            <p className="text-xs font-medium text-gray-100">{systemToast.message}</p>
           </div>
-          <button onClick={() => setSystemToast(null)} className="ml-4 text-red-300 hover:text-white"><X size={16}/></button>
+          <button 
+            onClick={() => setSystemToast(null)} 
+            className={`ml-4 p-1 rounded-lg hover:bg-white/10 ${
+              systemToast.type === 'success' ? 'text-emerald-300 hover:text-white' : 'text-red-300 hover:text-white'
+            }`}
+          >
+            <X size={16}/>
+          </button>
         </div>
       )}
 
@@ -350,27 +521,83 @@ const AdminDashboard = () => {
                 <section className="panel">
                   <div className="panelHead">
                     <div><span className="eyebrow">CLINIC FINANCE</span><h2>Billing & Revenue Ledger</h2></div>
-                    <div className="statCard" style={{ minHeight: 'auto', padding: '10px 16px', background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.2)' }}>
-                      <p style={{ color: '#34d399', fontSize: '8px' }}>Total Collected</p>
-                      <h3 style={{ margin: 0, fontSize: '16px', color: '#fff' }}>₹ {totalRevenue.toLocaleString()}</h3>
+                    <div className="headActions">
+                      <div className="search">
+                        <Search size={16} />
+                        <input 
+                          value={revenueSearch} 
+                          onChange={e => setRevenueSearch(e.target.value)} 
+                          placeholder="Search patient, ID..." 
+                        />
+                      </div>
+                      <select 
+                        value={revenueModeFilter} 
+                        onChange={e => setRevenueModeFilter(e.target.value)}
+                        style={{
+                          background: '#09110c',
+                          border: '1px solid rgba(255,255,255,.07)',
+                          borderRadius: '10px',
+                          color: '#fff',
+                          padding: '8px 12px',
+                          fontSize: '11px',
+                          outline: 'none',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <option value="ALL">All Modes</option>
+                        <option value="ONLINE">Online (Meet)</option>
+                        <option value="OFFLINE">In-Clinic</option>
+                      </select>
+                      <button 
+                        className="primary" 
+                        onClick={downloadRevenueCSV} 
+                        style={{ background: 'rgba(52, 211, 153, 0.15)', color: '#6ee7b7', border: '1px solid rgba(52, 211, 153, 0.3)' }}
+                        title="Download financial transaction records as CSV"
+                      >
+                        <Download size={15} /> Export CSV
+                      </button>
                     </div>
                   </div>
                   <div className="tableWrap">
                     <table>
-                      <thead><tr><th>Booking ID</th><th>Patient ID</th><th>Date & Time</th><th>Mode</th><th>Status</th><th style={{textAlign:'right'}}>Amount Paid</th></tr></thead>
+                      <thead>
+                        <tr>
+                          <th>Booking ID</th>
+                          <th>Patient Name & ID</th>
+                          <th>Date & Time</th>
+                          <th>Mode</th>
+                          <th>Status</th>
+                          <th style={{textAlign:'right'}}>Amount Paid</th>
+                        </tr>
+                      </thead>
                       <tbody>
-                        {appointments.map((a, i) => (
-                          <tr key={i}>
-                            <td>APT-{a.id}</td>
-                            <td className="name">Patient #{a.patient}</td>
-                            <td>{a.date || "N/A"} at {a.time || "N/A"}</td>
-                            <td><span className="mode">{a.mode || "Online"}</span></td>
-                            <td><span className="active">PAID</span></td>
-                            <td style={{ textAlign: "right", fontWeight: "bold", color: "#5ee0a7" }}>₹ {a.amount_paid || 500}.00</td>
-                          </tr>
-                        ))}
-                        {appointments.length === 0 && (
-                          <tr><td colSpan="6" className="empty">No financial transactions recorded yet.</td></tr>
+                        {filteredAppointments.map((a, i) => {
+                          const patientObj = users.find(u => String(u.id) === String(a.patient));
+                          const pName = patientObj 
+                            ? `${patientObj.first_name || ''} ${patientObj.last_name || ''}`.trim() 
+                            : `Patient #${a.patient}`;
+                          const pEmail = patientObj?.email || patientObj?.phone || `ID: #${a.patient}`;
+                          const amt = parseFloat(a.amount_paid);
+                          const finalAmt = isNaN(amt) ? 500 : amt;
+
+                          return (
+                            <tr key={i}>
+                              <td><span style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>APT-{a.id}</span></td>
+                              <td>
+                                <div className="name" style={{ display: 'flex', flexDirection: 'column' }}>
+                                  <span>{pName}</span>
+                                  <small style={{ color: '#65736a', fontSize: '9px', fontWeight: 'normal' }}>{pEmail}</small>
+                                </div>
+                              </td>
+                              <td>{a.date || "N/A"} at {a.time || "N/A"}</td>
+                              <td><span className="mode">{a.mode || "Online"}</span></td>
+                              <td><span className="active">PAID</span></td>
+                              <td style={{ textAlign: "right", fontWeight: "bold", color: "#5ee0a7" }}>₹ {finalAmt.toFixed(2)}</td>
+                            </tr>
+                          );
+                        })}
+                        {filteredAppointments.length === 0 && (
+                          <tr><td colSpan="6" className="empty">No financial transactions match your current search/filters.</td></tr>
                         )}
                       </tbody>
                     </table>
@@ -380,12 +607,16 @@ const AdminDashboard = () => {
 
               {activeTab === "programs" && (
                 <div>
-                  <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "15px" }}><button className="primary" onClick={() => { setProgramForm({ id: null, name: "", description: "" }); setShowProgram(true); }}><Plus size={16} /> Add Program</button></div>
+                  <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "15px" }}>
+                    <button className="primary" onClick={() => { setProgramForm({ id: null, name: "", description: "" }); setShowProgram(true); }}>
+                      <Plus size={16} /> Add Program
+                    </button>
+                  </div>
                   <div className="programGrid">
                     {programs.map(program => (
                       <div className="programCard" key={program.id}>
                         <div className="programIcon"><ClipboardList size={19} /></div><span className="programStatus"><span className={program.status === "Active" ? "active" : "inactive"}>{program.status}</span></span>
-                        <h3>{program.name}</h3><p>{program.enrolled} patients enrolled</p>
+                        <h3>{program.name}</h3><p>{getProgramEnrolledCount(program.name)} registered {getProgramEnrolledCount(program.name) === 1 ? 'patient' : 'patients'}</p>
                         <div className="programActions">
                           <button onClick={() => setViewingProgram(program)} style={{color: '#fff'}}><Eye size={12} style={{display:'inline', marginBottom:'-2px', marginRight:'3px'}}/> View</button>
                           <button onClick={() => { setProgramForm({ id: program.id, name: program.name, description: program.description || "" }); setShowProgram(true); }}>Edit</button>
@@ -507,8 +738,22 @@ const AdminDashboard = () => {
             <div style={{ color: '#a4b0a8', fontSize: '13px', lineHeight: '1.6', background: 'rgba(255,255,255,.02)', padding: '15px', borderRadius: '12px' }}><p>{viewingProgram.description}</p></div>
             <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}>
               <div className="statCard" style={{ flex: 1, minHeight: 'auto', padding: '15px' }}><p>Status</p><h3 style={{ margin: '5px 0', fontSize: '16px', color: viewingProgram.status === 'Active' ? '#5ee0a7' : '#f87171' }}>{viewingProgram.status}</h3></div>
-              <div className="statCard" style={{ flex: 1, minHeight: 'auto', padding: '15px' }}><p>Enrolled</p><h3 style={{ margin: '5px 0', fontSize: '16px', color: '#fff' }}>{viewingProgram.enrolled} Patients</h3></div>
+              <div className="statCard" style={{ flex: 1, minHeight: 'auto', padding: '15px' }}><p>Enrolled</p><h3 style={{ margin: '5px 0', fontSize: '16px', color: '#fff' }}>{getProgramEnrolledCount(viewingProgram.name)} {getProgramEnrolledCount(viewingProgram.name) === 1 ? 'Patient' : 'Patients'}</h3></div>
             </div>
+            {getProgramEnrolledPatients(viewingProgram.name).length > 0 && (
+              <div style={{ marginTop: '14px', background: 'rgba(255,255,255,.03)', padding: '12px 14px', borderRadius: '12px', border: '1px solid rgba(255,255,255,.06)' }}>
+                <p style={{ margin: '0 0 8px', fontSize: '9px', fontWeight: 'bold', color: '#78a982', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                  Registered Patients ({getProgramEnrolledPatients(viewingProgram.name).length}):
+                </p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {getProgramEnrolledPatients(viewingProgram.name).map(p => (
+                    <span key={p.id} style={{ background: 'rgba(77,128,90,.18)', color: '#a7f3d0', fontSize: '11px', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold' }}>
+                      {p.first_name} {p.last_name || ''} (#{p.id})
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

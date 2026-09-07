@@ -10,6 +10,15 @@ import {
 } from 'lucide-react';
 import { getKeralaPersonalizedOptions, getKeralaMealImage, generatePersonalizedKeralaWeeks } from '../utils/keralaNutritionEngine.js';
 
+export const DEFAULT_MEAL_TIMINGS = {
+  pre_breakfast: '07:00 AM',
+  breakfast: '08:30 AM',
+  drink: '11:00 AM',
+  lunch: '01:30 PM',
+  snack: '04:30 PM',
+  dinner: '08:00 PM'
+};
+
 const NutritionistDashboard = () => {
   const navigate = useNavigate();
   const nutritionistName = localStorage.getItem('user_name') || 'Dr. Sarah Jenkins';
@@ -490,6 +499,7 @@ const NutritionistDashboard = () => {
     nutrition_goal: 'Sustainable Fat Loss & Metabolic Optimization (Kerala Protocol)',
     target_calories: 1550,
     meal_frequency: 5,
+    meal_timings: { ...DEFAULT_MEAL_TIMINGS },
     start_date: new Date().toISOString().split('T')[0],
     review_date: new Date(Date.now() + 14*86400000).toISOString().split('T')[0],
     status: 'Draft',
@@ -517,6 +527,16 @@ const NutritionistDashboard = () => {
       ...prev,
       meal_frequency: newFreq,
       weeks: newWeeks
+    }));
+  };
+
+  const handleMealTimingChange = (slotKey, newTime) => {
+    setMonthlyPlanData(prev => ({
+      ...prev,
+      meal_timings: {
+        ...(prev.meal_timings || DEFAULT_MEAL_TIMINGS),
+        [slotKey]: newTime
+      }
     }));
   };
 
@@ -1494,20 +1514,31 @@ const NutritionistDashboard = () => {
                           </td>
                           <td className="py-5 px-6">
                             {a.mode === 'ONLINE' ? (
-                              a.meet_link ? (
-                                <a 
-                                  href={a.meet_link} 
-                                  target="_blank" 
-                                  rel="noreferrer" 
-                                  className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-xl font-bold text-xs shadow-sm transition transform hover:scale-105"
-                                >
-                                  <Video size={14} /> Join Google Meet <ExternalLink size={12} />
-                                </a>
-                              ) : (
-                                <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1 rounded-lg inline-flex items-center gap-1.5">
-                                  <Clock size={12} /> Meet Link Pending Setup
-                                </span>
-                              )
+                              (() => {
+                                const todayIso = new Date().toISOString().split('T')[0];
+                                const isPast = a.date && a.date < todayIso;
+                                if (isPast || a.status === 'COMPLETED' || a.status === 'CANCELLED') {
+                                  return (
+                                    <span className="text-[11px] font-bold text-gray-400 bg-gray-50 border border-gray-200 px-3 py-1 rounded-lg inline-flex items-center gap-1.5">
+                                      📅 Session Completed
+                                    </span>
+                                  );
+                                }
+                                return a.meet_link ? (
+                                  <a 
+                                    href={a.meet_link} 
+                                    target="_blank" 
+                                    rel="noreferrer" 
+                                    className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-xl font-bold text-xs shadow-sm transition transform hover:scale-105"
+                                  >
+                                    <Video size={14} /> Join Google Meet <ExternalLink size={12} />
+                                  </a>
+                                ) : (
+                                  <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1 rounded-lg inline-flex items-center gap-1.5">
+                                    <Clock size={12} /> Meet Link Pending Setup
+                                  </span>
+                                );
+                              })()
                             ) : (
                               <span className="text-xs text-gray-400 font-medium">In-Clinic Session</span>
                             )}
@@ -2667,6 +2698,44 @@ const NutritionistDashboard = () => {
                           >
                             <span>{m.label}</span>
                           </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* ⏰ PRESCRIBED MEAL INTAKE TIMINGS CONFIGURATION ⏰ */}
+                    <div className="bg-[#FDFCF8] p-4.5 rounded-2xl border border-[#EBE9E0] space-y-3">
+                      <div className="flex justify-between items-center border-b border-[#EBE9E0] pb-2.5">
+                        <h5 className="text-xs font-black text-[#1C2C22] flex items-center gap-2">
+                          <Clock size={16} className="text-[#456A50]" /> Prescribed Intake Timings Protocol (Real-Time Patient Dashboard Alerts)
+                        </h5>
+                        <span className="text-[10px] text-[#456A50] font-bold bg-[#EAF0EC] px-2 py-0.5 rounded-md">
+                          Live Synchronized
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-[#5A6B60]">
+                        Configure prescribed meal window timings. The patient's portal will automatically display real-time active meal recommendations at these hours.
+                      </p>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5 pt-1">
+                        {[
+                          { key: 'pre_breakfast', label: '🌿 Pre-Breakfast' },
+                          { key: 'breakfast', label: '🌅 Breakfast' },
+                          { key: 'drink', label: '🥤 Smoothie/Drink' },
+                          { key: 'lunch', label: '☀️ Lunch' },
+                          { key: 'snack', label: '🍎 Evening Snack' },
+                          { key: 'dinner', label: '🌙 Dinner' }
+                        ].map(slot => (
+                          <div key={slot.key} className="bg-white p-2.5 rounded-xl border border-[#EBE9E0] space-y-1">
+                            <label className="block text-[9px] font-black text-gray-500 uppercase tracking-wider truncate">
+                              {slot.label}
+                            </label>
+                            <input 
+                              type="text" 
+                              value={monthlyPlanData.meal_timings?.[slot.key] || DEFAULT_MEAL_TIMINGS[slot.key]} 
+                              onChange={e => handleMealTimingChange(slot.key, e.target.value)}
+                              placeholder="e.g. 08:30 AM"
+                              className="w-full bg-[#FDFCF8] border border-gray-200 rounded-lg px-2 py-1 text-xs font-bold text-[#1C2C22] outline-none focus:border-[#456A50]"
+                            />
+                          </div>
                         ))}
                       </div>
                     </div>

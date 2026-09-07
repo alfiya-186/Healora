@@ -2,13 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Calendar, Clock, Video, MapPin, ArrowLeft, CreditCard, 
-  ShieldCheck, FileText, CheckCircle, ShieldAlert, Sparkles, User 
+  ShieldCheck, FileText, CheckCircle, ShieldAlert, Sparkles, User,
+  Lock, BadgePercent, Percent
 } from 'lucide-react';
 import BookingCalendarPicker, { getHolidayOrOffReason } from '../components/BookingCalendarPicker.jsx';
 import TimeSlotPicker, { normalizeTimeTo24H, normalizeTimeToLabel } from '../components/TimeSlotPicker.jsx';
 
 const BookConsultationPage = () => {
   const navigate = useNavigate();
+  const userId = localStorage.getItem('user_id') || '1';
+  const hasLoyaltyDiscount = localStorage.getItem(`healora_has_loyalty_discount_${userId}`) === 'true';
   const [mode, setMode] = useState('ONLINE');
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
@@ -95,6 +98,10 @@ const BookConsultationPage = () => {
     setIsSubmitting(true);
     const userId = localStorage.getItem('user_id') || 1; // Dynamically gets the logged-in patient
 
+    const basePrice = rates[mode];
+    const discountAmount = hasLoyaltyDiscount ? Math.round(basePrice * 0.05) : 0;
+    const finalPrice = basePrice - discountAmount;
+
     try {
       const payload = {
         patient: userId,
@@ -104,7 +111,10 @@ const BookConsultationPage = () => {
         mode,
         status: 'SCHEDULED',
         health_notes: healthNotes,
-        amount_paid: rates[mode]
+        amount_paid: finalPrice,
+        discount_applied: hasLoyaltyDiscount,
+        discount_amount: discountAmount,
+        discount_code: hasLoyaltyDiscount ? 'WELLNESS5' : null
       };
 
       const response = await fetch(`/api/patient/${userId}/appointments/`, {
@@ -133,13 +143,23 @@ const BookConsultationPage = () => {
     }
   };
 
+  const basePrice = rates[mode];
+  const discountAmount = hasLoyaltyDiscount ? Math.round(basePrice * 0.05) : 0;
+  const finalPrice = basePrice - discountAmount;
+
   if (isSuccess) return (
     <div className="min-h-screen bg-[#FDFCF8] flex items-center justify-center p-4">
       <div className="bg-white p-10 rounded-3xl shadow-xl shadow-[#1C2C22]/5 flex flex-col items-center text-center max-w-md w-full border border-[#EBE9E0]">
         <div className="bg-[#EAF0EC] p-4 rounded-full mb-6"><CheckCircle className="text-[#456A50] w-12 h-12" /></div>
         <h2 className="text-3xl font-extrabold text-[#1C2C22] mb-2 font-serif">Confirmed.</h2>
         <p className="text-[#5A6B60] mb-8 text-sm">Your consultation is scheduled for <br /><span className="font-bold text-[#1C2C22]">{date} at {time}</span>.</p>
-        <div className="w-full bg-[#FDFCF8] border border-[#EBE9E0] rounded-xl p-4 mb-6"><p className="text-xs text-[#5A6B60] mb-1 uppercase tracking-widest font-bold">Total Paid</p><p className="text-2xl font-bold text-[#456A50]">₹{rates[mode]}</p></div>
+        <div className="w-full bg-[#FDFCF8] border border-[#EBE9E0] rounded-xl p-4 mb-6">
+          <p className="text-xs text-[#5A6B60] mb-1 uppercase tracking-widest font-bold">Total Paid</p>
+          <p className="text-2xl font-bold text-[#456A50]">₹{finalPrice.toFixed(2)}</p>
+          {hasLoyaltyDiscount && (
+            <p className="text-[11px] text-emerald-700 font-bold mt-1">🎉 5% Milestone Loyalty Discount Applied</p>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -271,10 +291,37 @@ const BookConsultationPage = () => {
                 </div>
               </div>
 
-              <div className="border-t border-[#EBE9E0] pt-4">
-                <div className="flex justify-between items-center">
+              <div className="border-t border-[#EBE9E0] pt-4 space-y-3">
+                <div className="flex justify-between text-[#5A6B60]">
+                  <span>Consultation Fee</span>
+                  <span className={hasLoyaltyDiscount ? "line-through text-gray-400 font-semibold" : "font-bold text-[#1C2C22]"}>
+                    ₹{basePrice.toFixed(2)}
+                  </span>
+                </div>
+
+                {hasLoyaltyDiscount ? (
+                  <div className="flex justify-between items-center text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 text-xs font-bold shadow-2xs">
+                    <span className="flex items-center gap-1.5">
+                      <Sparkles size={14} className="text-emerald-600" />
+                      5% Grand Champion Reward (All 4 Badges)
+                    </span>
+                    <span>- ₹{discountAmount.toFixed(2)}</span>
+                  </div>
+                ) : (
+                  <div className="bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-xs text-gray-500 font-medium flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <Lock size={13} className="text-gray-400" />
+                      5% Consultation Loyalty Discount
+                    </span>
+                    <span className="text-[10px] bg-amber-100 text-amber-900 border border-amber-300 font-bold px-2 py-0.5 rounded">
+                      🔒 LOCKED (Requires All 4/4 Badges)
+                    </span>
+                  </div>
+                )}
+
+                <div className="flex justify-between items-center pt-2 border-t border-gray-100">
                   <span className="text-sm font-bold text-[#5A6B60] uppercase tracking-wider">Total Due</span>
-                  <span className="text-3xl font-black text-[#456A50]">₹{rates[mode]}</span>
+                  <span className="text-3xl font-black text-[#456A50]">₹{finalPrice.toFixed(2)}</span>
                 </div>
               </div>
 

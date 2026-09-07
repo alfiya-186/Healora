@@ -6,12 +6,317 @@ import {
   CheckCircle2, Trash2, ShieldCheck, Edit3, Camera, Upload, UploadCloud, X,
   CreditCard, Lock, ChevronRight, ChevronLeft, CheckCircle, MessageSquare, Send, Bell, Download, File, User, Key, Flame, AlertCircle, DownloadCloud, Stethoscope, ClipboardList, Star, ShieldAlert,
   Video, ExternalLink, Link2, Clock, Sparkles, Eye, RotateCcw, XCircle, AlertTriangle, Check, RefreshCw,
-  Scale, TrendingDown, TrendingUp, Save, Ticket, DoorOpen, Megaphone, Printer
+  Scale, TrendingDown, TrendingUp, Save, Ticket, DoorOpen, Megaphone, Printer,
+  Award, Trophy, Zap, Percent, BadgePercent, Plus
 } from 'lucide-react';
 
 import BookingCalendarPicker, { getHolidayOrOffReason } from '../components/BookingCalendarPicker.jsx';
 import TimeSlotPicker, { normalizeTimeTo24H, normalizeTimeToLabel } from '../components/TimeSlotPicker.jsx';
 import { getKeralaPersonalizedOptions, getKeralaMealImage, KERALA_FOOD_IMAGES } from '../utils/keralaNutritionEngine.js';
+
+export const calculateMetabolicProfile = (profile = {}, gender = 'Female') => {
+  const weight = parseFloat(profile.weight_kg) || 60;
+  const height = parseFloat(profile.height_cm) || 165;
+  const age = parseFloat(profile.age) || 25;
+  const isMale = String(gender).toLowerCase() === 'male';
+
+  // Mifflin-St Jeor Clinical BMR Formula
+  const bmr = Math.round(
+    10 * weight + 6.25 * height - 5 * age + (isMale ? 5 : -161)
+  );
+
+  // Activity Multiplier
+  const lifestyle = profile.lifestyle_habits || 'Sedentary';
+  let multiplier = 1.2;
+  if (lifestyle === 'Lightly Active') multiplier = 1.375;
+  else if (lifestyle === 'Moderately Active') multiplier = 1.55;
+  else if (lifestyle === 'Very Active') multiplier = 1.725;
+
+  const tdee = Math.round(bmr * multiplier);
+
+  // Goal Calibration
+  const goal = profile.health_goals || 'Weight Loss';
+  let targetCalories = tdee;
+  let carbRatio = 0.40;
+  let proteinRatio = 0.30;
+  let fatRatio = 0.30;
+
+  if (goal === 'Weight Loss') {
+    targetCalories = Math.max(1200, tdee - 350);
+    carbRatio = 0.35;
+    proteinRatio = 0.35;
+    fatRatio = 0.30;
+  } else if (goal === 'PCOS' || profile.medical_history === 'PCOS') {
+    targetCalories = Math.max(1250, tdee - 250);
+    carbRatio = 0.30; // Low-GI complex carbs
+    proteinRatio = 0.35;
+    fatRatio = 0.35; // Healthy fats & Omega-3
+  } else if (goal === 'Diabetes' || profile.medical_history === 'Diabetes') {
+    targetCalories = Math.max(1300, tdee - 200);
+    carbRatio = 0.35;
+    proteinRatio = 0.35;
+    fatRatio = 0.30;
+  } else if (goal === 'Weight Gain' || goal === 'Muscle Building') {
+    targetCalories = tdee + 400;
+    carbRatio = 0.50;
+    proteinRatio = 0.25;
+    fatRatio = 0.25;
+  }
+
+  // Gram Conversions (Carb: 4 kcal/g, Protein: 4 kcal/g, Fat: 9 kcal/g)
+  const carbsGrams = Math.round((targetCalories * carbRatio) / 4);
+  const proteinGrams = Math.round((targetCalories * proteinRatio) / 4);
+  const fatsGrams = Math.round((targetCalories * fatRatio) / 9);
+
+  return {
+    bmr,
+    tdee,
+    targetCalories,
+    multiplier,
+    carbsGrams,
+    proteinGrams,
+    fatsGrams,
+    carbRatio: Math.round(carbRatio * 100),
+    proteinRatio: Math.round(proteinRatio * 100),
+    fatRatio: Math.round(fatRatio * 100)
+  };
+};
+
+export const calculateMetabolicHealthScore = (wellnessLogs = [], weightRecords = [], quickWater = 0) => {
+  // Pillar 1: Meal Adherence (Max 30 pts)
+  let mealPts = 22; // baseline
+  if (wellnessLogs && wellnessLogs.length > 0) {
+    const compliantCount = wellnessLogs.filter(l => {
+      const hasB = !!(l.breakfast_completed || l.completed_slots?.breakfast);
+      const hasL = !!(l.lunch_completed || l.completed_slots?.lunch);
+      const hasD = !!(l.dinner_completed || l.completed_slots?.dinner);
+      return (hasB || hasL || hasD) && !l.ate_other_food;
+    }).length;
+    mealPts = Math.min(30, Math.max(10, Math.round((compliantCount / Math.max(1, Math.min(7, wellnessLogs.length))) * 30)));
+  }
+
+  // Pillar 2: Daily Hydration Target (Max 20 pts)
+  let waterPts = 15;
+  const recentLogs = wellnessLogs ? wellnessLogs.slice(0, 7) : [];
+  if (recentLogs.length > 0 || quickWater > 0) {
+    const avgGlasses = ((recentLogs.reduce((acc, l) => acc + (parseFloat(l.water_glasses) || 0), 0) + quickWater) / Math.max(1, recentLogs.length + (quickWater > 0 ? 1 : 0)));
+    waterPts = Math.min(20, Math.max(5, Math.round((avgGlasses / 8) * 20)));
+  }
+
+  // Pillar 3: Restorative Sleep (Max 20 pts)
+  let sleepPts = 16;
+  if (recentLogs.length > 0) {
+    const avgSleep = recentLogs.reduce((acc, l) => acc + (parseFloat(l.sleep_hours) || 0), 0) / recentLogs.length;
+    if (avgSleep >= 7 && avgSleep <= 8.5) sleepPts = 20;
+    else if (avgSleep >= 6) sleepPts = 15;
+    else sleepPts = 10;
+  }
+
+  // Pillar 4: Physical Activity & Movement (Max 15 pts)
+  let actPts = 12;
+  if (recentLogs.length > 0) {
+    const activeCount = recentLogs.filter(l => l.physical_activity && l.physical_activity !== 'None' && l.physical_activity !== 'No workout').length;
+    actPts = Math.min(15, Math.max(5, Math.round((activeCount / Math.max(1, recentLogs.length)) * 15)));
+  }
+
+  // Pillar 5: Biometric Weigh-in Consistency (Max 15 pts)
+  const bioCount = Array.isArray(weightRecords) ? weightRecords.length : 0;
+  let bioPts = Math.min(15, Math.max(6, bioCount * 5));
+
+  const totalScore = Math.min(100, Math.max(30, mealPts + waterPts + sleepPts + actPts + bioPts));
+
+  let statusLabel = 'Optimal Metabolic Stability';
+  let statusColor = 'text-emerald-700 bg-emerald-50 border-emerald-300';
+  let statusBadge = '🟢 Optimal Stability';
+  let clinicalInsight = 'Metabolic markers indicate steady glycemic regulation and cellular energy consistency.';
+
+  if (totalScore >= 85) {
+    statusLabel = 'Elite Metabolic Balance';
+    statusColor = 'text-emerald-800 bg-emerald-100 border-emerald-400';
+    statusBadge = '🌟 Elite Vitality';
+    clinicalInsight = 'High metabolic adaptability, 100% Kerala meal timing compliance, and optimal cellular hydration.';
+  } else if (totalScore >= 70) {
+    statusLabel = 'Optimal Metabolic Stability';
+    statusColor = 'text-emerald-700 bg-emerald-50 border-emerald-300';
+    statusBadge = '🟢 Optimal Stability';
+    clinicalInsight = 'Good adherence to Kerala dietary guidelines with consistent hydration and sleep recovery.';
+  } else if (totalScore >= 55) {
+    statusLabel = 'Moderate Progress (Improving)';
+    statusColor = 'text-amber-800 bg-amber-50 border-amber-300';
+    statusBadge = '🟡 Improving';
+    clinicalInsight = 'Metabolic adaptation in progress. Aim for tighter dinner timing and 8 full glasses of water.';
+  } else {
+    statusLabel = 'Metabolic Attention Required';
+    statusColor = 'text-red-800 bg-red-50 border-red-300';
+    statusBadge = '🔴 Attention Needed';
+    clinicalInsight = 'Plan deviations detected. Please prioritize log check-ins and schedule your consultation.';
+  }
+
+  return {
+    totalScore,
+    mealPts,
+    waterPts,
+    sleepPts,
+    actPts,
+    bioPts,
+    statusLabel,
+    statusColor,
+    statusBadge,
+    clinicalInsight
+  };
+};
+
+export const printMetabolicHealthReportCard = (patientName, scoreObj, profile, metabolicProfile) => {
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) {
+    alert("Please allow popups to download your Clinical Report Card.");
+    return;
+  }
+
+  const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  const bmiVal = profile.height_cm && profile.weight_kg ? (parseFloat(profile.weight_kg) / Math.pow(parseFloat(profile.height_cm)/100, 2)).toFixed(1) : '23.8';
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>Clinical Metabolic Health Report - ${patientName}</title>
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 40px; color: #1C2C22; background: #fff; max-width: 800px; margin: auto; line-height: 1.5; }
+          .header { display: flex; justify-content: space-between; border-bottom: 2px solid #456A50; padding-bottom: 15px; margin-bottom: 25px; }
+          .header h1 { margin: 0; color: #456A50; font-size: 24px; text-transform: uppercase; letter-spacing: 1px; }
+          .header p { margin: 3px 0 0 0; color: #5A6B60; font-size: 13px; }
+          .badge-box { background: #FDFCF8; border: 1px solid #EBE9E0; padding: 18px; border-radius: 16px; margin-bottom: 25px; display: flex; justify-content: space-between; align-items: center; }
+          .score-dial { font-size: 40px; font-weight: 900; color: #456A50; margin: 0; }
+          table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 13px; }
+          th { background: #EAF0EC; color: #1C2C22; text-align: left; padding: 10px 12px; border: 1px solid #EBE9E0; font-weight: 700; }
+          td { padding: 10px 12px; border: 1px solid #EBE9E0; }
+          .footer { margin-top: 40px; border-top: 1px dashed #ccc; padding-top: 15px; display: flex; justify-content: space-between; align-items: flex-end; font-size: 11px; color: #777; }
+          .signature-box { text-align: right; }
+          .signature-box strong { color: #1C2C22; display: block; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div>
+            <h1>Healora Telehealth & Clinical Nutrition</h1>
+            <p>Official Weekly Clinical Metabolic Health Report Card</p>
+          </div>
+          <div style="text-align: right;">
+            <p style="font-weight: bold; color: #456A50;">Date: ${dateStr}</p>
+            <p>Patient ID: #${profile.id || '101'}</p>
+          </div>
+        </div>
+
+        <div class="badge-box">
+          <div>
+            <h3 style="margin: 0 0 5px 0; font-size: 18px; color: #1C2C22;">Patient: ${patientName}</h3>
+            <p style="margin: 0; font-size: 12px; color: #5A6B60;">
+              Age: <strong>${profile.age || '25'} yrs</strong> &nbsp;|&nbsp;
+              Height: <strong>${profile.height_cm || '165'} cm</strong> &nbsp;|&nbsp;
+              Weight: <strong>${profile.weight_kg || '65'} kg</strong> (BMI: <strong>${bmiVal}</strong>)
+            </p>
+            <p style="margin: 4px 0 0 0; font-size: 12px; color: #456A50; font-weight: bold;">
+              Program: ${profile.health_goals || 'Weight Management & Metabolic Health'}
+            </p>
+          </div>
+          <div style="text-align: center; border-left: 2px solid #EBE9E0; padding-left: 25px;">
+            <span style="font-size: 10px; font-weight: bold; text-transform: uppercase; color: #5A6B60;">Metabolic Health Score</span>
+            <div class="score-dial">${scoreObj.totalScore} / 100</div>
+            <span style="font-size: 11px; font-weight: bold; color: #16a34a;">${scoreObj.statusLabel}</span>
+          </div>
+        </div>
+
+        <h3 style="color: #456A50; margin: 20px 0 8px 0; font-size: 16px;">1. Five Clinical Pillars Compliance Breakdown</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Pillar Metric</th>
+              <th>Maximum Points</th>
+              <th>Patient Score</th>
+              <th>Clinical Compliance Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>1. Kerala Meal Plan Adherence</strong></td>
+              <td>30 Pts</td>
+              <td><strong>${scoreObj.mealPts} Pts</strong></td>
+              <td>${scoreObj.mealPts >= 24 ? '✔ Excellent Adherence' : 'Moderate Adherence'}</td>
+            </tr>
+            <tr>
+              <td><strong>2. Hydration & Ayurvedic Infusions</strong></td>
+              <td>20 Pts</td>
+              <td><strong>${scoreObj.waterPts} Pts</strong></td>
+              <td>${scoreObj.waterPts >= 16 ? '✔ Target Met (8+ Glasses)' : 'Below Optimal Target'}</td>
+            </tr>
+            <tr>
+              <td><strong>3. Restorative Sleep & Circadian Rhythm</strong></td>
+              <td>20 Pts</td>
+              <td><strong>${scoreObj.sleepPts} Pts</strong></td>
+              <td>${scoreObj.sleepPts >= 16 ? '✔ 7-8 Hours Restorative' : 'Sleep Irregularity'}</td>
+            </tr>
+            <tr>
+              <td><strong>4. Physical Activity & Daily Steps</strong></td>
+              <td>15 Pts</td>
+              <td><strong>${scoreObj.actPts} Pts</strong></td>
+              <td>${scoreObj.actPts >= 12 ? '✔ Active Daily Movement' : 'Light Sedentary'}</td>
+            </tr>
+            <tr>
+              <td><strong>5. Biometric Weigh-in Consistency</strong></td>
+              <td>15 Pts</td>
+              <td><strong>${scoreObj.bioPts} Pts</strong></td>
+              <td>${scoreObj.bioPts >= 12 ? '✔ Regular Clinical Logging' : 'Pending Weigh-in'}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3 style="color: #456A50; margin: 25px 0 8px 0; font-size: 16px;">2. Mifflin-St Jeor Clinical Energy & Macro Targets</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Basal Metabolic Rate (BMR)</th>
+              <th>Total Daily Expenditure (TDEE)</th>
+              <th>Prescribed Calories</th>
+              <th>Macro Target Split</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>${metabolicProfile.bmr} kcal/day</strong></td>
+              <td><strong>${metabolicProfile.tdee} kcal/day</strong></td>
+              <td><strong style="color: #456A50;">${metabolicProfile.targetCalories} kcal/day</strong></td>
+              <td>Carbs: ${metabolicProfile.carbsGrams}g | Protein: ${metabolicProfile.proteinGrams}g | Fats: ${metabolicProfile.fatsGrams}g</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div style="background: #FDFCF8; border: 1px solid #EBE9E0; padding: 15px; border-radius: 12px; margin-top: 25px;">
+          <h4 style="margin: 0 0 5px 0; color: #456A50; font-size: 13px;">Clinical Physician Impression & Recommendation</h4>
+          <p style="margin: 0; font-size: 12px; color: #333; line-height: 1.6;">
+            "${scoreObj.clinicalInsight} Continue following the prescribed Kerala meal timing windows. Take your prescribed morning Jeera/Methi water upon waking and ensure 30 minutes of brisk post-meal walking."
+          </p>
+        </div>
+
+        <div class="footer">
+          <div>
+            <p style="margin: 0;">Healora Clinical Nutrition & Telehealth Systems • Digital Verification</p>
+            <p style="margin: 2px 0 0 0;">Document Reference: HLR-MHS-${Date.now().toString().slice(-6)}</p>
+          </div>
+          <div class="signature-box">
+            <strong>Dr. Sarah Jenkins</strong>
+            <span>Lead Clinical Nutritionist & Physician (MD, Clinical Nutrition)</span>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  printWindow.document.write(html);
+  printWindow.document.close();
+  printWindow.focus();
+  setTimeout(() => printWindow.print(), 350);
+};
 
 export const printClinicTokenSlip = (appt, patientInfo = {}) => {
   const tokenNum = appt.token_number || `TK-${101 + ((appt.id || 1) % 50)}`;
@@ -231,6 +536,15 @@ export const printClinicTokenSlip = (appt, patientInfo = {}) => {
 
 
 
+export const DEFAULT_MEAL_TIMINGS = {
+  pre_breakfast: '07:00 AM',
+  breakfast: '08:30 AM',
+  drink: '11:00 AM',
+  lunch: '01:30 PM',
+  snack: '04:30 PM',
+  dinner: '08:00 PM'
+};
+
 const FALLBACK_IMAGES = {
   breakfast: 'https://images.unsplash.com/photo-1533089860892-a7c6f0a88666?auto=format&fit=crop&w=800&q=80',
   lunch: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80',
@@ -247,9 +561,73 @@ export const CLINICAL_REPORT_TYPES = [
   "Hormonal & PCOS Profile (PCOD, Cortisol, Estrogen)",
   "Body Composition Analysis & DEXA Scan",
   "Gut Health / Stool & Food Intolerance Report",
-  "Physician's Clinical Prescription & Medical Summary",
-  "General Clinical Laboratory Report"
+  "Physician's Clinical Prescription & Medical Summary"
 ];
+
+export const SYSTEM_CHALLENGES_CONFIG = [
+  {
+    id: 'CHALLENGE_HYDRATION',
+    title: '7-Day Mindful Hydration Streak',
+    description: 'Automated System Verification: Drink 8+ glasses of water daily for 7 days based on your daily tracking logs.',
+    category: 'Hydration',
+    targetDays: 7,
+    unit: 'Days',
+    badgeName: 'Hydration Master',
+    badgeIcon: 'Droplets',
+    badgeColor: 'text-blue-600 bg-blue-50 border-blue-200',
+    rewardText: '5% Consultation Discount (Coupon: HYDRATE5)',
+    discountCode: 'HYDRATE5',
+    discountPercent: 5,
+    verifyRequirement: 'Log 8+ glasses of water daily in Daily Tracking for 7 days'
+  },
+  {
+    id: 'CHALLENGE_MEALS',
+    title: '100% Meal Adherence Streak',
+    description: 'Automated System Verification: Complete all daily prescribed Kerala diet meals without cheat foods for 5 days.',
+    category: 'Nutrition',
+    targetDays: 5,
+    unit: 'Days',
+    badgeName: 'Clean Plate Champion',
+    badgeIcon: 'Apple',
+    badgeColor: 'text-emerald-700 bg-emerald-50 border-emerald-200',
+    rewardText: '5% Consultation Discount (Coupon: MEAL5)',
+    discountCode: 'MEAL5',
+    discountPercent: 5,
+    verifyRequirement: 'Complete 100% of prescribed meal slots without cheat food in Daily Tracking for 5 days'
+  },
+  {
+    id: 'CHALLENGE_SLEEP',
+    title: 'Rest & Recovery Sleep Champion',
+    description: 'Automated System Verification: Maintain 7 to 8+ hours of restorative sleep logged for 5 days.',
+    category: 'Recovery',
+    targetDays: 5,
+    unit: 'Days',
+    badgeName: 'Sleep Restorer',
+    badgeIcon: 'Moon',
+    badgeColor: 'text-indigo-700 bg-indigo-50 border-indigo-200',
+    rewardText: '5% Consultation Discount (Coupon: SLEEP5)',
+    discountCode: 'SLEEP5',
+    discountPercent: 5,
+    verifyRequirement: 'Log 7+ hours of sleep per night in Daily Tracking for 5 days'
+  },
+  {
+    id: 'CHALLENGE_PROGRESS',
+    title: 'Clinical Weigh-in Milestone',
+    description: 'Automated System Verification: Record at least 3 clinical weigh-in check-ins in your Biometric Health History.',
+    category: 'Biometrics',
+    targetDays: 3,
+    unit: 'Logs',
+    badgeName: 'Metabolic Starter',
+    badgeIcon: 'Scale',
+    badgeColor: 'text-amber-700 bg-amber-50 border-amber-200',
+    rewardText: '5% Consultation Discount (Coupon: START5)',
+    discountCode: 'START5',
+    discountPercent: 5,
+    verifyRequirement: 'Record 3 clinical weight updates in Biometric Health Profile'
+  }
+];
+
+export const DEFAULT_CHALLENGES = SYSTEM_CHALLENGES_CONFIG;
 
 const PatientDashboard = () => {
   const navigate = useNavigate();
@@ -273,7 +651,259 @@ const PatientDashboard = () => {
   const [nutritionists, setNutritionists] = useState([]);
   const [evaluations, setEvaluations] = useState([]);
   const [patientApptFilter, setPatientApptFilter] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'CANCELLED'
+
+  // --- 🏆 WELLNESS CHALLENGES & MILESTONE BADGES (SYSTEM AUTOMATED & LOCKED) ---
+  const [claimedChallenges, setClaimedChallenges] = useState(() => {
+    try {
+      const saved = localStorage.getItem(`healora_claimed_challenges_${userId}`);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {};
+  });
+
+  const [quickWaterTracker, setQuickWaterTracker] = useState(0);
+  const [patientWeightRecords, setPatientWeightRecords] = useState([]);
+
+  // Automated System Evaluation Engine
+  const challenges = useMemo(() => {
+    // 1. Calculate Hydration Days (8+ glasses of water)
+    const hydrationDates = new Set();
+    (wellnessLogs || []).forEach(log => {
+      const glasses = parseInt(log.water_glasses, 10) || 0;
+      if (glasses >= 8 && log.date) {
+        hydrationDates.add(String(log.date).split('T')[0]);
+      }
+    });
+    if (quickWaterTracker >= 8) {
+      hydrationDates.add(new Date().toISOString().split('T')[0]);
+    }
+    const currentHydrationDays = hydrationDates.size;
+
+    // 2. Calculate Meal Adherence Days (100% meals completed with no cheat foods)
+    const mealDates = new Set();
+    (wellnessLogs || []).forEach(log => {
+      const hasBreakfast = !!(log.breakfast_completed || log.completed_slots?.breakfast);
+      const hasLunch = !!(log.lunch_completed || log.completed_slots?.lunch);
+      const hasDinner = !!(log.dinner_completed || log.completed_slots?.dinner);
+      const noCheat = !log.ate_other_food;
+      if (hasBreakfast && hasLunch && hasDinner && noCheat && log.date) {
+        mealDates.add(String(log.date).split('T')[0]);
+      }
+    });
+    const currentMealDays = mealDates.size;
+
+    // 3. Calculate Sleep Restorer Days (7+ hours restorative sleep)
+    const sleepDates = new Set();
+    (wellnessLogs || []).forEach(log => {
+      const hours = parseFloat(log.sleep_hours) || 0;
+      if (hours >= 7 && log.date) {
+        sleepDates.add(String(log.date).split('T')[0]);
+      }
+    });
+    const currentSleepDays = sleepDates.size;
+
+    // 4. Calculate Weight / Biometric Check-ins
+    const currentWeightLogs = Array.isArray(patientWeightRecords) ? patientWeightRecords.length : 0;
+
+    return SYSTEM_CHALLENGES_CONFIG.map(cfg => {
+      let currentProgress = 0;
+      let logSummary = '';
+
+      if (cfg.id === 'CHALLENGE_HYDRATION') {
+        currentProgress = currentHydrationDays;
+        logSummary = `${currentHydrationDays} / ${cfg.targetDays} Days (8+ water glasses logged)`;
+      } else if (cfg.id === 'CHALLENGE_MEALS') {
+        currentProgress = currentMealDays;
+        logSummary = `${currentMealDays} / ${cfg.targetDays} Days (100% prescribed meal adherence)`;
+      } else if (cfg.id === 'CHALLENGE_SLEEP') {
+        currentProgress = currentSleepDays;
+        logSummary = `${currentSleepDays} / ${cfg.targetDays} Days (7+ hrs sleep logged)`;
+      } else if (cfg.id === 'CHALLENGE_PROGRESS') {
+        currentProgress = currentWeightLogs;
+        logSummary = `${currentWeightLogs} / ${cfg.targetDays} Weigh-in entries recorded`;
+      }
+
+      const isCompleted = currentProgress >= cfg.targetDays;
+      const claimInfo = claimedChallenges[cfg.id];
+      const isClaimed = !!claimInfo?.claimed;
+
+      return {
+        ...cfg,
+        currentDays: Math.min(cfg.targetDays, currentProgress),
+        rawCount: currentProgress,
+        isCompleted,
+        claimed: isClaimed,
+        claimedAt: claimInfo?.claimedAt || null,
+        logSummary
+      };
+    });
+  }, [wellnessLogs, quickWaterTracker, patientWeightRecords, claimedChallenges]);
+
+  const allBadgesClaimed = challenges.length > 0 && challenges.every(c => c.claimed);
+  const claimedBadgesCount = challenges.filter(c => c.claimed).length;
+
+  useEffect(() => {
+    localStorage.setItem(`healora_has_loyalty_discount_${userId}`, allBadgesClaimed ? 'true' : 'false');
+  }, [allBadgesClaimed, userId]);
+
+  const handleClaimReward = (challengeId) => {
+    const targetChallenge = challenges.find(c => c.id === challengeId);
+    if (!targetChallenge || !targetChallenge.isCompleted) {
+      alert("🔒 This reward is locked! You must complete your prescribed daily plan in full before claiming.");
+      return;
+    }
+
+    const updatedClaimed = {
+      ...claimedChallenges,
+      [challengeId]: {
+        claimed: true,
+        claimedAt: new Date().toISOString().split('T')[0]
+      }
+    };
+    setClaimedChallenges(updatedClaimed);
+    localStorage.setItem(`healora_claimed_challenges_${userId}`, JSON.stringify(updatedClaimed));
+    alert(`🎉 Congratulations! You unlocked your 5% Consultation Discount Voucher (Coupon: ${targetChallenge.discountCode})!`);
+  };
+
+  const metabolicProfile = useMemo(() => calculateMetabolicProfile(profile), [profile]);
   
+  const metabolicHealthScore = useMemo(() => {
+    return calculateMetabolicHealthScore(wellnessLogs, patientWeightRecords, quickWaterTracker);
+  }, [wellnessLogs, patientWeightRecords, quickWaterTracker]);
+
+  const getMealTimingForSlot = (slotKey) => {
+    const publishedPlan = dietPlans.length > 0 ? dietPlans[0] : (JSON.parse(localStorage.getItem(`healora_patient_dietplan_${userId}`)) || null);
+    return publishedPlan?.meal_timings?.[slotKey] || DEFAULT_MEAL_TIMINGS[slotKey] || '12:00 PM';
+  };
+
+  // --- CROSS-DASHBOARD STATE (DIET PLAN DRILL-DOWN) ---
+  const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const [selectedWeek, setSelectedWeek] = useState(1);
+  const [selectedDay, setSelectedDay] = useState(daysOfWeek[new Date().getDay()] || 'Monday');
+  const [dietView, setDietView] = useState('meals'); // 'weeks' | 'days' | 'meals'
+  const [mealOverrides, setMealOverrides] = useState({});
+  const [selectedMeal, setSelectedMeal] = useState(null);
+  const [showPhase2LockedModal, setShowPhase2LockedModal] = useState(false);
+
+  // Real-time active meal recommendation
+  const activeCurrentMealRecommendation = useMemo(() => {
+    const now = new Date();
+    const hour = now.getHours();
+    const daysArr = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const dayName = daysArr[now.getDay()] || 'Monday';
+    
+    const publishedPlan = dietPlans.length > 0 ? dietPlans[0] : (JSON.parse(localStorage.getItem(`healora_patient_dietplan_${userId}`)) || null);
+    const currentDayPlan = (publishedPlan?.weeks?.[selectedWeek || 1]?.[dayName]) || (publishedPlan?.weeks?.['1']?.[dayName]) || {};
+
+    let slotKey = 'lunch';
+    let slotLabel = '☀️ Lunch';
+    let defaultName = 'Kerala Red Matta Rice with Moru Curry & Thoran';
+    let advice = 'Chew mindfully, maintain portion size, and follow with warm cumin water.';
+
+    if (hour < 8) {
+      slotKey = currentDayPlan.pre_breakfast ? 'pre_breakfast' : 'breakfast';
+      slotLabel = slotKey === 'pre_breakfast' ? '🌿 Pre-Breakfast Tonic' : '🌅 Breakfast';
+      defaultName = slotKey === 'pre_breakfast' ? 'Warm Jeera & Methi Seed Detox Water' : 'Kerala Steamed Idiyappam with Kadala Curry';
+      advice = 'Drink warm on an empty stomach to kickstart metabolic lipid burning and gut health.';
+    } else if (hour >= 8 && hour < 11) {
+      slotKey = 'breakfast';
+      slotLabel = '🌅 Breakfast';
+      defaultName = 'Kerala Appam with Vegetable Stew & Boiled Egg';
+      advice = 'High protein and complex fiber to stabilize morning glucose levels.';
+    } else if (hour >= 11 && hour < 13) {
+      slotKey = 'drink';
+      slotLabel = '🥤 Drink / Mid-Morning';
+      defaultName = 'Kerala Spiced Buttermilk (Sambharam) with Curry Leaves';
+      advice = 'Rich in natural probiotics and electrolytes for sustained daytime focus.';
+    } else if (hour >= 13 && hour < 16) {
+      slotKey = 'lunch';
+      slotLabel = '☀️ Lunch';
+      defaultName = 'Kerala Red Matta Rice with Fish Curry & Cabbage Thoran';
+      advice = 'Main balanced meal with Omega-3 and low glycemic complex carbs.';
+    } else if (hour >= 16 && hour < 19) {
+      slotKey = 'snack';
+      slotLabel = '🍎 Evening Snack';
+      defaultName = 'Boiled Kerala Nendran Banana or Sprouted Green Gram Sundal';
+      advice = 'Satiating afternoon fuel to prevent late evening cravings.';
+    } else {
+      slotKey = 'dinner';
+      slotLabel = '🌙 Dinner';
+      defaultName = 'Kerala Ragi Dosa with Tomato Chutney & Vegetable Soup';
+      advice = 'Light, easy-to-digest Kerala dinner. Finish at least 2 hours before bedtime.';
+    }
+
+    const prescribedTime = publishedPlan?.meal_timings?.[slotKey] || DEFAULT_MEAL_TIMINGS[slotKey] || '12:00 PM';
+    const mealStr = currentDayPlan[slotKey] || defaultName;
+    const calMatch = mealStr.match(/\((\d+\s*kcal)\)/i);
+    const cal = calMatch ? calMatch[1] : '280 kcal';
+    const name = mealStr.replace(/\(\d+\s*kcal\)/i, '').trim() || defaultName;
+
+    const todayIso = now.toISOString().split('T')[0];
+    const todayLog = (wellnessLogs || []).find(l => l.date && String(l.date).startsWith(todayIso));
+    let isLogged = false;
+    if (todayLog) {
+      if (todayLog.completed_slots && todayLog.completed_slots[slotKey]) isLogged = true;
+      else if (slotKey === 'breakfast' && todayLog.breakfast_completed) isLogged = true;
+      else if (slotKey === 'lunch' && todayLog.lunch_completed) isLogged = true;
+      else if (slotKey === 'dinner' && todayLog.dinner_completed) isLogged = true;
+    }
+
+    return {
+      slotKey,
+      slotLabel,
+      name,
+      cal,
+      time: prescribedTime,
+      advice,
+      isLogged,
+      img: getKeralaMealImage(name, slotKey)
+    };
+  }, [dietPlans, selectedWeek, wellnessLogs, userId]);
+
+  const handleQuickMarkActiveMealCompleted = () => {
+    if (!activeCurrentMealRecommendation) return;
+    const now = new Date();
+    const todayIso = now.toISOString().split('T')[0];
+    const slotKey = activeCurrentMealRecommendation.slotKey;
+
+    const existingLogs = [...wellnessLogs];
+    const todayIndex = existingLogs.findIndex(l => l.date && String(l.date).startsWith(todayIso));
+
+    let updatedLog;
+    if (todayIndex >= 0) {
+      const curr = existingLogs[todayIndex];
+      const updatedSlots = { ...(curr.completed_slots || {}), [slotKey]: true };
+      updatedLog = {
+        ...curr,
+        completed_slots: updatedSlots,
+        breakfast_completed: slotKey === 'breakfast' ? true : curr.breakfast_completed,
+        lunch_completed: slotKey === 'lunch' ? true : curr.lunch_completed,
+        dinner_completed: slotKey === 'dinner' ? true : curr.dinner_completed
+      };
+      existingLogs[todayIndex] = updatedLog;
+    } else {
+      const initialSlots = { pre_breakfast: false, breakfast: false, drink: false, lunch: false, snack: false, dinner: false, [slotKey]: true };
+      updatedLog = {
+        id: Date.now(),
+        date: todayIso,
+        completed_slots: initialSlots,
+        breakfast_completed: slotKey === 'breakfast',
+        lunch_completed: slotKey === 'lunch',
+        dinner_completed: slotKey === 'dinner',
+        ate_other_food: false,
+        sleep_hours: '7.5',
+        water_glasses: 4,
+        mood: 'Calm & Balanced',
+        physical_activity: '30 mins brisk walking'
+      };
+      existingLogs.unshift(updatedLog);
+    }
+
+    setWellnessLogs(existingLogs);
+    localStorage.setItem(`healora_wellness_${userId}`, JSON.stringify(existingLogs));
+    alert(`✅ Marked "${activeCurrentMealRecommendation.name}" (${activeCurrentMealRecommendation.slotLabel}) as eaten! Your Metabolic Health Adherence score has been updated.`);
+  };
+
   const [logForm, setLogForm] = useState({ 
     completed_slots: { pre_breakfast: false, breakfast: false, drink: false, lunch: false, snack: false, dinner: false },
     breakfast_completed: false, lunch_completed: false, dinner_completed: false, 
@@ -335,16 +965,6 @@ const PatientDashboard = () => {
   const [digitalConsent, setDigitalConsent] = useState(true); 
   const fileInputRef = useRef(null);
 
-  // --- CROSS-DASHBOARD STATE (DIET PLAN DRILL-DOWN) ---
-  const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const [selectedWeek, setSelectedWeek] = useState(1);
-  const [selectedDay, setSelectedDay] = useState(daysOfWeek[new Date().getDay()] || 'Monday');
-  const [dietView, setDietView] = useState('meals'); // 'weeks' | 'days' | 'meals'
-  const [mealOverrides, setMealOverrides] = useState({});
-  const [selectedMeal, setSelectedMeal] = useState(null);
-  const [quickWaterTracker, setQuickWaterTracker] = useState(0);
-  const [showPhase2LockedModal, setShowPhase2LockedModal] = useState(false);
-
   const [notifications, setNotifications] = useState([]);
   const [queryText, setQueryText] = useState("");
   const chatEndRef = useRef(null);
@@ -353,7 +973,6 @@ const PatientDashboard = () => {
 
   // --- 5. PATIENT CLINICAL HEALTH HISTORY & LONGITUDINAL TRENDS ---
   const [patientHistoryTab, setPatientHistoryTab] = useState('daily_weekly'); // 'daily_weekly' | 'weight' | 'lifestyle' | 'food'
-  const [patientWeightRecords, setPatientWeightRecords] = useState([]);
   const [newPatientWeight, setNewPatientWeight] = useState('');
   const [newPatientWeightDate, setNewPatientWeightDate] = useState(new Date().toISOString().split('T')[0]);
   const [newPatientWeightNotes, setNewPatientWeightNotes] = useState('');
@@ -2056,7 +2675,25 @@ const PatientDashboard = () => {
           <button onClick={() => { setActiveTab('profile'); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition text-sm whitespace-nowrap ${activeTab==='profile' ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'}`}><UserCircle size={18} className="shrink-0" /> <span>Profile & Vault</span></button>
           <button onClick={() => { setActiveTab('diet'); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition text-sm whitespace-nowrap ${activeTab==='diet' ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'}`}><Apple size={18} className="shrink-0" /> <span>My Diet Plan</span></button>
           <button onClick={() => { setActiveTab('tracking'); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition text-sm whitespace-nowrap ${activeTab==='tracking' ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'}`}><Activity size={18} className="shrink-0" /> <span>Wellness Tracking</span></button>
+          <button onClick={() => { setActiveTab('scorecard'); }} className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition text-sm whitespace-nowrap ${activeTab==='scorecard' ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'}`}>
+            <div className="flex items-center gap-3">
+              <Award size={18} className="shrink-0 text-emerald-600" />
+              <span>Metabolic Scorecard</span>
+            </div>
+            <span className="text-[10px] font-black uppercase bg-emerald-100 text-emerald-900 px-2 py-0.5 rounded-md border border-emerald-300">
+              {metabolicHealthScore.totalScore}/100
+            </span>
+          </button>
           <button onClick={() => { setActiveTab('history'); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition text-sm whitespace-nowrap ${activeTab==='history' ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'}`}><Clock size={18} className="shrink-0" /> <span>Health History</span></button>
+          <button onClick={() => { setActiveTab('challenges'); }} className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition text-sm whitespace-nowrap ${activeTab==='challenges' ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'}`}>
+            <div className="flex items-center gap-3">
+              <Trophy size={18} className="shrink-0 text-amber-500" />
+              <span>Challenges & Badges</span>
+            </div>
+            <span className="text-[9px] font-black uppercase bg-amber-100 text-amber-900 px-2 py-0.5 rounded-md border border-amber-300">
+              5% OFF
+            </span>
+          </button>
           <button onClick={() => { setActiveTab('appointments'); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition text-sm whitespace-nowrap ${activeTab==='appointments' ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'}`}><Calendar size={18} className="shrink-0" /> <span>Appointments & Chat</span></button>
           <button onClick={() => { setActiveTab('evaluations'); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition text-sm whitespace-nowrap ${activeTab==='evaluations' ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'}`}><ClipboardList size={18} className="shrink-0" /> <span>Nutritionist Evaluations</span></button>
         </nav>
@@ -2167,6 +2804,53 @@ const PatientDashboard = () => {
             </div>
           )}
 
+          {/* 🥗 REAL-TIME ACTIVE MEAL RECOMMENDATION & INTAKE TIMING BANNER 🥗 */}
+          {activeCurrentMealRecommendation && (
+            <div className="bg-gradient-to-r from-[#F4F9F5] via-[#FDFCF8] to-[#F4F9F5] border-2 border-emerald-500/30 rounded-3xl p-6 shadow-md relative overflow-hidden animate-in fade-in">
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                <div className="flex items-start gap-4">
+                  <div className="w-16 h-16 rounded-2xl overflow-hidden border-2 border-emerald-600/30 shadow-sm shrink-0 bg-white">
+                    <img 
+                      src={activeCurrentMealRecommendation.img} 
+                      alt={activeCurrentMealRecommendation.name} 
+                      className="w-full h-full object-cover" 
+                    />
+                  </div>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2 mb-1">
+                      <span className="bg-emerald-700 text-white text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full tracking-wider flex items-center gap-1.5 shadow-xs">
+                        <Sparkles size={11} className="text-amber-300 animate-spin" /> ACTIVE MEAL WINDOW
+                      </span>
+                      <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-emerald-200">
+                        ⏰ Prescribed Intake: <strong>{activeCurrentMealRecommendation.time}</strong>
+                      </span>
+                      <span className="text-[10px] font-bold text-[#5A6B60]">
+                        Slot: {activeCurrentMealRecommendation.slotLabel}
+                      </span>
+                    </div>
+                    <h3 className="text-xl font-black text-[#1C2C22] tracking-tight">
+                      {activeCurrentMealRecommendation.name}
+                    </h3>
+                    <p className="text-xs text-[#5A6B60] mt-1 font-medium max-w-xl">
+                      {activeCurrentMealRecommendation.advice}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 shrink-0 w-full md:w-auto">
+                  <button
+                    onClick={() => {
+                      setActiveTab('diet');
+                    }}
+                    className="w-full md:w-auto bg-[#456A50] hover:bg-[#35533E] text-white px-5 py-3 rounded-xl text-xs font-bold transition shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Apple size={16} /> View Full Diet Plan
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* TAB 1: PROFILE & VAULT */}
           {activeTab === 'profile' && (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-in fade-in">
@@ -2228,6 +2912,58 @@ const PatientDashboard = () => {
                       <div className="grid grid-cols-2 gap-4">
                         <div className="bg-white p-5 rounded-2xl border border-[#EBE9E0] shadow-sm"><p className="text-[10px] uppercase font-bold text-[#5A6B60] tracking-widest mb-1.5">Diet Preferences</p><p className="text-sm font-bold text-[#1C2C22]">{profile.food_preferences || 'No preference'}</p></div>
                         <div className="bg-[#1C2C22] border border-[#1C2C22] p-5 rounded-2xl shadow-sm"><p className="text-[10px] uppercase font-bold text-[#A4B3A8] tracking-widest mb-1.5">Primary Goal</p><p className="text-sm font-black text-white">{profile.health_goals || 'Weight Loss'} <span className="font-medium text-xs text-gray-400">({profile.target_weight ? `${profile.target_weight}kg` : ''})</span></p></div>
+                      </div>
+
+                      {/* 🧮 CLINICAL METABOLIC & MACRONUTRIENT ENERGY PROFILE */}
+                      <div className="bg-[#FDFCF8] border border-[#EBE9E0] rounded-2xl p-5 shadow-sm space-y-4 mt-4">
+                        <div className="flex justify-between items-center border-b border-[#EBE9E0] pb-3">
+                          <div className="flex items-center gap-2">
+                            <Flame size={18} className="text-amber-500" />
+                            <h4 className="font-black text-sm text-[#1C2C22]">Clinical Energy & Metabolic Engine</h4>
+                          </div>
+                          <span className="text-[10px] font-bold text-[#456A50] bg-[#EAF0EC] px-2.5 py-1 rounded-full uppercase tracking-wider">
+                            Mifflin-St Jeor Formula
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-3 text-center">
+                          <div className="bg-white p-3 rounded-xl border border-[#EBE9E0] shadow-2xs">
+                            <span className="text-[9px] font-black uppercase tracking-wider text-gray-500 block">Basal BMR</span>
+                            <span className="text-base font-black text-[#1C2C22]">{metabolicProfile.bmr} <small className="text-[10px] font-normal text-gray-500">kcal</small></span>
+                            <span className="text-[9px] text-gray-400 block mt-0.5">Resting burn</span>
+                          </div>
+                          <div className="bg-white p-3 rounded-xl border border-[#EBE9E0] shadow-2xs">
+                            <span className="text-[9px] font-black uppercase tracking-wider text-gray-500 block">Active TDEE</span>
+                            <span className="text-base font-black text-[#456A50]">{metabolicProfile.tdee} <small className="text-[10px] font-normal text-gray-500">kcal</small></span>
+                            <span className="text-[9px] text-gray-400 block mt-0.5">Maintenance</span>
+                          </div>
+                          <div className="bg-emerald-50/70 p-3 rounded-xl border border-emerald-200 shadow-2xs">
+                            <span className="text-[9px] font-black uppercase tracking-wider text-emerald-800 block">Target Goal</span>
+                            <span className="text-base font-black text-emerald-700">{metabolicProfile.targetCalories} <small className="text-[10px] font-bold text-emerald-600">kcal</small></span>
+                            <span className="text-[9px] text-emerald-600 font-bold block mt-0.5">Prescribed daily</span>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2 pt-1">
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="font-bold text-gray-700">Prescribed Macronutrient Grams</span>
+                            <span className="text-[10px] text-gray-400 font-medium">Daily Gram Splits</span>
+                          </div>
+                          <div className="grid grid-cols-3 gap-2 text-center text-xs font-bold">
+                            <div className="p-2.5 rounded-xl bg-amber-50/80 border border-amber-200">
+                              <span className="text-[9px] font-black text-amber-800 uppercase block">Carbs ({metabolicProfile.carbRatio}%)</span>
+                              <span className="text-sm font-black text-amber-900">{metabolicProfile.carbsGrams}g</span>
+                            </div>
+                            <div className="p-2.5 rounded-xl bg-blue-50/80 border border-blue-200">
+                              <span className="text-[9px] font-black text-blue-800 uppercase block">Protein ({metabolicProfile.proteinRatio}%)</span>
+                              <span className="text-sm font-black text-blue-900">{metabolicProfile.proteinGrams}g</span>
+                            </div>
+                            <div className="p-2.5 rounded-xl bg-emerald-50/80 border border-emerald-200">
+                              <span className="text-[9px] font-black text-emerald-800 uppercase block">Fats ({metabolicProfile.fatRatio}%)</span>
+                              <span className="text-sm font-black text-emerald-900">{metabolicProfile.fatsGrams}g</span>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -2520,9 +3256,8 @@ const PatientDashboard = () => {
                     </div>
                     <span className="text-[11px] font-black text-[#456A50] bg-[#EAF0EC] px-3 py-1.5 rounded-full border border-[#456A50]/20 w-max">
                       {(() => {
-                        const currentDayPlan = (publishedPlan?.weeks?.[selectedWeek]?.[selectedDay]) || (publishedPlan?.weeks?.['1']?.[selectedDay]) || {};
-                        const count = Object.keys(currentDayPlan).filter(k => currentDayPlan[k]).length || publishedPlan?.meal_frequency || 5;
-                        return `${count}-Slot Clinical Protocol`;
+                        const freq = publishedPlan?.meal_frequency || 5;
+                        return `${freq}-Slot Clinical Protocol`;
                       })()}
                     </span>
                   </div>
@@ -2539,13 +3274,30 @@ const PatientDashboard = () => {
                       dinner: { type: 'dinner', label: '🌙 Dinner', color: 'blue' }
                     };
 
-                    const slotKeysInPlan = Object.keys(currentDayPlan).filter(k => currentDayPlan[k] && allSlotDefs[k]);
-                    const activeSlots = slotKeysInPlan.length > 0
-                      ? ['pre_breakfast', 'breakfast', 'drink', 'lunch', 'snack', 'dinner'].filter(k => slotKeysInPlan.includes(k)).map(k => allSlotDefs[k])
-                      : [allSlotDefs.breakfast, allSlotDefs.drink, allSlotDefs.lunch, allSlotDefs.snack, allSlotDefs.dinner];
+                    // Guarantee consistent slot structure for every day of the week based on prescribed meal frequency
+                    const prescribedMealCount = publishedPlan?.meal_frequency || 5;
+                    let targetSlotKeys = ['breakfast', 'drink', 'lunch', 'snack', 'dinner'];
+                    if (prescribedMealCount === 3) {
+                      targetSlotKeys = ['breakfast', 'lunch', 'dinner'];
+                    } else if (prescribedMealCount === 4) {
+                      targetSlotKeys = ['breakfast', 'lunch', 'snack', 'dinner'];
+                    } else if (prescribedMealCount === 6) {
+                      targetSlotKeys = ['pre_breakfast', 'breakfast', 'drink', 'lunch', 'snack', 'dinner'];
+                    }
+
+                    const activeSlots = targetSlotKeys.map(k => allSlotDefs[k]);
+
+                    const defaultMealNames = {
+                      pre_breakfast: 'Warm Jeera & Methi Seed Detox Water (15 kcal)',
+                      breakfast: 'Kerala Steamed Idiyappam with Kadala Curry (280 kcal)',
+                      drink: 'Kerala Spiced Buttermilk (Sambharam) with Curry Leaves (45 kcal)',
+                      lunch: 'Kerala Red Matta Rice with Fish Curry & Cabbage Thoran (360 kcal)',
+                      snack: 'Sprouted Moong Salad with Lemon & Herbs (140 kcal)',
+                      dinner: 'Steamed Wheat / Ragi Dosa (2 pcs) with Kerala Vegetable Stew (280 kcal)'
+                    };
 
                     const getActiveMealObj = (mealType) => {
-                      const mealStr = currentDayPlan[mealType] || 'Nutritious Kerala Clinical Meal (250 kcal)';
+                      const mealStr = currentDayPlan[mealType] || defaultMealNames[mealType] || 'Nutritious Kerala Clinical Meal (250 kcal)';
                       const calMatch = mealStr.match(/\((\d+\s*kcal)\)/i);
                       const cal = calMatch ? calMatch[1] : '250 kcal';
                       const name = mealStr.replace(/\(\d+\s*kcal\)/i, '').trim();
@@ -2586,6 +3338,15 @@ const PatientDashboard = () => {
                                 <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-lg">
                                   <span className="text-[9px] font-black text-white uppercase tracking-wider">{label}</span>
                                 </div>
+                                <div className="absolute top-2 right-2 bg-emerald-950/85 backdrop-blur-md px-2 py-0.5 rounded-lg border border-emerald-400/40 shadow-xs">
+                                  <span className="text-[9px] font-black text-emerald-300 tracking-wider flex items-center gap-1">
+                                    <Clock size={10} className="text-emerald-400" /> {getMealTimingForSlot(mealType)}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 text-[10px] text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 w-max mb-1 font-bold">
+                                <Clock size={10} className="text-emerald-700" /> Prescribed: {getMealTimingForSlot(mealType)}
                               </div>
 
                               <p className="text-xs font-black text-[#1C2C22] leading-snug flex-1 mb-3 line-clamp-2">{mealObj.name}</p>
@@ -2605,23 +3366,14 @@ const PatientDashboard = () => {
                     );
                   })()}
 
-                  {/* 🌟 Daily Guidelines & INTERACTIVE WATER TRACKER 🌟 */}
+                  {/* 🌟 Daily Clinical Protocol Rules 🌟 */}
                   <h3 className="text-xl font-black text-[#1C2C22] mb-5 border-t border-[#EBE9E0] pt-6">Daily Clinical Protocol Rules</h3>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                     
                     <div className="bg-blue-50/60 p-6 rounded-[2rem] border border-blue-100 shadow-sm relative overflow-hidden">
                       <div className="absolute top-0 right-0 p-4 opacity-10"><Droplets size={80} color="blue"/></div>
                       <b className="text-[11px] uppercase text-blue-700 tracking-widest block mb-2 flex items-center gap-1.5 relative z-10"><Droplets size={16}/> Hydration Target</b>
-                      <p className="text-xs font-black text-blue-950 leading-relaxed mb-4 relative z-10">Drink at least 8 glasses (3 liters) with Sambharam or Herbal infusions.</p>
-                      
-                      <div className="flex gap-1.5 relative z-10">
-                        {[1, 2, 3, 4, 5, 6, 7, 8].map(glass => (
-                          <button key={glass} onClick={() => setQuickWaterTracker(glass)} className={`transition-all transform hover:scale-125 focus:outline-none cursor-pointer ${glass <= quickWaterTracker ? 'text-blue-500 fill-blue-500 scale-110' : 'text-blue-200'}`}>
-                            <svg width="20" height="24" viewBox="0 0 24 24" fill={glass <= quickWaterTracker ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg>
-                          </button>
-                        ))}
-                      </div>
-                      <p className="text-[9px] font-bold text-blue-600 uppercase tracking-widest mt-3 relative z-10">{quickWaterTracker} / 8 Glasses Logged</p>
+                      <p className="text-sm font-black text-blue-950 leading-relaxed relative z-10">Drink at least 8 glasses (3 liters) daily with Sambharam (spiced buttermilk) or herbal Jeera/Methi infusions.</p>
                     </div>
 
                     <div className="bg-green-50/60 p-6 rounded-[2rem] border border-green-100 shadow-sm relative overflow-hidden">
@@ -2758,10 +3510,27 @@ const PatientDashboard = () => {
                       dinner: { key: 'dinner', label: 'Dinner', icon: '🌙' },
                     };
 
-                    const slotKeysInPlan = Object.keys(currentDayPlan).filter(k => currentDayPlan[k] && slotDefinitions[k]);
-                    const activeCheckinSlots = slotKeysInPlan.length > 0
-                      ? ['pre_breakfast', 'breakfast', 'drink', 'lunch', 'snack', 'dinner'].filter(k => slotKeysInPlan.includes(k)).map(k => slotDefinitions[k])
-                      : [slotDefinitions.breakfast, slotDefinitions.lunch, slotDefinitions.dinner];
+                    // Guarantee consistent check-in slots matching prescribed meal frequency
+                    const prescribedMealCount = publishedPlan?.meal_frequency || 5;
+                    let targetSlotKeys = ['breakfast', 'drink', 'lunch', 'snack', 'dinner'];
+                    if (prescribedMealCount === 3) {
+                      targetSlotKeys = ['breakfast', 'lunch', 'dinner'];
+                    } else if (prescribedMealCount === 4) {
+                      targetSlotKeys = ['breakfast', 'lunch', 'snack', 'dinner'];
+                    } else if (prescribedMealCount === 6) {
+                      targetSlotKeys = ['pre_breakfast', 'breakfast', 'drink', 'lunch', 'snack', 'dinner'];
+                    }
+
+                    const activeCheckinSlots = targetSlotKeys.map(k => slotDefinitions[k]).filter(Boolean);
+
+                    const defaultMealNames = {
+                      pre_breakfast: 'Warm Jeera & Methi Seed Detox Water',
+                      breakfast: 'Kerala Steamed Idiyappam & Kadala Curry',
+                      drink: 'Kerala Spiced Buttermilk (Sambharam)',
+                      lunch: 'Kerala Red Matta Rice with Fish Curry & Thoran',
+                      snack: 'Sprouted Moong Salad with Lemon & Herbs',
+                      dinner: 'Steamed Wheat / Ragi Dosa with Vegetable Stew'
+                    };
 
                     return (
                       <div className="bg-[#FDFCF8] border border-[#EBE9E0] p-6 rounded-[2rem] shadow-sm">
@@ -2774,9 +3543,13 @@ const PatientDashboard = () => {
                           </span>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                           {activeCheckinSlots.map(slot => {
                             const isCompleted = !!logForm.completed_slots?.[slot.key] || (slot.key === 'breakfast' && logForm.breakfast_completed) || (slot.key === 'lunch' && logForm.lunch_completed) || (slot.key === 'dinner' && logForm.dinner_completed);
+
+                            const rawMealStr = currentDayPlan[slot.key] || defaultMealNames[slot.key] || 'Kerala Wholesome Meal';
+                            const cleanDishName = rawMealStr.replace(/\(\d+\s*kcal\)/i, '').trim();
+                            const dishImg = getKeralaMealImage(cleanDishName, slot.key);
 
                             const toggleSlot = () => {
                               const nextVal = !isCompleted;
@@ -2796,34 +3569,39 @@ const PatientDashboard = () => {
                               <div
                                 key={slot.key}
                                 onClick={toggleSlot}
-                                className={`flex items-center justify-between p-3.5 rounded-2xl border cursor-pointer transition-all shadow-2xs select-none ${
+                                className={`flex items-center justify-between gap-3 p-3.5 sm:p-4 rounded-2xl border cursor-pointer transition-all select-none ${
                                   isCompleted 
                                     ? 'bg-[#EAF0EC] border-[#456A50] text-[#1C2C22] ring-1 ring-[#456A50]/30 shadow-xs' 
-                                    : 'bg-white border-[#EBE9E0] text-gray-700 hover:border-[#456A50]/40'
+                                    : 'bg-white border-[#EBE9E0] text-gray-700 hover:border-[#456A50]/40 hover:bg-[#FDFCF8]'
                                 }`}
                               >
-                                <div className="flex items-center gap-3 min-w-0">
-                                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 shadow-2xs border ${
-                                    isCompleted ? 'bg-white border-[#456A50]/30' : 'bg-gray-50 border-gray-100'
-                                  }`}>
-                                    {slot.icon}
+                                <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                                  <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl overflow-hidden border border-gray-200 shrink-0 bg-gray-100 shadow-2xs">
+                                    <img 
+                                      src={dishImg} 
+                                      alt={cleanDishName} 
+                                      className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" 
+                                    />
                                   </div>
-                                  <div className="min-w-0">
-                                    <p className="text-xs font-black text-[#1C2C22] leading-tight truncate">
-                                      {slot.label}
+                                  <div className="min-w-0 flex-1">
+                                    <span className="text-[10px] font-black uppercase text-[#456A50] tracking-wider block">
+                                      {slot.icon} {slot.label}
+                                    </span>
+                                    <p className="text-xs font-black text-[#1C2C22] leading-tight line-clamp-1 mt-0.5">
+                                      {cleanDishName}
                                     </p>
                                     <p className="text-[10px] text-[#5A6B60] font-medium mt-0.5">
-                                      Prescribed Slot
+                                      {isCompleted ? '✓ Completed' : '○ Tap to Log'}
                                     </p>
                                   </div>
                                 </div>
 
-                                <div className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider shrink-0 transition flex items-center gap-1 ${
+                                <div className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider shrink-0 transition flex items-center gap-1 shadow-2xs ${
                                   isCompleted 
-                                    ? 'bg-[#456A50] text-white shadow-2xs' 
-                                    : 'bg-gray-100 text-gray-400'
+                                    ? 'bg-[#456A50] text-white' 
+                                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-200'
                                 }`}>
-                                  {isCompleted ? '✓ Done' : '○ Tap to Log'}
+                                  {isCompleted ? '✓ Done' : '○ Tap'}
                                 </div>
                               </div>
                             );
@@ -2960,59 +3738,290 @@ const PatientDashboard = () => {
             </div>
         )}
 
-        {/* 🌟 TAB 5: UPGRADED NUTRITIONIST EVALUATIONS WITH STAR RATINGS 🌟 */}
-        {activeTab === 'evaluations' && (
-          <div className="space-y-6 animate-in fade-in">
-             <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-3xl shadow-sm border border-[#EBE9E0] gap-4">
-                <div>
-                   <h2 className="text-2xl font-black text-[#1C2C22] flex items-center gap-2"><ClipboardList size={26} className="text-[#456A50]"/> Nutritionist Evaluations</h2>
-                   <p className="text-sm text-[#5A6B60] mt-1 font-medium">Feedback and guidance generated from your daily wellness logs.</p>
-                </div>
-             </div>
-
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-               {evaluations.length === 0 ? (
-                  <div className="col-span-full bg-white p-10 rounded-3xl border border-[#EBE9E0] text-center shadow-sm">
-                    <ClipboardList size={48} className="mx-auto text-gray-200 mb-4"/>
-                    <p className="text-sm text-gray-400 italic font-medium">No evaluations available yet.</p>
+        {/* 🌟 METABOLIC SCORECARD TAB (0-100 CLINICAL RATING & WEEKLY REPORT) 🌟 */}
+        {activeTab === 'scorecard' && (
+          <div className="space-y-8 animate-in fade-in duration-300">
+            {/* Top Scorecard Header Card */}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 sm:p-8 rounded-3xl shadow-sm border border-[#EBE9E0] gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-xl bg-emerald-100 text-[#456A50]">
+                    <Award size={24} />
                   </div>
-               ) : evaluations.map(ev => (
-                 <div key={ev.id} className="bg-white border border-[#EBE9E0] rounded-[1.5rem] shadow-sm flex overflow-hidden group hover:shadow-md transition duration-300">
-                    
-                    {/* Thick Left Border accent */}
-                    <div className="w-3 bg-[#456A50] shrink-0 opacity-90 group-hover:opacity-100 transition-opacity"></div>
-                    
-                    <div className="p-6 flex-1 flex flex-col">
-                      <div className="flex justify-between items-start mb-4">
-                         <h3 className="font-black text-[#1C2C22] text-xl">{ev.title || "Weekly Evaluation"}</h3>
-                         
-                         {/* ⭐ Star Rating Feature ⭐ */}
-                         <div className="flex gap-1">
-                           {[1, 2, 3, 4, 5].map(star => (
-                             <Star 
-                               key={star} 
-                               size={16} 
-                               className={star <= (ev.rating || 5) ? "text-yellow-400 fill-yellow-400" : "text-gray-200 fill-gray-200"} 
-                             />
-                           ))}
-                         </div>
+                  <h2 className="text-2xl font-black text-[#1C2C22]">Clinical Metabolic Health Scorecard</h2>
+                </div>
+                <p className="text-xs text-[#5A6B60] mt-1.5 font-medium">
+                  Continuous 5-Pillar Metabolic Analysis • Calibrated via Mifflin-St Jeor Clinical Energy Protocol
+                </p>
+              </div>
+
+              <button
+                onClick={() => printMetabolicHealthReportCard(userName, metabolicHealthScore, profile, metabolicProfile)}
+                className="bg-[#456A50] hover:bg-[#35533E] text-white px-5 py-3.5 rounded-2xl text-xs font-bold transition shadow-lg shadow-[#456A50]/20 flex items-center gap-2 cursor-pointer shrink-0"
+              >
+                <Printer size={16} /> Download Weekly Clinical Report (PDF)
+              </button>
+            </div>
+
+            {/* Overall Health Score Main Dial Card */}
+            <div className="bg-gradient-to-r from-[#1C2C22] via-[#2A4433] to-[#1C2C22] text-white p-6 sm:p-8 rounded-3xl shadow-xl border border-emerald-500/30 relative overflow-hidden">
+              <div className="absolute -top-10 -right-10 w-48 h-48 bg-emerald-400/10 rounded-full blur-3xl pointer-events-none"></div>
+
+              <div className="flex flex-col md:flex-row items-center justify-between gap-6 relative z-10">
+                <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 text-center sm:text-left">
+                  {/* Score Gauge Dial */}
+                  <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-3xl bg-white/10 border-2 border-emerald-400/40 flex flex-col items-center justify-center p-3 shadow-inner shrink-0">
+                    <span className="text-[10px] uppercase font-black tracking-widest text-emerald-300">Score</span>
+                    <span className="text-4xl sm:text-5xl font-black text-white">{metabolicHealthScore.totalScore}</span>
+                    <span className="text-[10px] font-bold text-gray-300">/ 100 PTS</span>
+                  </div>
+
+                  <div>
+                    <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 mb-2">
+                      <span className="bg-emerald-400/20 text-emerald-300 text-[10px] font-black uppercase px-3 py-1 rounded-full border border-emerald-400/40">
+                        {metabolicHealthScore.statusBadge}
+                      </span>
+                      <span className="bg-white/10 text-gray-200 text-[10px] font-bold px-3 py-1 rounded-full border border-white/10">
+                        Verified by Dr. Sarah Jenkins
+                      </span>
+                    </div>
+                    <h3 className="text-2xl font-black text-white tracking-tight">
+                      {metabolicHealthScore.statusLabel}
+                    </h3>
+                    <p className="text-xs text-gray-300 mt-1 max-w-xl font-medium leading-relaxed">
+                      {metabolicHealthScore.clinicalInsight}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-white/10 p-4 rounded-2xl border border-white/15 text-center sm:text-right shrink-0 w-full sm:w-auto">
+                  <span className="text-[10px] font-bold text-emerald-300 uppercase tracking-widest block">Metabolic Goal</span>
+                  <span className="text-sm font-black text-white">{profile.health_goals || 'Weight Management'}</span>
+                  <span className="text-[11px] text-gray-300 block mt-1">
+                    Target: <strong>{profile.target_weight || '60'} kg</strong> (Current: <strong>{profile.weight_kg || '65'} kg</strong>)
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* 🌟 5 CLINICAL PILLARS COMPLIANCE GRID 🌟 */}
+            <div>
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-black text-[#1C2C22] flex items-center gap-2">
+                  <CheckCircle2 size={20} className="text-[#456A50]" /> Five Clinical Health Pillars Breakdown
+                </h3>
+                <span className="text-xs text-[#5A6B60] font-medium">Updated dynamically from your daily logs</span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {/* Pillar 1: Meal Adherence */}
+                <div className="bg-white p-6 rounded-3xl border border-[#EBE9E0] shadow-sm space-y-3">
+                  <div className="flex justify-between items-start">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2.5 rounded-2xl bg-emerald-50 text-emerald-700">
+                        <Apple size={20} />
                       </div>
-                      
-                      {/* Inner text box displaying Nutritionist's typed feedback */}
-                      <div className="bg-[#FDFCF8] border border-[#EBE9E0] p-5 rounded-2xl mb-6 text-sm text-[#5A6B60] leading-relaxed flex-1 shadow-inner">
-                        {ev.message}
-                      </div>
-                      
-                      <div className="flex justify-between items-center border-t border-gray-100 pt-4 mt-auto">
-                        <p className="text-[11px] font-bold text-gray-400 tracking-widest uppercase flex items-center gap-1.5"><Calendar size={14}/> {ev.date}</p>
-                        <span className="text-[10px] font-bold text-[#456A50] bg-[#EAF0EC] px-3 py-1 rounded-full uppercase tracking-widest">Reviewed</span>
+                      <div>
+                        <h4 className="font-black text-sm text-[#1C2C22]">Meal Plan Adherence</h4>
+                        <p className="text-[11px] text-[#5A6B60]">Prescribed Kerala Meals</p>
                       </div>
                     </div>
-                 </div>
-               ))}
-             </div>
+                    <span className="text-sm font-black text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-xl border border-emerald-200">
+                      {metabolicHealthScore.mealPts} / 30
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden">
+                    <div className="bg-emerald-600 h-full rounded-full transition-all duration-500" style={{ width: `${(metabolicHealthScore.mealPts / 30) * 100}%` }}></div>
+                  </div>
+                  <p className="text-[11px] text-[#5A6B60] leading-snug">
+                    Tracking completed slots without cheat food across your prescribed 4-week Kerala nutrition therapy.
+                  </p>
+                </div>
+
+                {/* Pillar 2: Daily Hydration Target */}
+                <div className="bg-white p-6 rounded-3xl border border-[#EBE9E0] shadow-sm space-y-3">
+                  <div className="flex justify-between items-start">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2.5 rounded-2xl bg-blue-50 text-blue-700">
+                        <Droplets size={20} />
+                      </div>
+                      <div>
+                        <h4 className="font-black text-sm text-[#1C2C22]">Daily Hydration Target</h4>
+                        <p className="text-[11px] text-[#5A6B60]">8+ Glasses / 3 Liters</p>
+                      </div>
+                    </div>
+                    <span className="text-sm font-black text-blue-700 bg-blue-50 px-2.5 py-1 rounded-xl border border-blue-200">
+                      {metabolicHealthScore.waterPts} / 20
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden">
+                    <div className="bg-blue-600 h-full rounded-full transition-all duration-500" style={{ width: `${(metabolicHealthScore.waterPts / 20) * 100}%` }}></div>
+                  </div>
+                  <p className="text-[11px] text-[#5A6B60] leading-snug">
+                    Maintains cellular hydration, supports kidney filtration, and enhances lipid metabolism.
+                  </p>
+                </div>
+
+                {/* Pillar 3: Restorative Sleep */}
+                <div className="bg-white p-6 rounded-3xl border border-[#EBE9E0] shadow-sm space-y-3">
+                  <div className="flex justify-between items-start">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2.5 rounded-2xl bg-indigo-50 text-indigo-700">
+                        <Moon size={20} />
+                      </div>
+                      <div>
+                        <h4 className="font-black text-sm text-[#1C2C22]">Restorative Sleep</h4>
+                        <p className="text-[11px] text-[#5A6B60]">7–8.5 Hours Nocturnal Rest</p>
+                      </div>
+                    </div>
+                    <span className="text-sm font-black text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-xl border border-indigo-200">
+                      {metabolicHealthScore.sleepPts} / 20
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden">
+                    <div className="bg-indigo-600 h-full rounded-full transition-all duration-500" style={{ width: `${(metabolicHealthScore.sleepPts / 20) * 100}%` }}></div>
+                  </div>
+                  <p className="text-[11px] text-[#5A6B60] leading-snug">
+                    Essential for nocturnal insulin sensitivity, hormone regulation, and cortisol normalization.
+                  </p>
+                </div>
+
+                {/* Pillar 4: Physical Activity */}
+                <div className="bg-white p-6 rounded-3xl border border-[#EBE9E0] shadow-sm space-y-3">
+                  <div className="flex justify-between items-start">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2.5 rounded-2xl bg-amber-50 text-amber-700">
+                        <Footprints size={20} />
+                      </div>
+                      <div>
+                        <h4 className="font-black text-sm text-[#1C2C22]">Physical Movement</h4>
+                        <p className="text-[11px] text-[#5A6B60]">30+ Mins Daily Activity</p>
+                      </div>
+                    </div>
+                    <span className="text-sm font-black text-amber-700 bg-amber-50 px-2.5 py-1 rounded-xl border border-amber-200">
+                      {metabolicHealthScore.actPts} / 15
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden">
+                    <div className="bg-amber-600 h-full rounded-full transition-all duration-500" style={{ width: `${(metabolicHealthScore.actPts / 15) * 100}%` }}></div>
+                  </div>
+                  <p className="text-[11px] text-[#5A6B60] leading-snug">
+                    Stimulates GLUT4 glucose transporters and supports steady post-prandial energy balance.
+                  </p>
+                </div>
+
+                {/* Pillar 5: Biometric Weigh-in Consistency */}
+                <div className="bg-white p-6 rounded-3xl border border-[#EBE9E0] shadow-sm space-y-3">
+                  <div className="flex justify-between items-start">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2.5 rounded-2xl bg-teal-50 text-teal-700">
+                        <Scale size={20} />
+                      </div>
+                      <div>
+                        <h4 className="font-black text-sm text-[#1C2C22]">Biometric Weigh-ins</h4>
+                        <p className="text-[11px] text-[#5A6B60]">Weight Check-in Frequency</p>
+                      </div>
+                    </div>
+                    <span className="text-sm font-black text-teal-700 bg-teal-50 px-2.5 py-1 rounded-xl border border-teal-200">
+                      {metabolicHealthScore.bioPts} / 15
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden">
+                    <div className="bg-teal-600 h-full rounded-full transition-all duration-500" style={{ width: `${(metabolicHealthScore.bioPts / 15) * 100}%` }}></div>
+                  </div>
+                  <p className="text-[11px] text-[#5A6B60] leading-snug">
+                    Consistent tracking in your Biometric Health History maintains doctor visibility on weight velocity.
+                  </p>
+                </div>
+
+                {/* Pillar Summary Badge Card */}
+                <div className="bg-[#FDFCF8] p-6 rounded-3xl border border-[#EBE9E0] shadow-sm flex flex-col justify-between">
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-[#456A50] tracking-widest block mb-1">
+                      Clinical Rating Summary
+                    </span>
+                    <h4 className="font-black text-base text-[#1C2C22] mb-1">
+                      {metabolicHealthScore.totalScore >= 70 ? 'High Compliance Rate' : 'Improvement Roadmap'}
+                    </h4>
+                    <p className="text-[11px] text-[#5A6B60]">
+                      Maintaining 75+ points keeps your metabolic risk markers low and accelerates body transformation.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setActiveTab('tracking')}
+                    className="mt-4 w-full bg-[#EAF0EC] hover:bg-[#456A50] hover:text-white text-[#456A50] py-2.5 rounded-xl font-bold text-xs transition cursor-pointer text-center"
+                  >
+                    Log Today's Habits
+                  </button>
+                </div>
+              </div>
             </div>
-         )}
+
+            {/* 🌟 MIFFLIN-ST JEOR CLINICAL ENERGY TARGETS 🌟 */}
+            <div className="bg-white p-6 sm:p-8 rounded-3xl border border-[#EBE9E0] shadow-sm space-y-6">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-[#EBE9E0] pb-4">
+                <div>
+                  <h3 className="text-lg font-black text-[#1C2C22] flex items-center gap-2">
+                    <Flame size={20} className="text-amber-500" /> Mifflin-St Jeor Clinical Energy & Macro Targets
+                  </h3>
+                  <p className="text-xs text-[#5A6B60] mt-0.5">
+                    Scientifically calculated based on height ({profile.height_cm || 165} cm), weight ({profile.weight_kg || 65} kg), age ({profile.age || 25} yrs), and activity.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-[#FDFCF8] p-5 rounded-2xl border border-[#EBE9E0]">
+                  <span className="text-[10px] font-bold text-[#5A6B60] uppercase tracking-widest block mb-1">Basal Metabolic Rate</span>
+                  <span className="text-2xl font-black text-[#1C2C22]">{metabolicProfile.bmr}</span>
+                  <span className="text-xs text-[#5A6B60] block font-medium">kcal / day (At Rest)</span>
+                </div>
+
+                <div className="bg-[#FDFCF8] p-5 rounded-2xl border border-[#EBE9E0]">
+                  <span className="text-[10px] font-bold text-[#5A6B60] uppercase tracking-widest block mb-1">Total Daily Expenditure</span>
+                  <span className="text-2xl font-black text-[#1C2C22]">{metabolicProfile.tdee}</span>
+                  <span className="text-xs text-[#5A6B60] block font-medium">kcal / day (TDEE)</span>
+                </div>
+
+                <div className="bg-emerald-50/70 p-5 rounded-2xl border border-emerald-200">
+                  <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-widest block mb-1">Prescribed Target</span>
+                  <span className="text-2xl font-black text-emerald-900">{metabolicProfile.targetCalories}</span>
+                  <span className="text-xs text-emerald-700 block font-bold">kcal / day (Clinical Plan)</span>
+                </div>
+
+                <div className="bg-[#FDFCF8] p-5 rounded-2xl border border-[#EBE9E0]">
+                  <span className="text-[10px] font-bold text-[#5A6B60] uppercase tracking-widest block mb-1">Prescribed Macros Split</span>
+                  <p className="text-xs font-black text-[#1C2C22] mt-1">
+                    🌾 C: {metabolicProfile.carbRatio}% ({metabolicProfile.carbsGrams}g)
+                  </p>
+                  <p className="text-xs font-black text-emerald-700">
+                    🥩 P: {metabolicProfile.proteinRatio}% ({metabolicProfile.proteinGrams}g)
+                  </p>
+                  <p className="text-xs font-black text-amber-700">
+                    🥑 F: {metabolicProfile.fatRatio}% ({metabolicProfile.fatsGrams}g)
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Doctor's Verification & Clinical Seal */}
+            <div className="bg-[#FDFCF8] p-6 rounded-3xl border border-[#EBE9E0] flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-[#456A50] font-black flex items-center justify-center text-lg border border-[#456A50]/20 shrink-0">
+                  <Stethoscope size={24} />
+                </div>
+                <div>
+                  <h4 className="font-black text-sm text-[#1C2C22]">Dr. Sarah Jenkins (MD, Clinical Nutrition)</h4>
+                  <p className="text-xs text-[#5A6B60]">Lead Clinical Nutritionist & Physician • Digital Certification Seal Active</p>
+                </div>
+              </div>
+
+              <span className="bg-emerald-100 text-emerald-800 font-bold text-xs px-3.5 py-1.5 rounded-full border border-emerald-300 flex items-center gap-1.5 shrink-0">
+                <ShieldCheck size={14} className="text-emerald-700" /> Digitally Verified Report
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* 🌟 TAB 6: HEALTH HISTORY & PROGRESS ANALYTICS 🌟 */}
         {activeTab === 'history' && (
@@ -3565,17 +4574,10 @@ const PatientDashboard = () => {
                       })()}
                     </div>
 
-                    <div className="overflow-y-auto flex-1 p-2 custom-scrollbar">
-                      <table className="w-full text-left text-sm text-[#1C2C22]">
                     <div className="overflow-x-auto overflow-y-auto flex-1 p-2 custom-scrollbar">
                       <table className="w-full text-left text-sm text-[#1C2C22] whitespace-nowrap">
                         <thead className="bg-[#FDFCF8] text-[10px] uppercase font-extrabold text-[#5A6B60] tracking-widest border-b sticky top-0">
                           <tr>
-                            <th className="py-4 px-6">Date & Time</th>
-                            <th className="py-4 px-6">Mode</th>
-                            <th className="py-4 px-6">Telehealth Video</th>
-                            <th className="py-4 px-6">Status & Payment</th>
-                            <th className="py-4 px-6 text-right">Actions</th>
                             <th className="py-3.5 px-4">Date & Time</th>
                             <th className="py-3.5 px-4">Mode</th>
                             <th className="py-3.5 px-4">Telehealth / Room</th>
@@ -3590,107 +4592,92 @@ const PatientDashboard = () => {
 
                             return (
                             <tr key={a.id} className={`hover:bg-[#FDFCF8] transition group ${isCancelled ? 'bg-gray-50/40 opacity-75' : ''}`}>
-                              <td className="py-5 px-6 font-black text-[#1C2C22]">
-                                <span className="font-bold">{a.date}</span> <span className="text-[#5A6B60] font-medium mx-1">at</span> <span className="font-bold">{a.time}</span>
                               <td className="py-4 px-4 font-black text-[#1C2C22] whitespace-nowrap">
                                 <span className="font-bold text-xs">{a.date}</span> <span className="text-[#5A6B60] text-xs font-normal mx-1">at</span> <span className="font-bold text-xs text-[#456A50]">{a.time}</span>
                               </td>
-                              <td className="py-5 px-6">
-                                <span className={`px-3 py-1.5 rounded-lg text-[10px] font-bold tracking-widest uppercase ${a.mode === 'ONLINE' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>{a.mode}</span>
                               <td className="py-4 px-4 whitespace-nowrap">
                                 <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black tracking-widest uppercase ${a.mode === 'ONLINE' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>{a.mode || 'IN-CLINIC'}</span>
                               </td>
-                              <td className="py-5 px-6">
                               <td className="py-4 px-4 whitespace-nowrap">
                                 {isCancelled ? (
                                   <span className="text-xs text-gray-400 font-semibold italic">Session Cancelled</span>
                                 ) : a.mode === 'ONLINE' ? (
-                                  a.meet_link ? (
-                                    <a 
-                                      href={a.meet_link} 
-                                      target="_blank" 
-                                      rel="noreferrer" 
-                                      className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-xl font-bold text-xs shadow-md shadow-emerald-600/20 transition transform hover:scale-105"
-                                      className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-xl font-bold text-xs shadow-sm transition"
-                                    >
-                                      <Video size={14} /> Join Google Meet <ExternalLink size={12} />
-                                      <Video size={13} /> Join Meet <ExternalLink size={11} />
-                                    </a>
-                                  ) : (
-                                    <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1 rounded-lg inline-flex items-center gap-1.5">
-                                      <Clock size={12} /> Link arriving soon
-                                    <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg inline-flex items-center gap-1">
-                                      <Clock size={11} /> Link arriving soon
-                                    </span>
-                                  )
+                                  (() => {
+                                    const todayIso = new Date().toISOString().split('T')[0];
+                                    const isPast = a.date && a.date < todayIso;
+                                    if (isPast || a.status === 'COMPLETED') {
+                                      return (
+                                        <span className="text-[11px] font-bold text-gray-400 bg-gray-50 border border-gray-200 px-2.5 py-1 rounded-lg inline-flex items-center gap-1">
+                                          📅 Session Completed
+                                        </span>
+                                      );
+                                    }
+                                    return a.meet_link ? (
+                                      <a 
+                                        href={a.meet_link} 
+                                        target="_blank" 
+                                        rel="noreferrer" 
+                                        className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-xl font-bold text-xs shadow-sm transition"
+                                      >
+                                        <Video size={13} /> Join Meet <ExternalLink size={11} />
+                                      </a>
+                                    ) : (
+                                      <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg inline-flex items-center gap-1">
+                                        <Clock size={11} /> Link arriving soon
+                                      </span>
+                                    );
+                                  })()
                                 ) : (
-                                  <span className="text-gray-400 text-xs font-semibold">In-Clinic Session</span>
                                   <span className="text-gray-600 text-xs font-bold flex items-center gap-1">
                                     <DoorOpen size={13} className="text-[#456A50]" /> In-Clinic Chamber
                                   </span>
                                 )}
                               </td>
-                              <td className="py-5 px-6">
                               <td className="py-4 px-4 whitespace-nowrap">
                                 {isCancelled ? (
-                                  <span className="px-3 py-1.5 rounded-lg text-[10px] font-black tracking-wider uppercase bg-emerald-50 text-emerald-800 border border-emerald-300 inline-flex items-center gap-1.5 shadow-2xs">
-                                    <RotateCcw size={12} className="text-emerald-700" /> ₹500 Refund Credited
                                   <span className="px-2.5 py-1 rounded-lg text-[10px] font-black tracking-wider uppercase bg-emerald-50 text-emerald-800 border border-emerald-300 inline-flex items-center gap-1 shadow-2xs">
                                     <RotateCcw size={11} className="text-emerald-700" /> ₹500 Refunded
                                   </span>
                                 ) : a.status === 'COMPLETED' ? (
-                                  <span className="px-3 py-1.5 rounded-lg text-[10px] font-bold tracking-widest uppercase bg-green-100 text-green-700">COMPLETED</span>
                                   <span className="px-2.5 py-1 rounded-lg text-[10px] font-black tracking-widest uppercase bg-green-100 text-green-700 border border-green-200">COMPLETED</span>
                                 ) : isRescheduled ? (
-                                  <span className="px-3 py-1.5 rounded-lg text-[10px] font-black tracking-widest uppercase bg-blue-50 text-blue-700 border border-blue-200">RESCHEDULED • PAID</span>
                                   <span className="px-2.5 py-1 rounded-lg text-[10px] font-black tracking-widest uppercase bg-blue-50 text-blue-700 border border-blue-200">RESCHEDULED • PAID</span>
                                 ) : (
-                                  <span className="px-3 py-1.5 rounded-lg text-[10px] font-bold tracking-widest uppercase bg-orange-100 text-orange-700">SCHEDULED • PAID</span>
                                   <span className="px-2.5 py-1 rounded-lg text-[10px] font-black tracking-widest uppercase bg-amber-50 text-amber-800 border border-amber-200">SCHEDULED • PAID</span>
                                 )}
                               </td>
-                              <td className="py-5 px-6 text-right">
                               <td className="py-4 px-4 text-right whitespace-nowrap">
                                 {isCancelled ? (
                                   <button 
                                     onClick={() => generateRefundReceipt(a)} 
-                                    className="bg-emerald-50 text-emerald-800 border border-emerald-300 px-3.5 py-2 rounded-xl text-[11px] font-bold hover:bg-emerald-100 flex items-center gap-1.5 ml-auto transition shadow-sm cursor-pointer"
                                     className="bg-emerald-50 text-emerald-800 border border-emerald-300 px-3 py-1.5 rounded-xl text-[11px] font-bold hover:bg-emerald-100 flex items-center gap-1.5 ml-auto transition shadow-sm cursor-pointer"
                                   >
-                                    <Download size={13}/> Refund Receipt
                                     <Download size={12}/> Refund Receipt
                                   </button>
                                 ) : (
-                                  <div className="flex items-center justify-end gap-1.5 flex-wrap">
                                   <div className="flex items-center justify-end gap-1.5 flex-nowrap">
                                     {a.mode !== 'ONLINE' && (
                                       <button 
                                         type="button"
                                         onClick={() => printClinicTokenSlip(a, { name: userName || profile.first_name })} 
-                                        className="bg-[#EAF0EC] text-[#456A50] hover:bg-[#456A50] hover:text-white px-2.5 py-2 rounded-xl text-[11px] font-bold flex items-center gap-1 transition shadow-2xs border border-[#456A50]/20 cursor-pointer"
                                         className="bg-[#EAF0EC] text-[#456A50] hover:bg-[#456A50] hover:text-white px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 transition shadow-2xs border border-[#456A50]/20 cursor-pointer shrink-0"
                                         title="Print In-Clinic Token Slip"
                                       >
-                                        <Printer size={13}/> Token Pass
                                         <Printer size={12}/> Token Pass
                                       </button>
                                     )}
                                     <button 
                                       onClick={() => generateReceipt(a)} 
-                                      className="bg-white text-[#456A50] px-2.5 py-2 rounded-xl text-[11px] font-bold hover:bg-[#EAF0EC] flex items-center gap-1 transition shadow-sm border border-[#EBE9E0] cursor-pointer"
                                       className="bg-white text-[#456A50] px-2.5 py-1.5 rounded-xl text-[11px] font-bold hover:bg-[#EAF0EC] flex items-center gap-1 transition shadow-sm border border-[#EBE9E0] cursor-pointer shrink-0"
                                     >
-                                      <Download size={13}/> Receipt
                                       <Download size={12}/> Receipt
                                     </button>
                                     {a.status !== 'COMPLETED' && (
                                       <button 
                                         onClick={() => { setCancellingAppt(a); setCancelReason('Schedule Conflict'); }} 
-                                        className="bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 px-2.5 py-2 rounded-xl text-[11px] font-bold flex items-center gap-1 transition shadow-sm cursor-pointer"
                                         className="bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 transition shadow-sm cursor-pointer shrink-0"
                                         title="Cancel booking and receive 100% instant refund"
                                       >
-                                        <RotateCcw size={13} className="text-red-600"/> Cancel
                                         <RotateCcw size={12} className="text-red-600"/> Cancel
                                       </button>
                                     )}
@@ -3811,6 +4798,316 @@ const PatientDashboard = () => {
             </div>
           </div>
 
+        )}
+
+        {/* 🏆 TAB 6: WELLNESS CHALLENGES & MILESTONE BADGES */}
+        {activeTab === 'challenges' && (
+          <div className="space-y-8 animate-in fade-in duration-300">
+            {/* Top Loyalty Reward Banner */}
+            <div className="bg-gradient-to-r from-[#1C2C22] via-[#2A4433] to-[#1C2C22] text-white p-6 sm:p-8 rounded-3xl shadow-xl border border-emerald-500/30 relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+              <div className="absolute -top-12 -right-12 w-48 h-48 bg-amber-400/10 rounded-full blur-3xl pointer-events-none"></div>
+
+              <div className="flex items-start gap-4 relative z-10">
+                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 shadow-inner ${
+                  allBadgesClaimed
+                    ? 'bg-amber-400/20 border border-amber-400/40 text-amber-300'
+                    : 'bg-white/10 border border-white/20 text-gray-400'
+                }`}>
+                  {allBadgesClaimed ? (
+                    <Trophy size={28} className="text-amber-400 animate-bounce" />
+                  ) : (
+                    <Lock size={26} className="text-gray-300" />
+                  )}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                    <span className="bg-amber-400/20 border border-amber-400/40 text-amber-300 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full tracking-wider flex items-center gap-1">
+                      <Sparkles size={11} /> 5% Consultation Loyalty Reward
+                    </span>
+                    {allBadgesClaimed ? (
+                      <span className="bg-emerald-500/20 text-emerald-300 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-emerald-500/30">
+                        🎉 Grand Champion: All 4/4 Badges Claimed (5% OFF Active)
+                      </span>
+                    ) : (
+                      <span className="bg-amber-500/20 text-amber-300 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-amber-500/30 flex items-center gap-1">
+                        <Lock size={10} /> 5% Discount Locked ({claimedBadgesCount}/4 Badges Claimed)
+                      </span>
+                    )}
+                  </div>
+                  <h2 className="text-2xl font-black text-white tracking-tight">
+                    Wellness Challenges & Achievement Badges
+                  </h2>
+                  <p className="text-xs text-gray-300 mt-1 max-w-xl font-medium">
+                    {allBadgesClaimed
+                      ? "🎉 Congratulations! You have fully completed and claimed all 4 clinical wellness challenges. Your 5% consultation discount is unlocked and active!"
+                      : `Complete and claim all 4 lifestyle milestones (${claimedBadgesCount}/4 claimed) to unlock your 5% consultation discount voucher.`
+                    }
+                  </p>
+                </div>
+              </div>
+
+              <div className="relative z-10 shrink-0 w-full md:w-auto">
+                {allBadgesClaimed ? (
+                  <button
+                    onClick={() => navigate('/book-consultation')}
+                    className="w-full md:w-auto bg-amber-400 hover:bg-amber-300 text-[#1C2C22] font-black px-6 py-3.5 rounded-2xl text-xs transition shadow-lg shadow-amber-400/20 flex items-center justify-center gap-2 cursor-pointer transform hover:scale-105"
+                  >
+                    <Percent size={16} /> Book Consultation with 5% OFF
+                  </button>
+                ) : (
+                  <div className="flex flex-col items-center md:items-end gap-2">
+                    <div className="bg-white/10 border border-white/20 text-gray-300 px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2">
+                      <Lock size={14} className="text-amber-400" />
+                      <span>5% Discount Locked ({claimedBadgesCount}/4 Claimed)</span>
+                    </div>
+                    <button
+                      onClick={() => navigate('/book-consultation')}
+                      className="text-xs text-amber-300 hover:text-amber-200 underline font-bold transition cursor-pointer"
+                    >
+                      Book Standard Consultation (Regular Price) →
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 🏆 TROPHY CABINET / BADGES SHELF */}
+            <div className="bg-white rounded-3xl border border-[#EBE9E0] p-6 sm:p-8 shadow-sm space-y-6">
+              <div className="flex justify-between items-center border-b border-[#EBE9E0] pb-4">
+                <div>
+                  <h3 className="text-lg font-black text-[#1C2C22] flex items-center gap-2">
+                    <Award size={22} className="text-[#456A50]" /> My Clinical Trophy Cabinet
+                  </h3>
+                  <p className="text-xs text-[#5A6B60] mt-0.5">Badges earned through consistent lifestyle adherence.</p>
+                </div>
+                <span className="text-xs bg-[#EAF0EC] text-[#456A50] font-black px-3 py-1.5 rounded-xl border border-[#456A50]/20">
+                  {challenges.filter(c => c.isCompleted).length} / {challenges.length} Badges Unlocked
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {challenges.map(c => {
+                  const isEarned = c.isCompleted;
+
+                  return (
+                    <div 
+                      key={c.id} 
+                      className={`p-5 rounded-2xl border transition-all text-center flex flex-col justify-between relative overflow-hidden ${
+                        isEarned 
+                          ? 'bg-[#FDFCF8] border-emerald-400 shadow-sm ring-1 ring-emerald-400/20' 
+                          : 'bg-gray-50/80 border-gray-200 opacity-75'
+                      }`}
+                    >
+                      {isEarned ? (
+                        <span className="absolute top-2.5 right-2.5 text-[9px] bg-emerald-100 text-emerald-900 border border-emerald-300 font-black px-2 py-0.5 rounded-full">
+                          ★ UNLOCKED
+                        </span>
+                      ) : (
+                        <span className="absolute top-2.5 right-2.5 text-[9px] bg-gray-200 text-gray-700 border border-gray-300 font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <Lock size={9} /> LOCKED
+                        </span>
+                      )}
+
+                      <div className="my-2">
+                        <div className={`w-16 h-16 rounded-2xl mx-auto flex items-center justify-center shadow-inner mb-3 relative ${
+                          isEarned ? c.badgeColor : 'bg-gray-200 text-gray-400'
+                        }`}>
+                          {c.badgeIcon === 'Droplets' && <Droplets size={28} />}
+                          {c.badgeIcon === 'Apple' && <Apple size={28} />}
+                          {c.badgeIcon === 'Moon' && <Moon size={28} />}
+                          {c.badgeIcon === 'Scale' && <Scale size={28} />}
+                          {!isEarned && (
+                            <div className="absolute -bottom-1 -right-1 bg-gray-600 text-white p-1 rounded-full shadow">
+                              <Lock size={10} />
+                            </div>
+                          )}
+                        </div>
+                        <h4 className="font-black text-sm text-[#1C2C22]">{c.badgeName}</h4>
+                        <p className="text-[10px] text-gray-500 font-bold uppercase mt-0.5">{c.category}</p>
+                      </div>
+
+                      <div className="pt-3 border-t border-gray-100 mt-2">
+                        {isEarned ? (
+                          <div className="bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl p-2 text-[10px] font-bold">
+                            🎟️ {c.discountCode} (5% OFF)
+                          </div>
+                        ) : (
+                          <div className="text-[10px] text-gray-500 font-bold bg-white border border-gray-200 rounded-lg py-1 px-2">
+                            {c.currentDays}/{c.targetDays} {c.unit || 'Days'} Verified
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 🎯 ACTIVE WELLNESS CHALLENGES BOARD */}
+            <div className="bg-white rounded-3xl border border-[#EBE9E0] p-6 sm:p-8 shadow-sm space-y-6">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-[#EBE9E0] pb-4">
+                <div>
+                  <h3 className="text-lg font-black text-[#1C2C22] flex items-center gap-2">
+                    <Zap size={22} className="text-amber-500" /> Automated Clinical Challenge Verifications
+                  </h3>
+                  <p className="text-xs text-[#5A6B60] mt-0.5">
+                    The clinical system automatically evaluates your daily meals, hydration, sleep, and weigh-ins from your monthly plan.
+                  </p>
+                </div>
+                <div className="bg-[#EAF0EC] border border-[#456A50]/20 text-[#456A50] text-[11px] font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5">
+                  <ShieldCheck size={14} /> System Verified Engine
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {challenges.map(c => {
+                  const progressPct = Math.round((c.currentDays / c.targetDays) * 100);
+
+                  return (
+                    <div 
+                      key={c.id} 
+                      className={`p-6 rounded-3xl border transition-all flex flex-col justify-between ${
+                        c.isCompleted 
+                          ? 'bg-[#FDFCF8] border-emerald-400 shadow-sm ring-1 ring-emerald-400/20' 
+                          : 'bg-white border-[#EBE9E0]'
+                      }`}
+                    >
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-start">
+                          <span className="text-[10px] font-black text-[#456A50] uppercase tracking-wider bg-[#EAF0EC] px-2.5 py-1 rounded-md">
+                            {c.category} Track
+                          </span>
+                          <span className={`text-xs font-black px-2.5 py-1 rounded-lg ${
+                            c.isCompleted ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-700'
+                          }`}>
+                            {c.currentDays} / {c.targetDays} {c.unit || 'Days'} Verified
+                          </span>
+                        </div>
+
+                        <div>
+                          <h4 className="font-black text-base text-[#1C2C22]">{c.title}</h4>
+                          <p className="text-xs text-[#5A6B60] mt-1 leading-relaxed">{c.description}</p>
+                        </div>
+
+                        {/* Progress Bar */}
+                        <div className="space-y-1.5 pt-1">
+                          <div className="flex justify-between text-[10px] font-bold text-gray-500">
+                            <span>System Verified Progress</span>
+                            <span>{progressPct}% ({c.currentDays}/{c.targetDays} {c.unit || 'Days'})</span>
+                          </div>
+                          <div className="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden border border-gray-200">
+                            <div 
+                              className={`h-full rounded-full transition-all duration-500 ${
+                                c.isCompleted ? 'bg-emerald-600' : 'bg-[#456A50]'
+                              }`}
+                              style={{ width: `${progressPct}%` }}
+                            ></div>
+                          </div>
+                          <p className="text-[10px] text-gray-500 font-semibold italic">
+                            📊 {c.logSummary}
+                          </p>
+                        </div>
+
+                        <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-2.5 text-xs text-amber-900 font-bold flex items-center gap-2">
+                          <BadgePercent size={16} className="text-amber-600 shrink-0" />
+                          <span>Reward: 5% Booking Discount ({c.discountCode})</span>
+                        </div>
+                      </div>
+
+                      <div className="pt-4 mt-4 border-t border-[#EBE9E0] flex flex-col gap-2">
+                        {c.claimed ? (
+                          <div className="text-xs font-black text-emerald-800 bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 rounded-xl flex items-center justify-between">
+                            <span className="inline-flex items-center gap-1.5">
+                              <CheckCircle size={15} className="text-emerald-600" /> 5% Reward Claimed
+                            </span>
+                            <span className="font-mono bg-white px-2 py-0.5 rounded border border-emerald-300 text-[10px]">
+                              {c.discountCode}
+                            </span>
+                          </div>
+                        ) : c.isCompleted ? (
+                          <button
+                            type="button"
+                            onClick={() => handleClaimReward(c.id)}
+                            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-2.5 px-4 rounded-xl text-xs transition shadow-md flex items-center justify-center gap-1.5 cursor-pointer animate-pulse"
+                          >
+                            <Trophy size={14} /> Claim 5% Discount Reward
+                          </button>
+                        ) : (
+                          <div className="space-y-1.5">
+                            <button
+                              type="button"
+                              disabled
+                              className="w-full bg-gray-100 border border-gray-200 text-gray-400 font-bold py-2.5 px-4 rounded-xl text-xs flex items-center justify-center gap-2 cursor-not-allowed select-none"
+                            >
+                              <Lock size={14} className="text-gray-400" />
+                              <span>Claim Locked (Plan Incomplete: {c.currentDays}/{c.targetDays})</span>
+                            </button>
+                            <p className="text-[10px] text-gray-500 font-medium text-center bg-gray-50 rounded-lg py-1 px-2 border border-gray-200/60">
+                              🔒 Complete your daily plan logs in the dashboard to unlock.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 🌟 TAB 7: NUTRITIONIST EVALUATIONS & CLINICAL REVIEWS 🌟 */}
+        {activeTab === 'evaluations' && (
+          <div className="space-y-6 animate-in fade-in duration-300">
+            <div className="bg-white rounded-3xl shadow-sm border border-[#EBE9E0] p-6 sm:p-8 space-y-6">
+              <div className="border-b border-[#EBE9E0] pb-5">
+                <div>
+                  <h3 className="text-xl font-black text-[#1C2C22] flex items-center gap-2">
+                    <ClipboardList size={22} className="text-[#456A50]" /> Nutritionist Evaluations & Clinical Reviews
+                  </h3>
+                  <p className="text-xs text-[#5A6B60] mt-1">
+                    Formal clinical feedback, adherence scores, and milestone reviews from your assigned specialist.
+                  </p>
+                </div>
+              </div>
+
+              {evaluations.length === 0 ? (
+                <div className="p-12 text-center bg-[#FDFCF8] border border-dashed border-[#EBE9E0] rounded-2xl">
+                  <ClipboardList size={40} className="mx-auto text-gray-300 mb-3" />
+                  <h4 className="font-bold text-sm text-gray-700">No Clinical Evaluations Yet</h4>
+                  <p className="text-xs text-gray-500 mt-1 max-w-md mx-auto">
+                    Your clinical nutritionist (Dr. Sarah Jenkins) will formulate formal evaluation reviews following your consultation sessions.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {evaluations.map((ev, idx) => (
+                    <div key={ev.id || idx} className="p-5 bg-[#FDFCF8] border border-[#EBE9E0] rounded-2xl space-y-3 shadow-2xs">
+                      <div className="flex justify-between items-center border-b border-gray-100 pb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="font-black text-sm text-[#1C2C22]">Dr. Sarah Jenkins</span>
+                          <span className="text-[10px] font-bold text-[#456A50] bg-[#EAF0EC] px-2 py-0.5 rounded-full">
+                            Lead Clinical Nutritionist
+                          </span>
+                        </div>
+                        <span className="text-xs text-gray-500 font-medium">📅 {ev.date || 'Recent'}</span>
+                      </div>
+                      <p className="text-xs text-gray-700 leading-relaxed font-medium">
+                        {ev.notes || ev.feedback || 'Patient maintaining consistent dietary compliance and hydration goals.'}
+                      </p>
+                      {ev.rating && (
+                        <div className="flex items-center gap-1 text-amber-500">
+                          {Array.from({ length: ev.rating }).map((_, i) => (
+                            <Star key={i} size={14} fill="currentColor" />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         )}
 
         </div>
