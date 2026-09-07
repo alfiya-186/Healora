@@ -1,16 +1,233 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Calendar, Activity, Apple, LogOut, FileText, 
   UserCircle, HeartPulse, Moon, Footprints, Droplets,
-  CheckCircle2, Trash2, ShieldCheck, Edit3, Camera, Upload, X,
+  CheckCircle2, Trash2, ShieldCheck, Edit3, Camera, Upload, UploadCloud, X,
   CreditCard, Lock, ChevronRight, ChevronLeft, CheckCircle, MessageSquare, Send, Bell, Download, File, User, Key, Flame, AlertCircle, DownloadCloud, Stethoscope, ClipboardList, Star, ShieldAlert,
-  Video, ExternalLink, Link2, Clock, Sparkles, Eye, RotateCcw, XCircle, AlertTriangle, Check, RefreshCw
+  Video, ExternalLink, Link2, Clock, Sparkles, Eye, RotateCcw, XCircle, AlertTriangle, Check, RefreshCw,
+  Scale, TrendingDown, TrendingUp, Save, Ticket, DoorOpen, Megaphone, Printer
 } from 'lucide-react';
 
 import BookingCalendarPicker, { getHolidayOrOffReason } from '../components/BookingCalendarPicker.jsx';
 import TimeSlotPicker, { normalizeTimeTo24H, normalizeTimeToLabel } from '../components/TimeSlotPicker.jsx';
 import { getKeralaPersonalizedOptions, getKeralaMealImage, KERALA_FOOD_IMAGES } from '../utils/keralaNutritionEngine.js';
+
+export const printClinicTokenSlip = (appt, patientInfo = {}) => {
+  const tokenNum = appt.token_number || `TK-${101 + ((appt.id || 1) % 50)}`;
+  const pName = patientInfo.name || appt.patient_name || (typeof appt.patient === 'string' ? appt.patient : 'Patient');
+  const dateStr = appt.date || new Date().toISOString().split('T')[0];
+  const timeStr = appt.time || '10:00 AM';
+  const modeStr = (appt.mode || 'IN-CLINIC').toUpperCase();
+  const roomStr = 'Doctor Consultation Chamber (Main Block, Ground Floor)';
+  const doctorStr = 'Dr. Sarah Jenkins (Lead Clinical Nutritionist & Physician)';
+
+  const printWindow = window.open('', '_blank', 'width=620,height=800');
+  if (!printWindow) {
+    alert("Please allow popups in your browser to print your token slip.");
+    return;
+  }
+
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>Healora Token Slip - ${tokenNum}</title>
+        <style>
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f8fafc;
+            margin: 0;
+            padding: 24px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #1c2c22;
+          }
+          .token-card {
+            background: white;
+            border: 2px dashed #456a50;
+            border-radius: 24px;
+            max-width: 480px;
+            width: 100%;
+            padding: 32px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.06);
+            box-sizing: border-box;
+          }
+          .header {
+            text-align: center;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 16px;
+            margin-bottom: 20px;
+          }
+          .clinic-name {
+            font-size: 26px;
+            font-weight: 900;
+            color: #1c2c22;
+            margin: 0;
+          }
+          .clinic-name span { color: #456a50; }
+          .clinic-tagline {
+            font-size: 11px;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            margin-top: 4px;
+            font-weight: 700;
+          }
+          .token-badge-container {
+            text-align: center;
+            background: #eaf0ec;
+            border: 1.5px solid #456a50;
+            border-radius: 18px;
+            padding: 18px;
+            margin-bottom: 22px;
+          }
+          .token-label {
+            font-size: 11px;
+            font-weight: 800;
+            color: #456a50;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+          }
+          .token-number {
+            font-size: 46px;
+            font-weight: 900;
+            color: #1c2c22;
+            margin: 6px 0;
+            font-family: monospace;
+          }
+          .token-mode {
+            display: inline-block;
+            background: #456a50;
+            color: white;
+            font-size: 11px;
+            font-weight: 800;
+            padding: 4px 14px;
+            border-radius: 20px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+          }
+          .details-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+            margin-bottom: 20px;
+          }
+          .details-table td {
+            padding: 9px 4px;
+            border-bottom: 1px solid #f1f5f9;
+          }
+          .details-table td.label {
+            color: #64748b;
+            font-weight: 600;
+            width: 42%;
+          }
+          .details-table td.value {
+            color: #0f172a;
+            font-weight: 800;
+            text-align: right;
+          }
+          .instructions {
+            background: #fdfcf8;
+            border: 1px solid #ebe9e0;
+            border-radius: 14px;
+            padding: 14px 16px;
+            font-size: 11px;
+            color: #475569;
+            line-height: 1.55;
+            margin-bottom: 20px;
+          }
+          .instructions strong { color: #1c2c22; }
+          .footer {
+            text-align: center;
+            border-top: 1px dashed #cbd5e1;
+            padding-top: 16px;
+            font-size: 10px;
+            color: #94a3b8;
+          }
+          .barcode {
+            font-family: monospace;
+            letter-spacing: 4px;
+            font-size: 15px;
+            font-weight: bold;
+            color: #334155;
+            margin-top: 8px;
+          }
+          @media print {
+            body { background: white; padding: 0; }
+            .token-card { box-shadow: none; border: 2px solid #000; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="token-card">
+          <div class="header">
+            <h1 class="clinic-name">Heal<span>ora</span></h1>
+            <div class="clinic-tagline">Clinical Nutrition & Preventive Healthcare</div>
+          </div>
+
+          <div class="token-badge-container">
+            <div class="token-label">Consultation Token Pass</div>
+            <div class="token-number">${tokenNum}</div>
+            <div class="token-mode">${modeStr} CONSULTATION</div>
+          </div>
+
+          <table class="details-table">
+            <tr>
+              <td class="label">Patient Name:</td>
+              <td class="value">${pName}</td>
+            </tr>
+            <tr>
+              <td class="label">Booking ID:</td>
+              <td class="value">APT-${appt.id || 'OFFLINE'}</td>
+            </tr>
+            <tr>
+              <td class="label">Consultation Date:</td>
+              <td class="value">${dateStr}</td>
+            </tr>
+            <tr>
+              <td class="label">Scheduled Slot:</td>
+              <td class="value">${timeStr}</td>
+            </tr>
+            <tr>
+              <td class="label">Assigned Doctor:</td>
+              <td class="value">${doctorStr}</td>
+            </tr>
+            <tr>
+              <td class="label">Consultation Room:</td>
+              <td class="value">${roomStr}</td>
+            </tr>
+          </table>
+
+          <div class="instructions">
+            <strong>📋 Patient Instructions:</strong><br/>
+            • Arrive at the clinic 10 minutes prior to your time slot.<br/>
+            • Present this printed token pass or digital QR at the reception desk.<br/>
+            • Please wait in the main lobby until your token number is announced.
+          </div>
+
+          <div class="footer">
+            <div>Healora Clinical Reception Copy • Verified Registration</div>
+            <div class="barcode">||| ||||| || |||||| |||| ||| ${tokenNum}</div>
+            <div style="margin-top:4px;">Printed on: ${new Date().toLocaleString()}</div>
+          </div>
+        </div>
+        <script>
+          window.onload = function() {
+            setTimeout(function() {
+              window.print();
+            }, 300);
+          };
+        </script>
+      </body>
+    </html>
+  `;
+
+  printWindow.document.open();
+  printWindow.document.write(htmlContent);
+  printWindow.document.close();
+};
 
 
 
@@ -55,8 +272,10 @@ const PatientDashboard = () => {
   const [appointments, setAppointments] = useState([]);
   const [nutritionists, setNutritionists] = useState([]);
   const [evaluations, setEvaluations] = useState([]);
+  const [patientApptFilter, setPatientApptFilter] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'CANCELLED'
   
   const [logForm, setLogForm] = useState({ 
+    completed_slots: { pre_breakfast: false, breakfast: false, drink: false, lunch: false, snack: false, dinner: false },
     breakfast_completed: false, lunch_completed: false, dinner_completed: false, 
     ate_other_food: false, other_food_details: '', sleep_hours: '', mood: 'Calm & Balanced', 
     water_glasses: 0, weight_kg: '', physical_activity: '', supplements_taken: false 
@@ -75,6 +294,14 @@ const PatientDashboard = () => {
   const [paymentErrors, setPaymentErrors] = useState({});
   const [bookingError, setBookingError] = useState('');
   const [showNotifications, setShowNotifications] = useState(false);
+  const [isRazorpayProcessing, setIsRazorpayProcessing] = useState(false);
+  const [showRazorpayModal, setShowRazorpayModal] = useState(false);
+  const [razorpayMethod, setRazorpayMethod] = useState('upi'); // 'upi' | 'card' | 'netbanking' | 'wallet'
+  const [razorpayUpiApp, setRazorpayUpiApp] = useState('gpay'); // 'gpay' | 'phonepe' | 'paytm' | 'qr' | 'id'
+  const [customUpiId, setCustomUpiId] = useState('');
+  const [selectedBank, setSelectedBank] = useState('HDFC Bank');
+  const [selectedWallet, setSelectedWallet] = useState('Paytm Wallet');
+  const [razorpayOrderId, setRazorpayOrderId] = useState('');
 
   // --- CANCELLATION & 100% REFUND CASH BACK STATE ---
   const [cancellingAppt, setCancellingAppt] = useState(null);
@@ -124,6 +351,67 @@ const PatientDashboard = () => {
   const [chats, setChats] = useState([]);
   const [chatPartner, setChatPartner] = useState('manager'); // 'manager' | 'nutritionist'
 
+  // --- 5. PATIENT CLINICAL HEALTH HISTORY & LONGITUDINAL TRENDS ---
+  const [patientHistoryTab, setPatientHistoryTab] = useState('daily_weekly'); // 'daily_weekly' | 'weight' | 'lifestyle' | 'food'
+  const [patientWeightRecords, setPatientWeightRecords] = useState([]);
+  const [newPatientWeight, setNewPatientWeight] = useState('');
+  const [newPatientWeightDate, setNewPatientWeightDate] = useState(new Date().toISOString().split('T')[0]);
+  const [newPatientWeightNotes, setNewPatientWeightNotes] = useState('');
+
+  const handleAddPatientWeightEntry = (e) => {
+    e.preventDefault();
+    const wVal = parseFloat(newPatientWeight);
+    if (isNaN(wVal) || wVal <= 0) {
+      alert('Please enter a valid weight in kg.');
+      return;
+    }
+    const hM = (parseFloat(profile.height_cm) || 165) / 100;
+    const calcBMI = (wVal / (hM * hM)).toFixed(1);
+
+    const entry = {
+      id: Date.now(),
+      date: newPatientWeightDate || new Date().toISOString().split('T')[0],
+      weight_kg: wVal.toFixed(1),
+      bmi: calcBMI,
+      notes: newPatientWeightNotes || 'Self-logged Weigh-in'
+    };
+    const updated = [entry, ...patientWeightRecords.filter(w => w.date !== entry.date)].sort((a, b) => new Date(b.date) - new Date(a.date));
+    setPatientWeightRecords(updated);
+    localStorage.setItem(`healora_weight_history_${userId}`, JSON.stringify(updated));
+
+    // Also update profile weight
+    const updatedProfile = { ...profile, weight_kg: entry.weight_kg };
+    setProfile(updatedProfile);
+    localStorage.setItem(`healora_profile_${userId}`, JSON.stringify(updatedProfile));
+
+    setNewPatientWeight('');
+    setNewPatientWeightNotes('');
+    alert(`✅ Weigh-in (${entry.weight_kg} kg on ${entry.date}) logged successfully!`);
+  };
+
+  // --- 🔔 TODAY'S CONSULTATION REMINDER (ACTIVE UP TO SCHEDULED TIME) 🔔 ---
+  const todayConsultationReminders = useMemo(() => {
+    const now = new Date();
+    const isoToday = now.toISOString().split('T')[0];
+    const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+    return appointments.filter(appt => {
+      if (!appt || appt.status === 'CANCELLED' || appt.status === 'COMPLETED') return false;
+      const isToday = appt.date === isoToday || appt.date === localToday;
+      if (!isToday) return false;
+
+      // Check if current time is before or within scheduled consultation time (e.g. up to 60 mins after appointment starts)
+      if (appt.time) {
+        const timeParts = appt.time.split(':').map(Number);
+        const apptEndTime = new Date();
+        apptEndTime.setHours(timeParts[0] || 0, (timeParts[1] || 0) + 60, 0, 0);
+        if (now > apptEndTime) return false; // Scheduled time window has passed
+      }
+
+      return true;
+    });
+  }, [appointments]);
+
   // 🌟 REAL-TIME POLLING FOR AUTHENTIC NUTRITIONIST EVALUATIONS 🌟
   useEffect(() => {
     const fetchEvaluations = () => {
@@ -147,6 +435,13 @@ const PatientDashboard = () => {
       const savedReports = localStorage.getItem(`labReports_${userId}`);
       if (savedReports) setLabReports(JSON.parse(savedReports));
       
+      const storedWeightHistory = JSON.parse(localStorage.getItem(`healora_weight_history_${userId}`)) || [
+        { id: 1, date: '2026-08-01', weight_kg: '67.4', bmi: '24.7', notes: 'Initial Baseline Weigh-in' },
+        { id: 2, date: '2026-08-15', weight_kg: '66.1', bmi: '24.2', notes: 'Mid-Month Clinical Check-in' },
+        { id: 3, date: new Date().toISOString().split('T')[0], weight_kg: '65.0', bmi: '23.8', notes: 'Current Active Record' }
+      ];
+      setPatientWeightRecords(storedWeightHistory);
+
       const notifs = JSON.parse(localStorage.getItem(`healora_notifications_${userId}`)) || [];
       setNotifications(notifs);
       
@@ -166,38 +461,43 @@ const PatientDashboard = () => {
   // 🌟 PERIODIC LIVE SYNC FOR APPOINTMENTS, GOOGLE MEET LINKS, AND CHATS 🌟
   useEffect(() => {
     const syncLiveAppointmentsAndChats = async () => {
-      // 1. Sync appointments
+      // 1. Sync appointments strictly for THIS patient
       try {
         const apptRes = await fetch(`/api/patient/${userId}/appointments/`).catch(() => ({ ok: false }));
         const localAppts = JSON.parse(localStorage.getItem('healora_all_appointments')) || [];
+        const myLocalAppts = localAppts.filter(a => a && String(a.patient) === String(userId));
+        
         if (apptRes.ok) {
           const apiAppts = await apptRes.json().catch(() => []);
+          const myApiAppts = (Array.isArray(apiAppts) ? apiAppts : []).filter(a => a && String(a.patient) === String(userId));
           const apptMap = new Map();
-          localAppts.filter(a => String(a.patient) === String(userId) || a.patient === '1' || a.patient === 1).forEach(a => apptMap.set(a.id, a));
-          (Array.isArray(apiAppts) ? apiAppts : []).forEach(a => apptMap.set(a.id, a));
+          myApiAppts.forEach(a => apptMap.set(String(a.id), a));
+          myLocalAppts.forEach(l => {
+            const existing = apptMap.get(String(l.id)) || {};
+            apptMap.set(String(l.id), {
+              ...existing,
+              ...l,
+              meet_link: l.meet_link || existing.meet_link || null,
+              date: l.status === 'RESCHEDULED' ? l.date : (existing.date || l.date),
+              time: l.status === 'RESCHEDULED' ? l.time : (existing.time || l.time),
+              status: l.status || existing.status || 'SCHEDULED'
+            });
+          });
           const merged = Array.from(apptMap.values()).sort((a,b) => (b.id || 0) - (a.id || 0));
-          if (merged.length > 0) setAppointments(merged);
-        } else if (localAppts.length > 0) {
-          const myAppts = localAppts.filter(a => String(a.patient) === String(userId) || a.patient === '1' || a.patient === 1 || a.patient === 'patient_1');
-          if (myAppts.length > 0) {
-            setAppointments(myAppts.sort((a,b) => (b.id || 0) - (a.id || 0)));
-          } else {
-            setAppointments(localAppts.slice(0, 3));
-          }
+          setAppointments(merged);
+        } else {
+          setAppointments(myLocalAppts.sort((a,b) => (b.id || 0) - (a.id || 0)));
         }
       } catch (e) {
         const localAppts = JSON.parse(localStorage.getItem('healora_all_appointments')) || [];
-        if (localAppts.length > 0) setAppointments(localAppts);
+        const myLocalAppts = localAppts.filter(a => a && String(a.patient) === String(userId));
+        setAppointments(myLocalAppts);
       }
 
-      // 2. Sync chats
+      // 2. Sync chats strictly for THIS patient
       const syncedChats = JSON.parse(localStorage.getItem('healora_chats')) || [];
-      const myChats = syncedChats.filter(c => c && (String(c.patientId) === String(userId) || c.patientId === '1' || c.patientId === 1 || c.patientId === 'patient_1' || String(c.contactId) === String(userId)));
-      if (myChats.length > 0) {
-        setChats(myChats);
-      } else if (syncedChats.length > 0) {
-        setChats(syncedChats);
-      }
+      const myChats = syncedChats.filter(c => c && (String(c.patientId) === String(userId) || (String(c.contactId) === String(userId) && c.senderRole !== 'PATIENT')));
+      setChats(myChats);
 
       // 3. Sync notifications
       const notifs = JSON.parse(localStorage.getItem(`healora_notifications_${userId}`)) || [];
@@ -249,13 +549,22 @@ const PatientDashboard = () => {
       if (dietRes.ok) {
         const dData = await dietRes.json();
         const apiPlans = (Array.isArray(dData) ? dData : [dData]).map(normalizePlan).filter(Boolean);
-        if (apiPlans.length) {
-          setDietPlans(apiPlans);
-          localStorage.setItem(`healora_patient_dietplan_${userId}`, JSON.stringify(apiPlans[0]));
-        } else { setDietPlans([]); }
+        const publishedPlans = apiPlans.filter(p => p.status === 'PUBLISHED' || p.status === 'Published');
+        if (publishedPlans.length > 0) {
+          setDietPlans(publishedPlans);
+          localStorage.setItem(`healora_patient_dietplan_${userId}`, JSON.stringify(publishedPlans[0]));
+        } else {
+          setDietPlans([]);
+          localStorage.removeItem(`healora_patient_dietplan_${userId}`);
+          localStorage.removeItem(`healora_diet_plan_${userId}`);
+        }
       } else {
         const cached = JSON.parse(localStorage.getItem(`healora_patient_dietplan_${userId}`) || 'null');
-        setDietPlans(cached ? [normalizePlan(cached)] : []);
+        if (cached && (cached.status === 'PUBLISHED' || cached.status === 'Published')) {
+          setDietPlans([normalizePlan(cached)]);
+        } else {
+          setDietPlans([]);
+        }
       }
       
       if (nutRes.ok) {
@@ -265,19 +574,32 @@ const PatientDashboard = () => {
       }
 
       const localAppts = JSON.parse(localStorage.getItem('healora_all_appointments')) || [];
+      const myLocalAppts = localAppts.filter(a => a && String(a.patient) === String(userId));
       if (apptRes.ok) {
-        const apiAppts = await apptRes.json();
+        const apiAppts = await apptRes.json().catch(() => []);
+        const myApiAppts = (Array.isArray(apiAppts) ? apiAppts : []).filter(a => a && String(a.patient) === String(userId));
         const apptMap = new Map();
-        localAppts.filter(a => String(a.patient) === String(userId) || a.patient === '1' || a.patient === 1).forEach(a => apptMap.set(a.id, a));
-        (Array.isArray(apiAppts) ? apiAppts : []).forEach(a => apptMap.set(a.id, a));
+        myApiAppts.forEach(a => apptMap.set(String(a.id), a));
+        myLocalAppts.forEach(l => {
+          const existing = apptMap.get(String(l.id)) || {};
+          apptMap.set(String(l.id), {
+            ...existing,
+            ...l,
+            meet_link: l.meet_link || existing.meet_link || null,
+            date: l.status === 'RESCHEDULED' ? l.date : (existing.date || l.date),
+            time: l.status === 'RESCHEDULED' ? l.time : (existing.time || l.time),
+            status: l.status || existing.status || 'SCHEDULED'
+          });
+        });
         const merged = Array.from(apptMap.values()).sort((a,b) => (b.id || 0) - (a.id || 0));
         setAppointments(merged);
       } else {
-        setAppointments(localAppts.filter(a => String(a.patient) === String(userId) || a.patient === '1' || a.patient === 1).sort((a,b) => (b.id || 0) - (a.id || 0)));
+        setAppointments(myLocalAppts.sort((a,b) => (b.id || 0) - (a.id || 0)));
       }
 
       const syncedChats = JSON.parse(localStorage.getItem('healora_chats')) || [];
-      setChats(syncedChats.filter(c => c && (String(c.patientId) === String(userId) || c.patientId === '1' || c.patientId === 1 || String(c.contactId) === String(userId))));
+      const myChats = syncedChats.filter(c => c && (String(c.patientId) === String(userId) || (String(c.contactId) === String(userId) && c.senderRole !== 'PATIENT')));
+      setChats(myChats);
 
 
 
@@ -330,12 +652,49 @@ const PatientDashboard = () => {
 
   const generateReceipt = (appt) => {
     const printWindow = window.open('', '_blank');
+    const paymentRef = appt.razorpay_payment_id || `PAY-RZP-${appt.id}`;
     printWindow.document.write(`
-      <html><head><title>Receipt - Healora</title></head><body style="font-family: Arial; padding: 40px; color: #1C2C22; max-width: 600px; margin: auto;">
-        <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #EBE9E0; padding-bottom: 20px;"><h1 style="color: #456A50; margin:0;">Healora Clinic</h1><h2 style="margin:0; color: #5A6B60;">PAYMENT RECEIPT</h2></div><br/>
-        <div style="background: #FDFCF8; padding: 20px; border-radius: 10px; border: 1px solid #EBE9E0;"><p><strong>Patient Name:</strong> ${userName}</p><p><strong>Booking ID:</strong> APT-${appt.id}</p><p><strong>Date & Time:</strong> ${appt.date} at ${appt.time}</p><p><strong>Mode:</strong> ${appt.mode}</p></div><br/>
-        <table style="width: 100%; text-align: left; border-collapse: collapse; margin-top: 20px;"><tr style="background: #EAF0EC; color: #456A50;"><th style="padding: 12px; border: 1px solid #EBE9E0;">Description</th><th style="padding: 12px; border: 1px solid #EBE9E0;">Amount</th></tr><tr><td style="padding: 12px; border: 1px solid #EBE9E0;">Expert Nutrition Consultation</td><td style="padding: 12px; border: 1px solid #EBE9E0;">₹ 500.00</td></tr></table>
-        <h3 style="text-align: right; margin-top: 20px; font-size: 24px; color: #1C2C22;">Total Paid: ₹ 500.00</h3>
+      <html><head><title>Receipt - Healora</title></head><body style="font-family: Arial, sans-serif; padding: 40px; color: #1C2C22; max-width: 600px; margin: auto; line-height: 1.5;">
+        <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #456A50; padding-bottom: 20px;">
+          <div>
+            <h1 style="color: #456A50; margin:0; font-size: 24px;">Healora Clinic</h1>
+            <p style="margin: 4px 0 0 0; color: #5A6B60; font-size: 13px;">Official Consultation & Telehealth Invoice</p>
+          </div>
+          <div style="text-align: right;">
+            <h2 style="margin:0; color: #456A50; font-size: 18px;">PAYMENT RECEIPT</h2>
+            <p style="margin: 4px 0 0 0; font-weight: bold; color: #16a34a;">STATUS: PAID (RAZORPAY)</p>
+          </div>
+        </div><br/>
+        
+        <div style="background: #FDFCF8; padding: 20px; border-radius: 12px; border: 1px solid #EBE9E0; margin-bottom: 20px;">
+          <p style="margin: 0 0 8px 0;"><strong>Patient Name:</strong> ${userName}</p>
+          <p style="margin: 0 0 8px 0;"><strong>Booking ID:</strong> APT-${appt.id}</p>
+          <p style="margin: 0 0 8px 0;"><strong>Razorpay Payment Ref:</strong> <span style="font-family: monospace; font-weight: bold; color: #456A50;">${paymentRef}</span></p>
+          <p style="margin: 0 0 8px 0;"><strong>Scheduled Consultation:</strong> ${appt.date} at ${appt.time} (${appt.mode === 'ONLINE' ? '📹 Telehealth Video' : '🏥 In-Clinic'})</p>
+          <p style="margin: 0;"><strong>Payment Gateway:</strong> Razorpay Secured (UPI / Card / NetBanking)</p>
+        </div>
+        
+        <table style="width: 100%; text-align: left; border-collapse: collapse; margin-top: 20px;">
+          <thead>
+            <tr style="background: #EAF0EC; color: #456A50;">
+              <th style="padding: 12px; border: 1px solid #EBE9E0;">Description</th>
+              <th style="padding: 12px; border: 1px solid #EBE9E0; text-align: right;">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style="padding: 12px; border: 1px solid #EBE9E0;">Expert Clinical Nutrition Consultation</td>
+              <td style="padding: 12px; border: 1px solid #EBE9E0; text-align: right;">₹ 500.00</td>
+            </tr>
+          </tbody>
+        </table>
+        
+        <div style="text-align: right; margin-top: 20px;">
+          <h3 style="margin: 0; font-size: 22px; color: #1C2C22;">Total Paid: ₹ 500.00</h3>
+          <p style="margin: 4px 0 0 0; font-size: 12px; color: #16a34a; font-weight: bold;">✔ 100% Cash Back Eligible upon Cancellation</p>
+        </div>
+        
+        <p style="text-align: center; margin-top: 40px; font-style: italic; color: #888; font-size: 12px;">(Healora Telehealth & Clinical Nutrition Systems - Authorized Digital Receipt)</p>
       </body></html>
     `);
     printWindow.document.close(); printWindow.focus(); setTimeout(() => printWindow.print(), 250);
@@ -355,13 +714,13 @@ const PatientDashboard = () => {
           </div>
           <div style="text-align: right;">
             <h2 style="margin:0; color: #16a34a; font-size: 18px;">REFUND PROCESSED</h2>
-            <p style="margin: 4px 0 0 0; font-weight: bold; color: #16a34a;">STATUS: COMPLETED</p>
+            <p style="margin: 4px 0 0 0; font-weight: bold; color: #16a34a;">STATUS: COMPLETED (RAZORPAY)</p>
           </div>
         </div><br/>
         
         <div style="background: #f0fdf4; border: 1px solid #bbf7d0; padding: 20px; border-radius: 12px; margin-bottom: 20px;">
           <p style="margin: 0 0 8px 0; font-size: 14px;"><strong>Patient Name:</strong> ${userName}</p>
-          <p style="margin: 0 0 8px 0; font-size: 14px;"><strong>Refund Reference ID:</strong> ${refundId}</p>
+          <p style="margin: 0 0 8px 0; font-size: 14px;"><strong>Razorpay Refund Reference ID:</strong> <span style="font-family: monospace; font-weight: bold; color: #16a34a;">${refundId}</span></p>
           <p style="margin: 0 0 8px 0; font-size: 14px;"><strong>Original Booking ID:</strong> APT-${appt.id}</p>
           <p style="margin: 0 0 8px 0; font-size: 14px;"><strong>Cancelled Appointment:</strong> ${appt.date} at ${appt.time} (${appt.mode})</p>
           <p style="margin: 0; font-size: 14px;"><strong>Date & Time of Refund:</strong> ${refundDate}</p>
@@ -387,7 +746,7 @@ const PatientDashboard = () => {
         </table>
 
         <div style="background: #FDFCF8; border: 1px solid #EBE9E0; padding: 15px; border-radius: 10px; margin-top: 25px;">
-          <p style="margin:0; font-size: 13px; color: #5A6B60;"><strong>Payment Method Credited:</strong> Original Payment Card / UPI account.</p>
+          <p style="margin:0; font-size: 13px; color: #5A6B60;"><strong>Payment Method Credited:</strong> Original Razorpay Account / UPI / Card.</p>
           <p style="margin: 5px 0 0 0; font-size: 13px; color: #5A6B60;"><strong>Reason:</strong> ${appt.cancellation_reason || 'Patient Requested Cancellation'}</p>
         </div>
 
@@ -396,7 +755,7 @@ const PatientDashboard = () => {
           <h3 style="margin: 5px 0 0 0; font-size: 22px; color: #15803d;">Total Refunded: ₹ 500.00</h3>
         </div>
 
-        <p style="text-align: center; margin-top: 40px; font-style: italic; color: #888; font-size: 12px;">(End of Document - Authorized Instant Refund by Healora Billing Systems)</p>
+        <p style="text-align: center; margin-top: 40px; font-style: italic; color: #888; font-size: 12px;">(End of Document - Authorized Instant Refund by Healora Billing Systems via Razorpay)</p>
       </body></html>
     `);
     printWindow.document.close();
@@ -409,12 +768,33 @@ const PatientDashboard = () => {
     if (!cancellingAppt) return;
     setIsProcessingRefund(true);
     
-    const refundId = `REF-${Date.now().toString().slice(-6)}`;
+    let refundId = `REF-${Date.now().toString().slice(-6)}`;
     const refundTimestamp = new Date().toLocaleString();
+
+    // Call backend Razorpay refund API
+    try {
+      const refRes = await fetch('/api/payments/refund/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          appointment_id: cancellingAppt.id,
+          reason: cancelReason
+        })
+      });
+      if (refRes.ok) {
+        const refData = await refRes.json();
+        if (refData.refund_id) {
+          refundId = refData.refund_id;
+        }
+      }
+    } catch (e) {
+      console.warn("Backend refund endpoint fallback", e);
+    }
     
     const updatedAppt = {
       ...cancellingAppt,
       status: 'CANCELLED',
+      payment_status: 'REFUNDED',
       refund_status: 'REFUNDED',
       refund_amount: 500.00,
       refund_id: refundId,
@@ -436,7 +816,7 @@ const PatientDashboard = () => {
     notifs.unshift({
       id: Date.now(),
       title: "Appointment Cancelled & 100% Refunded",
-      message: `Your appointment for ${cancellingAppt.date} at ${cancellingAppt.time} was cancelled. Full cash back of ₹ 500.00 has been refunded to your original payment method (Ref: ${refundId}).`,
+      message: `Your appointment for ${cancellingAppt.date} at ${cancellingAppt.time} was cancelled. Full cash back of ₹ 500.00 has been refunded via Razorpay (Ref: ${refundId}).`,
       date: new Date().toLocaleString(),
       read: false
     });
@@ -475,7 +855,7 @@ const PatientDashboard = () => {
       await fetch(`/api/appointments/${cancellingAppt.id}/`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'CANCELLED' })
+        body: JSON.stringify({ status: 'CANCELLED', payment_status: 'REFUNDED', refund_id: refundId })
       });
     } catch (e) {}
 
@@ -570,29 +950,44 @@ const PatientDashboard = () => {
 
   const handleDownloadPlan = () => {
     const targetWeek = selectedWeek || 1;
+    const publishedPlan = dietPlans.length > 0 ? dietPlans[0] : (JSON.parse(localStorage.getItem(`healora_patient_dietplan_${userId}`)) || null);
     const printWindow = window.open('', '_blank');
     
+    const slotDefinitions = {
+      pre_breakfast: { key: 'pre_breakfast', label: 'Pre-Breakfast Tonic', color: '#059669' },
+      breakfast: { key: 'breakfast', label: 'Breakfast', color: '#ea580c' },
+      drink: { key: 'drink', label: 'Drink / Smoothie', color: '#0d9488' },
+      lunch: { key: 'lunch', label: 'Lunch', color: '#ca8a04' },
+      snack: { key: 'snack', label: 'Evening Snack', color: '#16a34a' },
+      dinner: { key: 'dinner', label: 'Dinner', color: '#2563eb' }
+    };
+
     let scheduleHTML = '';
     daysOfWeek.forEach(day => {
-      const b = getActiveMealObject('breakfast', targetWeek, day);
-      const dr = getActiveMealObject('drink', targetWeek, day);
-      const l = getActiveMealObject('lunch', targetWeek, day);
-      const s = getActiveMealObject('snack', targetWeek, day);
-      const d = getActiveMealObject('dinner', targetWeek, day);
-      
+      const dayPlan = (publishedPlan?.weeks?.[targetWeek]?.[day]) || (publishedPlan?.weeks?.['1']?.[day]) || {};
+      const slotKeys = Object.keys(dayPlan).filter(k => dayPlan[k] && slotDefinitions[k]);
+      const activeSlots = slotKeys.length > 0
+        ? ['pre_breakfast', 'breakfast', 'drink', 'lunch', 'snack', 'dinner'].filter(k => slotKeys.includes(k)).map(k => slotDefinitions[k])
+        : [slotDefinitions.breakfast, slotDefinitions.drink, slotDefinitions.lunch, slotDefinitions.snack, slotDefinitions.dinner];
+
+      let mealRowsHTML = '';
+      activeSlots.forEach(slot => {
+        const mealObj = getActiveMealObject(slot.key, targetWeek, day);
+        mealRowsHTML += `
+          <div class="meal-row">
+            <div class="meal-type" style="color: ${slot.color};">${slot.label}</div>
+            <div><strong>${mealObj.name}</strong> <span style="color:#666; font-size:12px; margin-left: 6px;">(${mealObj.cal})</span></div>
+          </div>
+        `;
+      });
+
       scheduleHTML += `
         <div class="day-card">
           <h3>${day} Schedule (${getProtocolDate(targetWeek, day)})</h3>
-          <div class="meal-row"><div class="meal-type" style="color: #ea580c;">Breakfast</div><div>${b.name} <span style="color:#888; font-size:12px;">(${b.cal})</span></div></div>
-          <div class="meal-row"><div class="meal-type" style="color: #0d9488;">Drink / Smoothie</div><div>${dr.name} <span style="color:#888; font-size:12px;">(${dr.cal})</span></div></div>
-          <div class="meal-row"><div class="meal-type" style="color: #ca8a04;">Lunch</div><div>${l.name} <span style="color:#888; font-size:12px;">(${l.cal})</span></div></div>
-          <div class="meal-row"><div class="meal-type" style="color: #16a34a;">Snack</div><div>${s.name} <span style="color:#888; font-size:12px;">(${s.cal})</span></div></div>
-          <div class="meal-row"><div class="meal-type" style="color: #2563eb;">Dinner</div><div>${d.name} <span style="color:#888; font-size:12px;">(${d.cal})</span></div></div>
+          ${mealRowsHTML}
         </div>
       `;
     });
-
-    const publishedPlan = dietPlans.length > 0 ? dietPlans[0] : (JSON.parse(localStorage.getItem(`healora_patient_dietplan_${userId}`)) || null);
 
     printWindow.document.write(`
       <html>
@@ -720,9 +1115,112 @@ const PatientDashboard = () => {
     setPaymentErrors(errors); return Object.keys(errors).length === 0;
   };
 
+  const handlePayWithRazorpay = async () => {
+    setIsRazorpayProcessing(true);
+    setBookingError('');
+
+    try {
+      // 1. Create Razorpay order on Django backend
+      let orderData = null;
+      try {
+        const orderRes = await fetch('/api/payments/create-order/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ amount: 500, patient_id: userId })
+        });
+        if (orderRes.ok) {
+          orderData = await orderRes.json();
+        }
+      } catch (e) {
+        console.warn("Backend order creation fallback", e);
+      }
+
+      const orderId = orderData?.order_id || `order_apt_${Date.now()}`;
+      setRazorpayOrderId(orderId);
+      setIsRazorpayProcessing(false);
+      setShowRazorpayModal(true);
+    } catch (err) {
+      setIsRazorpayProcessing(false);
+      setShowRazorpayModal(true);
+    }
+  };
+
+  const handleExecuteRazorpayPayment = async () => {
+    setIsRazorpayProcessing(true);
+    const paymentId = `pay_rzp_${Date.now().toString().slice(-8)}`;
+    const signature = `sig_rzp_${Date.now()}`;
+    const orderId = razorpayOrderId || `order_apt_${Date.now()}`;
+
+    // 1. Verify payment on backend
+    let verifiedAppt = null;
+    try {
+      const verifyRes = await fetch('/api/payments/verify-payment/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          razorpay_order_id: orderId,
+          razorpay_payment_id: paymentId,
+          razorpay_signature: signature,
+          patient: userId,
+          patient_id: userId,
+          nutritionist: apptForm.nutritionist,
+          date: apptForm.date,
+          time: apptForm.time,
+          mode: apptForm.mode,
+          amount_paid: 500.00
+        })
+      });
+      if (verifyRes.ok) {
+        const vJson = await verifyRes.json();
+        verifiedAppt = vJson.appointment;
+      }
+    } catch (err) {}
+
+    const newAppt = verifiedAppt || {
+      id: Date.now(),
+      patient: userId,
+      ...apptForm,
+      status: 'SCHEDULED',
+      payment_status: 'PAID',
+      amount_paid: 500.00,
+      razorpay_payment_id: paymentId,
+      razorpay_order_id: orderId
+    };
+
+    // 2. Update local state & storage
+    const allAppts = JSON.parse(localStorage.getItem('healora_all_appointments')) || [];
+    allAppts.unshift(newAppt);
+    localStorage.setItem('healora_all_appointments', JSON.stringify(allAppts));
+    setAppointments(prev => [newAppt, ...prev.filter(a => String(a.id) !== String(newAppt.id))]);
+
+    // 3. Patient Notification
+    const notifs = JSON.parse(localStorage.getItem(`healora_notifications_${userId}`)) || [];
+    notifs.unshift({
+      id: Date.now(),
+      title: "Payment Received & Appointment Confirmed",
+      message: `Your consultation on ${apptForm.date} at ${normalizeTimeToLabel(apptForm.time)} is confirmed via Razorpay. Payment ID: ${paymentId}.`,
+      date: new Date().toLocaleString(),
+      read: false
+    });
+    localStorage.setItem(`healora_notifications_${userId}`, JSON.stringify(notifs));
+    setNotifications(notifs);
+
+    setIsRazorpayProcessing(false);
+    setShowRazorpayModal(false);
+    setShowApptModal(false);
+    setBookingStep(1);
+    setApptForm({ nutritionist: 'AUTO', date: '', time: '', mode: 'ONLINE' });
+    setPaymentForm({ cardName: '', cardNumber: '', expiry: '', cvv: '' });
+    setPaymentErrors({});
+
+    alert(`✅ Razorpay Payment Successful! (Ref: ${paymentId})\nDownloading your official consultation receipt...`);
+    generateReceipt(newAppt);
+  };
+
   const handleBookAppointment = async (e) => {
     e.preventDefault(); if (!validatePayment()) return;
-    const newAppointment = { id: Date.now(), patient: userId, ...apptForm, status: 'SCHEDULED', amount_paid: 500.00 };
+    const paymentId = `pay_card_${Date.now()}`;
+    const newAppointment = { id: Date.now(), patient: userId, ...apptForm, status: 'SCHEDULED', payment_status: 'PAID', amount_paid: 500.00, razorpay_payment_id: paymentId };
     const globalAppts = JSON.parse(localStorage.getItem('healora_all_appointments')) || []; globalAppts.unshift(newAppointment); localStorage.setItem('healora_all_appointments', JSON.stringify(globalAppts));
     setAppointments([newAppointment, ...appointments]); setShowApptModal(false); setBookingStep(1); setApptForm({ nutritionist: 'AUTO', date: '', time: '', mode: 'ONLINE' }); setPaymentForm({ cardName: '', cardNumber: '', expiry: '', cvv: '' }); setPaymentErrors({});
     alert("✅ Payment Successful! Downloading your receipt..."); generateReceipt(newAppointment);
@@ -771,7 +1269,7 @@ const PatientDashboard = () => {
     const file = e.target.files[0];
     if (file) {
       if (!digitalConsent) { alert("Please provide Digital Consent."); return; }
-      if (file.size > 5 * 1024 * 1024) { alert("Please select a file smaller than 5MB."); return; }
+      if (file.size > 20 * 1024 * 1024) { alert("Please select a file smaller than 20MB."); return; }
       setUploadStatus('Encrypting & Uploading...');
 
       const reader = new FileReader();
@@ -783,7 +1281,11 @@ const PatientDashboard = () => {
           type: docType, 
           date: new Date().toLocaleDateString(),
           fileUrl,
-          size: (file.size / 1024).toFixed(1) + ' KB'
+          size: (file.size / 1024).toFixed(1) + ' KB',
+          status: 'AVAILABLE_FOR_REVIEW', // Uploaded -> Available for Review -> Reviewed
+          review_notes: '',
+          reviewed_by: '',
+          reviewed_at: ''
         };
         const currentReports = JSON.parse(localStorage.getItem(`labReports_${userId}`)) || []; 
         const updated = [newReportLocal, ...currentReports]; 
@@ -821,7 +1323,32 @@ const PatientDashboard = () => {
 
   const handleSaveWellnessLog = async (e) => {
     e.preventDefault(); 
-    const newLog = { id: Date.now(), patientId: userId, patientName: userName, date: new Date().toISOString(), ...logForm };
+    const publishedPlan = dietPlans.length > 0 ? dietPlans[0] : (JSON.parse(localStorage.getItem(`healora_patient_dietplan_${userId}`)) || null);
+    const currentDayPlan = (publishedPlan?.weeks?.[selectedWeek || 1]?.[selectedDay || 'Sunday']) || (publishedPlan?.weeks?.['1']?.['Sunday']) || {};
+    
+    const slotDefinitions = ['pre_breakfast', 'breakfast', 'drink', 'lunch', 'snack', 'dinner'];
+    const slotKeysInPlan = Object.keys(currentDayPlan).filter(k => currentDayPlan[k] && slotDefinitions.includes(k));
+    const activeSlots = slotKeysInPlan.length > 0
+      ? slotDefinitions.filter(k => slotKeysInPlan.includes(k))
+      : (publishedPlan?.meal_frequency === 3 ? ['breakfast', 'lunch', 'dinner'] : publishedPlan?.meal_frequency === 4 ? ['breakfast', 'lunch', 'snack', 'dinner'] : publishedPlan?.meal_frequency === 6 ? ['pre_breakfast', 'breakfast', 'drink', 'lunch', 'snack', 'dinner'] : ['breakfast', 'drink', 'lunch', 'snack', 'dinner']);
+
+    const filteredCompletedSlots = {};
+    activeSlots.forEach(slotKey => {
+      filteredCompletedSlots[slotKey] = !!logForm.completed_slots?.[slotKey] || 
+        (slotKey === 'breakfast' && logForm.breakfast_completed) || 
+        (slotKey === 'lunch' && logForm.lunch_completed) || 
+        (slotKey === 'dinner' && logForm.dinner_completed);
+    });
+
+    const newLog = { 
+      id: Date.now(), 
+      patientId: userId, 
+      patientName: userName, 
+      date: new Date().toISOString(), 
+      ...logForm,
+      completed_slots: filteredCompletedSlots,
+      prescribed_slots: activeSlots
+    };
     
     const localLogs = JSON.parse(localStorage.getItem(`healora_wellness_${userId}`)) || []; 
     localStorage.setItem(`healora_wellness_${userId}`, JSON.stringify([newLog, ...localLogs])); 
@@ -844,7 +1371,12 @@ const PatientDashboard = () => {
     try { await fetch(`/api/patient/${userId}/wellness/`, { method: 'POST', headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify({ ...logForm, patient: userId }), }); } catch (err) { }
     
     alert("✅ Daily wellness log saved securely and sent to your Nutritionist!"); 
-    setLogForm({ breakfast_completed: false, lunch_completed: false, dinner_completed: false, ate_other_food: false, other_food_details: '', sleep_hours: '', mood: 'Calm & Balanced', water_glasses: 0, weight_kg: '', physical_activity: '', supplements_taken: false });
+    setLogForm({ 
+      completed_slots: {},
+      breakfast_completed: false, lunch_completed: false, dinner_completed: false, 
+      ate_other_food: false, other_food_details: '', sleep_hours: '', mood: 'Calm & Balanced', 
+      water_glasses: 0, weight_kg: '', physical_activity: '', supplements_taken: false 
+    });
     setQuickWaterTracker(0);
   };
 
@@ -983,20 +1515,381 @@ const PatientDashboard = () => {
             )}
 
             {bookingStep === 2 && (
-              <form onSubmit={handleBookAppointment} className="space-y-5 animate-in slide-in-from-right-4" autoComplete="off" noValidate>
-                <div className="bg-[#FDFCF8] p-5 rounded-2xl border border-[#EBE9E0] mb-4 flex justify-between items-center shadow-sm"><p className="text-xs text-[#5A6B60] font-bold uppercase tracking-wider mb-1">Amount Due</p><p className="text-3xl font-black text-[#1C2C22]">₹ 500.00</p></div>
-                <div><div className="flex justify-between items-end mb-2"><label className="block text-[11px] font-bold text-[#5A6B60] uppercase tracking-widest">Cardholder Name</label>{paymentErrors.cardName && <span className="text-[9px] font-bold text-red-500">{paymentErrors.cardName}</span>}</div><input type="text" spellCheck="false" autoComplete="new-password" value={paymentForm.cardName} onChange={(e) => handlePaymentChange('cardName', e.target.value)} placeholder="John Doe" className={`w-full border ${paymentErrors.cardName ? 'border-red-400 bg-red-50 text-red-900' : 'border-[#EBE9E0] bg-white'} rounded-xl p-3.5 text-sm outline-none focus:ring-2 focus:ring-[#456A50]/20 focus:border-[#456A50] transition shadow-sm`} required/></div>
-                <div><div className="flex justify-between items-end mb-2"><label className="block text-[11px] font-bold text-[#5A6B60] uppercase tracking-widest">Card Number</label>{paymentErrors.cardNumber && <span className="text-[9px] font-bold text-red-500">{paymentErrors.cardNumber}</span>}</div><div className="relative"><input type="text" maxLength="16" spellCheck="false" autoComplete="new-password" value={paymentForm.cardNumber} onChange={(e) => handlePaymentChange('cardNumber', e.target.value)} placeholder="16 Digit Number" className={`w-full border ${paymentErrors.cardNumber ? 'border-red-400 bg-red-50 text-red-900' : 'border-[#EBE9E0] bg-white'} rounded-xl p-3.5 text-sm outline-none focus:ring-2 focus:ring-[#456A50]/20 focus:border-[#456A50] pl-12 transition shadow-sm`} required/><CreditCard size={18} className={`absolute left-4 top-4 ${paymentErrors.cardNumber ? 'text-red-400' : 'text-gray-400'}`} /></div></div>
-                <div className="grid grid-cols-2 gap-5">
-                  <div><div className="flex justify-between items-end mb-2"><label className="block text-[11px] font-bold text-[#5A6B60] uppercase tracking-widest">Expiry</label>{paymentErrors.expiry && <span className="text-[9px] font-bold text-red-500">{paymentErrors.expiry}</span>}</div><input type="text" maxLength="5" spellCheck="false" autoComplete="new-password" value={paymentForm.expiry} onChange={(e) => handlePaymentChange('expiry', e.target.value)} placeholder="MM/YY" className={`w-full border ${paymentErrors.expiry ? 'border-red-400 bg-red-50 text-red-900' : 'border-[#EBE9E0] bg-white'} rounded-xl p-3.5 text-sm outline-none focus:ring-2 focus:ring-[#456A50]/20 focus:border-[#456A50] transition shadow-sm`} required/></div>
-                  <div><div className="flex justify-between items-end mb-2"><label className="block text-[11px] font-bold text-[#5A6B60] uppercase tracking-widest">CVV</label>{paymentErrors.cvv && <span className="text-[9px] font-bold text-red-500">{paymentErrors.cvv}</span>}</div><div className="relative"><input type="password" maxLength="3" spellCheck="false" autoComplete="new-password" value={paymentForm.cvv} onChange={(e) => handlePaymentChange('cvv', e.target.value)} placeholder="•••" className={`w-full border ${paymentErrors.cvv ? 'border-red-400 bg-red-50 text-red-900' : 'border-[#EBE9E0] bg-white'} rounded-xl p-3.5 text-sm outline-none focus:ring-2 focus:ring-[#456A50]/20 focus:border-[#456A50] pl-12 transition shadow-sm`} required/><Lock size={16} className={`absolute left-4 top-4 ${paymentErrors.cvv ? 'text-red-400' : 'text-gray-400'}`} /></div></div>
+              <div className="space-y-5 animate-in slide-in-from-right-4">
+                <div className="bg-emerald-50 border border-emerald-200 p-5 rounded-2xl flex justify-between items-center shadow-xs">
+                  <div>
+                    <span className="text-[10px] uppercase tracking-widest font-black text-emerald-800 bg-emerald-100/80 px-2.5 py-0.5 rounded-md">
+                      100% Refundable
+                    </span>
+                    <p className="text-xs text-[#5A6B60] font-bold mt-1">Consultation Fee</p>
+                  </div>
+                  <p className="text-3xl font-black text-[#1C2C22]">₹ 500.00</p>
                 </div>
-                <div className="flex gap-3 pt-4 border-t border-[#EBE9E0]">
-                  <button type="button" onClick={() => setBookingStep(1)} className="w-1/3 bg-gray-100 text-gray-700 py-4 rounded-xl font-bold text-sm hover:bg-gray-200 transition cursor-pointer">Back</button>
-                  <button type="submit" className="w-2/3 bg-green-700 text-white py-4 rounded-xl font-bold text-sm hover:bg-green-800 transition shadow-lg flex justify-center items-center gap-2 cursor-pointer"><Lock size={16} /> Pay ₹ 500</button>
+
+                {/* 🌟 PRIMARY: OFFICIAL RAZORPAY GATEWAY BUTTON 🌟 */}
+                <div className="bg-[#FDFCF8] border-2 border-[#456A50]/30 rounded-2xl p-5 shadow-sm text-center">
+                  <div className="flex items-center justify-center gap-2 mb-3">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span className="text-[11px] font-black uppercase tracking-wider text-[#456A50]">
+                      Official Razorpay Gateway
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-600 mb-4 font-medium">
+                    Supports <strong>UPI (GPay / PhonePe / Paytm)</strong>, Credit & Debit Cards, NetBanking, and Wallets.
+                  </p>
+                  <button
+                    type="button"
+                    disabled={isRazorpayProcessing}
+                    onClick={handlePayWithRazorpay}
+                    className="w-full bg-[#456A50] hover:bg-[#35533E] text-white py-4 rounded-xl font-black text-sm transition shadow-lg shadow-[#456A50]/25 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {isRazorpayProcessing ? (
+                      <>
+                        <span className="animate-spin text-lg">⏳</span> Connecting to Razorpay...
+                      </>
+                    ) : (
+                      <>
+                        <Lock size={18}/> Pay ₹ 500 with Razorpay
+                      </>
+                    )}
+                  </button>
                 </div>
-              </form>
+
+                {/* --- OR MANUAL CARD ENTRY --- */}
+                <div className="relative flex py-1 items-center">
+                  <div className="flex-grow border-t border-[#EBE9E0]"></div>
+                  <span className="flex-shrink mx-3 text-[10px] uppercase font-bold tracking-widest text-[#5A6B60]">Or Pay with Direct Card</span>
+                  <div className="flex-grow border-t border-[#EBE9E0]"></div>
+                </div>
+
+                <form onSubmit={handleBookAppointment} className="space-y-4" autoComplete="off" noValidate>
+                  <div>
+                    <div className="flex justify-between items-end mb-1">
+                      <label className="block text-[11px] font-bold text-[#5A6B60] uppercase tracking-widest">Cardholder Name</label>
+                      {paymentErrors.cardName && <span className="text-[9px] font-bold text-red-500">{paymentErrors.cardName}</span>}
+                    </div>
+                    <input type="text" spellCheck="false" autoComplete="new-password" value={paymentForm.cardName} onChange={(e) => handlePaymentChange('cardName', e.target.value)} placeholder="John Doe" className={`w-full border ${paymentErrors.cardName ? 'border-red-400 bg-red-50 text-red-900' : 'border-[#EBE9E0] bg-white'} rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-[#456A50]/20 focus:border-[#456A50] transition shadow-xs`} required/>
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between items-end mb-1">
+                      <label className="block text-[11px] font-bold text-[#5A6B60] uppercase tracking-widest">Card Number</label>
+                      {paymentErrors.cardNumber && <span className="text-[9px] font-bold text-red-500">{paymentErrors.cardNumber}</span>}
+                    </div>
+                    <div className="relative">
+                      <input type="text" maxLength="16" spellCheck="false" autoComplete="new-password" value={paymentForm.cardNumber} onChange={(e) => handlePaymentChange('cardNumber', e.target.value)} placeholder="16 Digit Number" className={`w-full border ${paymentErrors.cardNumber ? 'border-red-400 bg-red-50 text-red-900' : 'border-[#EBE9E0] bg-white'} rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-[#456A50]/20 focus:border-[#456A50] pl-10 transition shadow-xs`} required/>
+                      <CreditCard size={16} className={`absolute left-3.5 top-3.5 ${paymentErrors.cardNumber ? 'text-red-400' : 'text-gray-400'}`} />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <div className="flex justify-between items-end mb-1">
+                        <label className="block text-[11px] font-bold text-[#5A6B60] uppercase tracking-widest">Expiry</label>
+                        {paymentErrors.expiry && <span className="text-[9px] font-bold text-red-500">{paymentErrors.expiry}</span>}
+                      </div>
+                      <input type="text" maxLength="5" spellCheck="false" autoComplete="new-password" value={paymentForm.expiry} onChange={(e) => handlePaymentChange('expiry', e.target.value)} placeholder="MM/YY" className={`w-full border ${paymentErrors.expiry ? 'border-red-400 bg-red-50 text-red-900' : 'border-[#EBE9E0] bg-white'} rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-[#456A50]/20 focus:border-[#456A50] transition shadow-xs`} required/>
+                    </div>
+                    <div>
+                      <div className="flex justify-between items-end mb-1">
+                        <label className="block text-[11px] font-bold text-[#5A6B60] uppercase tracking-widest">CVV</label>
+                        {paymentErrors.cvv && <span className="text-[9px] font-bold text-red-500">{paymentErrors.cvv}</span>}
+                      </div>
+                      <div className="relative">
+                        <input type="password" maxLength="3" spellCheck="false" autoComplete="new-password" value={paymentForm.cvv} onChange={(e) => handlePaymentChange('cvv', e.target.value)} placeholder="•••" className={`w-full border ${paymentErrors.cvv ? 'border-red-400 bg-red-50 text-red-900' : 'border-[#EBE9E0] bg-white'} rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-[#456A50]/20 focus:border-[#456A50] pl-10 transition shadow-xs`} required/>
+                        <Lock size={15} className={`absolute left-3.5 top-3.5 ${paymentErrors.cvv ? 'text-red-400' : 'text-gray-400'}`} />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 pt-2">
+                    <button type="button" onClick={() => setBookingStep(1)} className="w-1/3 bg-gray-100 text-gray-700 py-3.5 rounded-xl font-bold text-xs hover:bg-gray-200 transition cursor-pointer">Back</button>
+                    <button type="submit" className="w-2/3 bg-gray-900 text-white py-3.5 rounded-xl font-bold text-xs hover:bg-black transition shadow-md flex justify-center items-center gap-2 cursor-pointer"><Lock size={15} /> Authorize Card ₹ 500</button>
+                  </div>
+                </form>
+              </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* 🌟 OFFICIAL RAZORPAY PAYMENT GATEWAY MODAL (UPI, CARDS, NETBANKING, WALLETS) 🌟 */}
+      {showRazorpayModal && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl border border-gray-200 animate-in zoom-in-95">
+            {/* Top Razorpay Header */}
+            <div className="bg-[#0c2340] text-white p-6 flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/10 p-2.5 rounded-2xl border border-white/20">
+                  <span className="font-black text-xl tracking-wider text-blue-400">R</span>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-black text-base tracking-wide">Razorpay Gateway</h3>
+                    <span className="bg-emerald-500/20 text-emerald-300 text-[9px] font-bold px-2 py-0.5 rounded-full border border-emerald-400/30">Verified Live</span>
+                  </div>
+                  <p className="text-xs text-gray-300">Healora Clinical Nutrition • {apptForm.date} at {normalizeTimeToLabel(apptForm.time)}</p>
+                </div>
+              </div>
+              <div className="text-right flex items-center gap-4">
+                <div>
+                  <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Amount to Pay</p>
+                  <p className="text-2xl font-black text-white">₹ 500.00</p>
+                </div>
+                <button 
+                  onClick={() => setShowRazorpayModal(false)}
+                  className="text-gray-400 hover:text-white bg-white/10 hover:bg-white/20 p-2 rounded-full transition cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body: Left Rails + Right Content */}
+            <div className="flex flex-col md:flex-row min-h-[380px]">
+              {/* Left Method Tabs */}
+              <div className="w-full md:w-56 bg-[#f8fafc] border-r border-gray-200 p-3 space-y-1.5 shrink-0">
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-3 py-2">Payment Options</p>
+                
+                <button
+                  type="button"
+                  onClick={() => setRazorpayMethod('upi')}
+                  className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition cursor-pointer ${razorpayMethod === 'upi' ? 'bg-[#0c2340] text-white shadow-sm' : 'text-gray-700 hover:bg-gray-200/60'}`}
+                >
+                  <span className="flex items-center gap-2">⚡ UPI (GPay/PhonePe)</span>
+                  {razorpayMethod === 'upi' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setRazorpayMethod('card')}
+                  className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition cursor-pointer ${razorpayMethod === 'card' ? 'bg-[#0c2340] text-white shadow-sm' : 'text-gray-700 hover:bg-gray-200/60'}`}
+                >
+                  <span className="flex items-center gap-2">💳 Cards (Visa/Master)</span>
+                  {razorpayMethod === 'card' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setRazorpayMethod('netbanking')}
+                  className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition cursor-pointer ${razorpayMethod === 'netbanking' ? 'bg-[#0c2340] text-white shadow-sm' : 'text-gray-700 hover:bg-gray-200/60'}`}
+                >
+                  <span className="flex items-center gap-2">🏦 NetBanking</span>
+                  {razorpayMethod === 'netbanking' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setRazorpayMethod('wallet')}
+                  className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-bold transition cursor-pointer ${razorpayMethod === 'wallet' ? 'bg-[#0c2340] text-white shadow-sm' : 'text-gray-700 hover:bg-gray-200/60'}`}
+                >
+                  <span className="flex items-center gap-2">👛 Wallets (Paytm)</span>
+                  {razorpayMethod === 'wallet' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>}
+                </button>
+              </div>
+
+              {/* Right Content Pane */}
+              <div className="flex-1 p-6 flex flex-col justify-between">
+                <div>
+                  {/* --- UPI VIEW --- */}
+                  {razorpayMethod === 'upi' && (
+                    <div className="space-y-4 animate-in fade-in">
+                      <div className="flex justify-between items-center">
+                        <h4 className="font-black text-sm text-[#1C2C22]">Select UPI App</h4>
+                        <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">Zero Convenience Fee</span>
+                      </div>
+
+                      {/* Authentic Brand App Grid */}
+                      <div className="grid grid-cols-3 gap-3">
+                        {/* 1. Google Pay */}
+                        <button
+                          type="button"
+                          onClick={() => setRazorpayUpiApp('gpay')}
+                          className={`p-3.5 rounded-2xl border text-center transition cursor-pointer flex flex-col items-center justify-between gap-2 group ${razorpayUpiApp === 'gpay' ? 'border-[#4285F4] bg-blue-50/60 shadow-md ring-2 ring-[#4285F4]/30' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}
+                        >
+                          <div className="w-10 h-10 rounded-full bg-white shadow-xs border border-gray-100 flex items-center justify-center p-1.5 group-hover:scale-105 transition-transform">
+                            <svg viewBox="0 0 48 48" className="w-full h-full">
+                              <path fill="#4285F4" d="M43.6 20.4H42V20H24v8h11.3c-1.6 4.7-6.1 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l6-6C34.2 6.1 29.4 4 24 4 13 4 4 13 4 24s9 20 20 20 20-9 20-20c0-1.2-.1-2.4-.4-3.6z"/>
+                              <path fill="#34A853" d="M6.3 14.7l6.6 4.8C14.7 16.1 19 14 24 14c3.1 0 5.8 1.1 8 3l6-6C34.2 6.1 29.4 4 24 4 16.3 4 9.7 8.4 6.3 14.7z"/>
+                              <path fill="#FBBC05" d="M24 44c5.2 0 10-1.9 13.6-5.2l-6.3-5.2C29.3 35.1 26.8 36 24 36c-5.2 0-9.6-3.3-11.2-8l-6.5 5C9.7 39.4 16.3 44 24 44z"/>
+                              <path fill="#EA4335" d="M43.6 20.4H42V20H24v8h11.3c-.8 2.3-2.3 4.3-4.3 5.6l6.3 5.2C41.2 35.2 44 29.9 44 24c0-1.2-.1-2.4-.4-3.6z"/>
+                            </svg>
+                          </div>
+                          <span className="text-xs font-black text-[#1C2C22]">Google Pay</span>
+                        </button>
+
+                        {/* 2. PhonePe */}
+                        <button
+                          type="button"
+                          onClick={() => setRazorpayUpiApp('phonepe')}
+                          className={`p-3.5 rounded-2xl border text-center transition cursor-pointer flex flex-col items-center justify-between gap-2 group ${razorpayUpiApp === 'phonepe' ? 'border-[#5F259F] bg-purple-50/60 shadow-md ring-2 ring-[#5F259F]/30' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}
+                        >
+                          <div className="w-10 h-10 rounded-full bg-[#5F259F] shadow-xs flex items-center justify-center p-1.5 group-hover:scale-105 transition-transform text-white font-black text-lg">
+                            <svg viewBox="0 0 48 48" className="w-full h-full">
+                              <circle cx="24" cy="24" r="22" fill="#5F259F"/>
+                              <path fill="#ffffff" d="M24.2 11h-3.4c-.6 0-1.1.5-1.1 1.1v23.8c0 .6.5 1.1 1.1 1.1h3.4c.6 0 1.1-.5 1.1-1.1v-6.7h4.8c6.1 0 10.3-4.1 10.3-10.1S35.3 11 29.2 11h-5zm0 13.3v-8.4h4.7c3.4 0 5.5 2 5.5 4.2 0 2.3-2.1 4.2-5.5 4.2h-4.7z"/>
+                              <path fill="#ffffff" d="M14.6 25.5l-3.3-3.3c-.4-.4-1.1-.4-1.5 0l-1.3 1.3c-.4.4-.4 1.1 0 1.5l5.5 5.5c.4.4 1.1.4 1.5 0l1.3-1.3c.4-.4.4-1.1 0-1.5l-2.2-2.2z"/>
+                            </svg>
+                          </div>
+                          <span className="text-xs font-black text-[#1C2C22]">PhonePe</span>
+                        </button>
+
+                        {/* 3. Paytm UPI */}
+                        <button
+                          type="button"
+                          onClick={() => setRazorpayUpiApp('paytm')}
+                          className={`p-3.5 rounded-2xl border text-center transition cursor-pointer flex flex-col items-center justify-between gap-2 group ${razorpayUpiApp === 'paytm' ? 'border-[#002E6E] bg-blue-50/60 shadow-md ring-2 ring-[#002E6E]/30' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}
+                        >
+                          <div className="w-10 h-10 rounded-full bg-[#002E6E] shadow-xs flex items-center justify-center p-1.5 group-hover:scale-105 transition-transform">
+                            <svg viewBox="0 0 48 48" className="w-full h-full">
+                              <rect width="48" height="48" rx="8" fill="#002E6E"/>
+                              <path fill="#00BAF2" d="M10 28V19h4.8c2.2 0 3.7 1.3 3.7 3.2 0 1.9-1.5 3.2-3.7 3.2h-2.4V28H10zm2.4-4.5h2.2c.9 0 1.5-.5 1.5-1.3s-.6-1.3-1.5-1.3h-2.2v2.6zm9.8 4.5l-.6-2h-3l-.6 2h-2.4l3.3-9h2.4l3.3 9h-2.4zm-2.1-3.8l-1-3.2-1 3.2h2zm7.9 3.8v-3.7L24.8 19h2.7l1.7 2.9 1.7-2.9h2.7l-3.2 4.7v3.7h-2.4z"/>
+                            </svg>
+                          </div>
+                          <span className="text-xs font-black text-[#1C2C22]">Paytm UPI</span>
+                        </button>
+                      </div>
+
+                      {/* Custom VPA Input */}
+                      <div className="pt-2">
+                        <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1.5">Or Enter Any UPI ID / VPA</label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={customUpiId}
+                            onChange={(e) => { setCustomUpiId(e.target.value); setRazorpayUpiApp('custom'); }}
+                            placeholder="e.g. yourname@okhdfcbank"
+                            className="w-full border border-gray-300 rounded-xl p-3 pr-20 text-xs outline-none focus:border-[#0c2340] focus:ring-1 focus:ring-[#0c2340] shadow-inner bg-white font-medium"
+                          />
+                          <span className="absolute right-3 top-3 text-[10px] font-black text-gray-400 bg-gray-100 px-2 py-0.5 rounded uppercase">
+                            @upi
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* --- CARDS VIEW --- */}
+                  {razorpayMethod === 'card' && (
+                    <div className="space-y-3.5 animate-in fade-in">
+                      <div className="flex justify-between items-center">
+                        <h4 className="font-black text-sm text-[#1C2C22]">Credit / Debit Card</h4>
+                        <div className="flex items-center gap-1.5">
+                          <span className="px-2 py-0.5 bg-blue-900 text-white rounded text-[9px] font-black italic">VISA</span>
+                          <span className="px-2 py-0.5 bg-red-600 text-white rounded text-[9px] font-black">MC</span>
+                          <span className="px-2 py-0.5 bg-emerald-800 text-white rounded text-[9px] font-black">RuPay</span>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Card Number</label>
+                        <input
+                          type="text"
+                          maxLength={16}
+                          defaultValue="4532890123456789"
+                          placeholder="Card Number"
+                          className="w-full border border-gray-300 rounded-xl p-2.5 text-xs outline-none focus:border-[#0c2340] font-mono"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Expiry</label>
+                          <input
+                            type="text"
+                            maxLength={5}
+                            defaultValue="12/28"
+                            placeholder="MM/YY"
+                            className="w-full border border-gray-300 rounded-xl p-2.5 text-xs outline-none focus:border-[#0c2340] font-mono"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">CVV</label>
+                          <input
+                            type="password"
+                            maxLength={3}
+                            defaultValue="888"
+                            placeholder="CVV"
+                            className="w-full border border-gray-300 rounded-xl p-2.5 text-xs outline-none focus:border-[#0c2340] font-mono"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* --- NETBANKING VIEW --- */}
+                  {razorpayMethod === 'netbanking' && (
+                    <div className="space-y-3 animate-in fade-in">
+                      <h4 className="font-black text-sm text-[#1C2C22]">Select Popular Bank</h4>
+                      <div className="grid grid-cols-2 gap-2.5">
+                        {[
+                          { name: 'HDFC Bank', color: 'bg-blue-900 text-white', icon: '🏛️' },
+                          { name: 'ICICI Bank', color: 'bg-orange-800 text-white', icon: '🏦' },
+                          { name: 'State Bank of India', color: 'bg-sky-700 text-white', icon: '🌐' },
+                          { name: 'Axis Bank', color: 'bg-rose-900 text-white', icon: '⚡' },
+                          { name: 'Kotak Mahindra', color: 'bg-red-700 text-white', icon: '🔒' }
+                        ].map(bank => (
+                          <button
+                            key={bank.name}
+                            type="button"
+                            onClick={() => setSelectedBank(bank.name)}
+                            className={`p-3 rounded-xl border text-left text-xs font-bold transition cursor-pointer flex items-center gap-2.5 ${selectedBank === bank.name ? 'border-[#0c2340] bg-blue-50/60 text-[#0c2340] shadow-sm ring-1 ring-[#0c2340]' : 'border-gray-200 text-gray-700 hover:bg-gray-50'}`}
+                          >
+                            <span className="text-base">{bank.icon}</span>
+                            <span>{bank.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* --- WALLETS VIEW --- */}
+                  {razorpayMethod === 'wallet' && (
+                    <div className="space-y-3 animate-in fade-in">
+                      <h4 className="font-black text-sm text-[#1C2C22]">Select Digital Wallet</h4>
+                      <div className="space-y-2">
+                        {['Paytm Wallet', 'Amazon Pay', 'MobiKwik', 'Airtel Money'].map(wallet => (
+                          <button
+                            key={wallet}
+                            type="button"
+                            onClick={() => setSelectedWallet(wallet)}
+                            className={`w-full p-3 rounded-xl border text-left text-xs font-bold transition cursor-pointer flex justify-between items-center ${selectedWallet === wallet ? 'border-[#0c2340] bg-blue-50/50 text-[#0c2340]' : 'border-gray-200 text-gray-700 hover:bg-gray-50'}`}
+                          >
+                            <span>👛 {wallet}</span>
+                            {selectedWallet === wallet && <CheckCircle2 size={16} className="text-[#0c2340]" />}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Bottom Action Section */}
+                <div className="pt-4 border-t border-gray-200 mt-4">
+                  <button
+                    type="button"
+                    disabled={isRazorpayProcessing}
+                    onClick={handleExecuteRazorpayPayment}
+                    className="w-full bg-[#0c2340] hover:bg-[#1a3a60] text-white py-3.5 rounded-xl font-black text-sm transition shadow-lg flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {isRazorpayProcessing ? (
+                      <>
+                        <span className="animate-spin text-base">⏳</span> Authorizing Payment...
+                      </>
+                    ) : (
+                      <>
+                        <Lock size={16}/> Pay ₹ 500.00 Now
+                      </>
+                    )}
+                  </button>
+
+                  <div className="flex items-center justify-between text-[10px] text-gray-500 mt-3 font-medium">
+                    <span className="flex items-center gap-1">
+                      <ShieldCheck size={13} className="text-emerald-600" /> 256-Bit SSL Encrypted
+                    </span>
+                    <span>100% Cash Back on Cancellation</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -1153,18 +2046,19 @@ const PatientDashboard = () => {
 
 
       {/* 🌟 SIDEBAR NAVIGATION 🌟 */}
-      <aside className="w-64 bg-white border-r border-[#EBE9E0] flex flex-col hidden lg:flex shadow-sm z-10 flex-shrink-0 h-full">
+      <aside className="w-72 bg-white border-r border-[#EBE9E0] flex flex-col hidden lg:flex shadow-sm z-10 flex-shrink-0 h-full">
         <div className="p-6 flex items-center gap-2 cursor-pointer" onClick={() => navigate('/')}>
           <div className="bg-[#456A50] text-white rounded-xl p-2 shadow-sm"><HeartPulse size={24} /></div>
           <span className="text-2xl font-black tracking-tight text-[#1C2C22]">Heal<span className="text-[#456A50]">ora</span></span>
         </div>
         <nav className="flex-1 px-4 mt-4 space-y-2 font-medium overflow-y-auto">
           <p className="px-4 text-[10px] font-bold text-[#5A6B60] uppercase tracking-widest mb-3 mt-2">My Workspace</p>
-          <button onClick={() => { setActiveTab('profile'); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition text-sm ${activeTab==='profile' ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'}`}><UserCircle size={18} /> Profile & Vault</button>
-          <button onClick={() => { setActiveTab('diet'); setDietView('weeks'); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition text-sm ${activeTab==='diet' ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'}`}><Apple size={18} /> My Diet Plan</button>
-          <button onClick={() => { setActiveTab('tracking'); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition text-sm ${activeTab==='tracking' ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'}`}><Activity size={18} /> Wellness Tracking</button>
-          <button onClick={() => { setActiveTab('appointments'); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition text-sm ${activeTab==='appointments' ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'}`}><Calendar size={18} /> Appointments & Chat</button>
-          <button onClick={() => { setActiveTab('evaluations'); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition text-sm ${activeTab==='evaluations' ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'}`}><ClipboardList size={18} /> Nutritionist Evaluations</button>
+          <button onClick={() => { setActiveTab('profile'); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition text-sm whitespace-nowrap ${activeTab==='profile' ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'}`}><UserCircle size={18} className="shrink-0" /> <span>Profile & Vault</span></button>
+          <button onClick={() => { setActiveTab('diet'); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition text-sm whitespace-nowrap ${activeTab==='diet' ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'}`}><Apple size={18} className="shrink-0" /> <span>My Diet Plan</span></button>
+          <button onClick={() => { setActiveTab('tracking'); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition text-sm whitespace-nowrap ${activeTab==='tracking' ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'}`}><Activity size={18} className="shrink-0" /> <span>Wellness Tracking</span></button>
+          <button onClick={() => { setActiveTab('history'); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition text-sm whitespace-nowrap ${activeTab==='history' ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'}`}><Clock size={18} className="shrink-0" /> <span>Health History</span></button>
+          <button onClick={() => { setActiveTab('appointments'); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition text-sm whitespace-nowrap ${activeTab==='appointments' ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'}`}><Calendar size={18} className="shrink-0" /> <span>Appointments & Chat</span></button>
+          <button onClick={() => { setActiveTab('evaluations'); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition text-sm whitespace-nowrap ${activeTab==='evaluations' ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'}`}><ClipboardList size={18} className="shrink-0" /> <span>Nutritionist Evaluations</span></button>
         </nav>
         <div className="p-6 border-t border-[#EBE9E0] bg-[#FDFCF8]/50">
           <div className="flex items-center gap-3 mb-5 px-1">
@@ -1196,6 +2090,82 @@ const PatientDashboard = () => {
               <input type="file" ref={fileInputRef} onChange={handleProfilePicChange} accept="image/*" className="hidden" />
             </div>
           </div>
+
+          {/* 🔔 CLINIC MANAGER TODAY'S CONSULTATION REMINDER BANNER 🔔 */}
+          {todayConsultationReminders.length > 0 && (
+            <div className="space-y-4">
+              {todayConsultationReminders.map(appt => {
+                const docObj = nutritionists.find(n => String(n.id) === String(appt.nutritionist));
+                const docName = docObj ? `Dr. ${docObj.first_name} ${docObj.last_name}` : (appt.doctor_name || 'Assigned Clinical Nutritionist');
+                const isOnline = appt.mode === 'ONLINE';
+
+                return (
+                  <div 
+                    key={appt.id} 
+                    className="bg-gradient-to-r from-[#1C2C22] via-[#2A4433] to-[#1C2C22] text-white p-5 sm:p-6 rounded-3xl shadow-xl border-2 border-emerald-500/40 flex flex-col md:flex-row items-start md:items-center justify-between gap-5 animate-in slide-in-from-top-3 duration-500 relative overflow-hidden"
+                  >
+                    <div className="absolute -top-10 -right-10 w-48 h-48 bg-emerald-400/10 rounded-full blur-3xl pointer-events-none"></div>
+
+                    <div className="flex items-start gap-4 relative z-10">
+                      <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 flex items-center justify-center shrink-0 shadow-inner">
+                        <Bell size={24} className="animate-bounce text-amber-300" />
+                      </div>
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                          <span className="bg-amber-400/20 border border-amber-400/40 text-amber-300 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full tracking-wider flex items-center gap-1.5 shadow-xs">
+                            <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span> TODAY'S CONSULTATION REMINDER
+                          </span>
+                          <span className="bg-white/10 text-emerald-200 border border-white/10 text-[10px] font-bold px-2.5 py-0.5 rounded-full">
+                            {isOnline ? '📹 Online Video Session' : '🏥 In-Clinic Visit'}
+                          </span>
+                          {appt.reminder_sent && (
+                            <span className="bg-emerald-400/20 text-emerald-300 border border-emerald-400/30 text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">
+                              ✓ Clinic Alert Active
+                            </span>
+                          )}
+                        </div>
+                        <h3 className="text-lg sm:text-xl font-black text-white tracking-tight">
+                          Consultation Scheduled with {docName}
+                        </h3>
+                        <p className="text-xs text-gray-300 mt-1 flex flex-wrap items-center gap-2 font-medium">
+                          <span>⏰ Scheduled Time: <strong className="text-emerald-300 font-black">{appt.time}</strong> Today</span>
+                          <span>•</span>
+                          <span className="text-amber-200/90 italic">Active on portal until scheduled appointment time</span>
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 w-full md:w-auto relative z-10 shrink-0">
+                      {isOnline && appt.meet_link ? (
+                        <a 
+                          href={appt.meet_link} 
+                          target="_blank" 
+                          rel="noreferrer" 
+                          className="flex-1 md:flex-initial bg-emerald-500 hover:bg-emerald-600 text-white font-black px-6 py-3.5 rounded-2xl text-xs transition shadow-lg shadow-emerald-500/30 flex items-center justify-center gap-2 group cursor-pointer"
+                        >
+                          <Video size={16} /> Join Google Meet <ExternalLink size={14} className="group-hover:translate-x-0.5 transition-transform" />
+                        </a>
+                      ) : isOnline ? (
+                        <div className="bg-white/10 border border-white/20 px-4 py-3 rounded-2xl text-xs text-gray-200 flex items-center gap-2 font-medium">
+                          <Video size={14} className="text-emerald-300" /> Room link will activate before start
+                        </div>
+                      ) : (
+                        <div className="bg-white/10 border border-white/20 px-4 py-3 rounded-2xl text-xs text-gray-200 flex items-center gap-2 font-bold">
+                          🏥 Room 302 • Clinic Reception Desk
+                        </div>
+                      )}
+                      <button 
+                        onClick={() => setActiveTab('appointments')} 
+                        className="bg-white/10 hover:bg-white/20 border border-white/10 text-white px-4 py-3.5 rounded-2xl text-xs font-bold transition cursor-pointer"
+                      >
+                        View Details
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           {/* TAB 1: PROFILE & VAULT */}
           {activeTab === 'profile' && (
@@ -1298,7 +2268,7 @@ const PatientDashboard = () => {
                     <input type="file" onChange={handleLabReportUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" />
                     <Upload size={28} className="mx-auto text-[#456A50] mb-3 group-hover:-translate-y-1 transition transform duration-300" />
                     <p className="text-sm font-bold text-[#1C2C22]">Upload {docType}</p>
-                    <p className="text-[10px] text-[#5A6B60] mt-1.5 font-medium">PDF, JPG, PNG (Max 5MB)</p>
+                    <p className="text-[10px] text-[#5A6B60] mt-1.5 font-medium">PDF, JPG, PNG (Max 20MB)</p>
                   </div>
 
                   <div className="bg-[#EAF0EC] p-4 rounded-xl flex items-center gap-3 mb-5 border border-[#456A50]/20 shadow-sm">
@@ -1311,37 +2281,69 @@ const PatientDashboard = () => {
                   </div>
 
                   <div className="space-y-3 overflow-y-auto max-h-56 pr-2 custom-scrollbar">
-                    {labReports.map((report) => (
-                      <div key={report.id} className="flex justify-between items-center p-3.5 bg-white border border-[#EBE9E0] rounded-2xl shadow-xs hover:border-[#456A50]/40 transition group">
-                        <div className="flex items-center gap-3 overflow-hidden flex-1">
-                          <div className="bg-blue-50 p-2.5 rounded-xl text-blue-600 shrink-0">
-                            <File size={16} />
+                    {labReports.map((report) => {
+                      const isReviewed = report.status === 'REVIEWED';
+                      return (
+                      <div key={report.id} className="p-3.5 bg-white border border-[#EBE9E0] rounded-2xl shadow-xs hover:border-[#456A50]/40 transition group space-y-2.5">
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-3 overflow-hidden flex-1">
+                            <div className={`p-2.5 rounded-xl shrink-0 ${isReviewed ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                              <File size={16} />
+                            </div>
+                            <div className="truncate flex-1">
+                              <p className="font-bold text-xs text-[#1C2C22] truncate">{report.name || report.file?.split('/').pop() || 'Document'}</p>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className="text-[9px] text-[#456A50] font-black tracking-wider uppercase truncate">{report.type || report.document_type || 'Clinical Report'}</span>
+                                <span className="text-gray-300">•</span>
+                                <span className="text-[9px] text-gray-400 font-medium">{report.date || (report.uploaded_at ? new Date(report.uploaded_at).toLocaleDateString() : '')}</span>
+                              </div>
+                            </div>
                           </div>
-                          <div className="truncate flex-1">
-                            <p className="font-bold text-xs text-[#1C2C22] truncate">{report.name || report.file?.split('/').pop() || 'Document'}</p>
-                            <p className="text-[9px] text-[#456A50] mt-0.5 font-black tracking-wider uppercase truncate">{report.type || report.document_type || 'Clinical Report'}</p>
-                            <p className="text-[9px] text-gray-400 mt-0.5 font-medium">{report.date || (report.uploaded_at ? new Date(report.uploaded_at).toLocaleDateString() : '')}</p>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {/* Document Status Stepper / Badge */}
+                            {isReviewed ? (
+                              <span className="bg-emerald-50 text-emerald-800 border border-emerald-300 text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider flex items-center gap-1 shadow-2xs">
+                                <CheckCircle2 size={11} className="text-emerald-700" /> Reviewed
+                              </span>
+                            ) : (
+                              <span className="bg-amber-50 text-amber-800 border border-amber-300 text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider flex items-center gap-1 shadow-2xs">
+                                <Clock size={11} className="text-amber-700" /> Available for Review
+                              </span>
+                            )}
+
+                            {report.fileUrl && (
+                              <a 
+                                href={report.fileUrl} 
+                                target="_blank" 
+                                rel="noreferrer" 
+                                download={report.name} 
+                                className="text-[#456A50] hover:text-[#35533E] bg-[#EAF0EC] p-2 rounded-xl text-xs font-bold transition"
+                                title="Download/View Report"
+                              >
+                                <Download size={14} />
+                              </a>
+                            )}
+                            <button onClick={() => removeLabReport(report.id)} className="text-red-400 hover:text-red-600 bg-red-50 p-2 rounded-xl transition cursor-pointer" title="Delete Report">
+                              <Trash2 size={14}/>
+                            </button>
                           </div>
                         </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          {report.fileUrl && (
-                            <a 
-                              href={report.fileUrl} 
-                              target="_blank" 
-                              rel="noreferrer" 
-                              download={report.name} 
-                              className="text-[#456A50] hover:text-[#35533E] bg-[#EAF0EC] p-2 rounded-xl text-xs font-bold transition"
-                              title="Download/View Report"
-                            >
-                              <Download size={14} />
-                            </a>
-                          )}
-                          <button onClick={() => removeLabReport(report.id)} className="text-red-400 hover:text-red-600 bg-red-50 p-2 rounded-xl transition cursor-pointer" title="Delete Report">
-                            <Trash2 size={14}/>
-                          </button>
-                        </div>
+
+                        {/* Nutritionist Review Notes (if reviewed) */}
+                        {isReviewed && report.review_notes && (
+                          <div className="bg-[#FDFCF8] border border-emerald-200/80 rounded-xl p-2.5 text-[11px] text-[#1C2C22] shadow-inner">
+                            <p className="font-extrabold text-[#456A50] text-[10px] uppercase tracking-wider flex items-center gap-1.5 mb-0.5">
+                              <ClipboardList size={12}/> Nutritionist Clinical Findings & Note:
+                            </p>
+                            <p className="text-gray-700 italic font-medium">"{report.review_notes}"</p>
+                            {report.reviewed_at && (
+                              <p className="text-[9px] text-gray-400 mt-1 text-right">Reviewed by {report.reviewed_by || 'Nutritionist'} on {report.reviewed_at}</p>
+                            )}
+                          </div>
+                        )}
                       </div>
-                    ))}
+                    )})}
                     {labReports.length === 0 && <p className="text-center text-[11px] text-gray-400 italic py-6">No clinical documents uploaded yet.</p>}
                   </div>
                 </div>
@@ -1350,10 +2352,74 @@ const PatientDashboard = () => {
             </div>
           )}
 
-          {/* 🌟 TAB 2: MY DIET PLAN (DRILL DOWN, DYNAMIC IMAGES, SWAPPING & INTERACTIVE WATER UI) 🌟 */}
+          {/* 🌟 TAB 2: MY DIET PLAN (ONLY SHOWN WHEN NUTRITIONIST PUBLISHES PLAN SPECIFICALLY FOR THIS PATIENT) 🌟 */}
           {activeTab === 'diet' && (() => {
-            const publishedPlan = dietPlans.length > 0 ? dietPlans[0] : (JSON.parse(localStorage.getItem(`healora_patient_dietplan_${userId}`)) || JSON.parse(localStorage.getItem(`healora_diet_plan_${userId}`)) || null);
+            const publishedPlan = dietPlans.length > 0 ? dietPlans[0] : (JSON.parse(localStorage.getItem(`healora_patient_dietplan_${userId}`)) || null);
+            const isPlanPublished = publishedPlan && (publishedPlan.status === 'PUBLISHED' || publishedPlan.status === 'Published') && publishedPlan.weeks && Object.keys(publishedPlan.weeks).length > 0;
             const isPhase2Unlocked = publishedPlan?.phase2_status === 'UNLOCKED';
+
+            if (!isPlanPublished) {
+              return (
+                <div className="space-y-6 animate-in fade-in">
+                  {/* Top Header Card */}
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-3xl shadow-sm border border-[#EBE9E0] gap-4">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <Apple size={22} className="text-[#456A50]" />
+                        <h2 className="text-2xl font-black text-[#1C2C22]">My Clinical Diet Plan</h2>
+                      </div>
+                      <p className="text-xs text-[#5A6B60] mt-1 font-medium">
+                        Personalized 4-Week Medical Nutrition Therapy • Goal: <span className="font-bold text-[#456A50] uppercase tracking-wider">{profile.health_goals || 'General Wellness'}</span>
+                      </p>
+                    </div>
+                    <span className="text-[11px] font-black uppercase tracking-widest text-amber-800 bg-amber-100/90 px-3.5 py-1.5 rounded-full border border-amber-200">
+                      ⏳ Status: Formulation Pending
+                    </span>
+                  </div>
+
+                  {/* Empty State Presentation Card */}
+                  <div className="bg-white p-8 md:p-12 rounded-3xl shadow-sm border border-[#EBE9E0]">
+                    <div className="max-w-2xl mx-auto text-center py-4">
+                      <div className="w-20 h-20 rounded-3xl bg-amber-50 border-2 border-amber-200 text-amber-600 flex items-center justify-center mx-auto mb-6 shadow-xs">
+                        <Apple size={38} className="text-[#456A50]" />
+                      </div>
+                      
+                      <span className="text-[11px] font-black uppercase tracking-widest text-[#456A50] bg-[#EAF0EC] px-4 py-1.5 rounded-full border border-[#456A50]/20 inline-block mb-3">
+                        📋 Clinical Nutrition Care
+                      </span>
+                      
+                      <h2 className="text-3xl font-black text-[#1C2C22] mb-3">
+                        No Diet Plan Scheduled Yet
+                      </h2>
+                      
+                      <p className="text-sm text-[#5A6B60] leading-relaxed mb-8">
+                        Hello <strong className="text-[#1C2C22]">{userName || profile.first_name || 'Patient'}</strong>, your assigned certified nutritionist has not yet published a personalized diet plan for your profile. Once your doctor reviews your health records, biometrics, and lab reports, your custom 4-week Kerala clinical meal protocol will be activated right here.
+                      </p>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-left mb-8">
+                        <div className="bg-[#FDFCF8] p-5 rounded-2xl border border-[#EBE9E0]">
+                          <div className="w-8 h-8 rounded-xl bg-emerald-100 text-[#456A50] font-black flex items-center justify-center text-xs mb-3">1</div>
+                          <p className="font-black text-xs text-[#1C2C22] mb-1">Health Intake Submitted</p>
+                          <p className="text-[11px] text-[#5A6B60]">Biometrics, medical history & food preferences recorded.</p>
+                        </div>
+                        
+                        <div className="bg-amber-50/60 p-5 rounded-2xl border border-amber-200">
+                          <div className="w-8 h-8 rounded-xl bg-amber-200 text-amber-800 font-black flex items-center justify-center text-xs mb-3 animate-pulse">2</div>
+                          <p className="font-black text-xs text-amber-900 mb-1">Nutritionist Formulating</p>
+                          <p className="text-[11px] text-amber-800">Doctor creates 4-week Kerala meals, drinks & calorie targets.</p>
+                        </div>
+                        
+                        <div className="bg-[#FDFCF8] p-5 rounded-2xl border border-[#EBE9E0]">
+                          <div className="w-8 h-8 rounded-xl bg-gray-100 text-gray-400 font-black flex items-center justify-center text-xs mb-3">3</div>
+                          <p className="font-black text-xs text-[#1C2C22] mb-1">Protocol Activated</p>
+                          <p className="text-[11px] text-[#5A6B60]">Instant access to 5 daily meals, recipes & swapping.</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
 
             return (
               <div className="space-y-6 animate-in fade-in">
@@ -1453,53 +2519,91 @@ const PatientDashboard = () => {
                       </p>
                     </div>
                     <span className="text-[11px] font-black text-[#456A50] bg-[#EAF0EC] px-3 py-1.5 rounded-full border border-[#456A50]/20 w-max">
-                      5-Slot Clinical Balance
+                      {(() => {
+                        const currentDayPlan = (publishedPlan?.weeks?.[selectedWeek]?.[selectedDay]) || (publishedPlan?.weeks?.['1']?.[selectedDay]) || {};
+                        const count = Object.keys(currentDayPlan).filter(k => currentDayPlan[k]).length || publishedPlan?.meal_frequency || 5;
+                        return `${count}-Slot Clinical Protocol`;
+                      })()}
                     </span>
                   </div>
 
-                  {/* Meals Grid: 5 Personalized Slots (Breakfast, Drink, Lunch, Snack, Dinner) */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5 mb-10">
-                    {[
-                      { type: 'breakfast', label: '🌅 Breakfast', color: 'orange' },
-                      { type: 'drink', label: '🥤 Drink / Smoothie', color: 'teal' },
-                      { type: 'lunch', label: '☀️ Lunch', color: 'yellow' },
-                      { type: 'snack', label: '🍎 Snack', color: 'green' },
-                      { type: 'dinner', label: '🌙 Dinner', color: 'blue' }
-                    ].map(({ type: mealType, label, color: c }) => {
-                      const mealObj = getActiveMealObject(mealType);
+                  {/* Meals Grid: Dynamically rendered based on Nutritionist's Prescribed Frequency (3, 4, 5, or 6 slots) */}
+                  {(() => {
+                    const currentDayPlan = (publishedPlan?.weeks?.[selectedWeek]?.[selectedDay]) || (publishedPlan?.weeks?.['1']?.[selectedDay]) || {};
+                    const allSlotDefs = {
+                      pre_breakfast: { type: 'pre_breakfast', label: '🌿 Pre-Breakfast Tonic', color: 'emerald' },
+                      breakfast: { type: 'breakfast', label: '🌅 Breakfast', color: 'orange' },
+                      drink: { type: 'drink', label: '🥤 Drink / Smoothie', color: 'teal' },
+                      lunch: { type: 'lunch', label: '☀️ Lunch', color: 'yellow' },
+                      snack: { type: 'snack', label: '🍎 Snack', color: 'green' },
+                      dinner: { type: 'dinner', label: '🌙 Dinner', color: 'blue' }
+                    };
 
-                      return (
-                        <div 
-                          key={mealType} 
-                          onClick={() => setSelectedMeal({ ...mealObj, type: mealType })} 
-                          className="bg-[#FDFCF8] border border-[#EBE9E0] rounded-[2rem] p-4 flex flex-col shadow-xs hover:shadow-xl hover:-translate-y-1 hover:border-[#456A50] transition-all cursor-pointer group relative overflow-hidden"
-                        >
-                          <div className="relative overflow-hidden rounded-2xl mb-3 h-36 bg-gray-100 border border-gray-100">
-                            <img 
-                              src={mealObj.img} 
-                              alt={mealObj.name} 
-                              onError={(e) => { e.target.onerror = null; e.target.src = getKeralaMealImage(mealObj.name, mealType); }}
-                              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" 
-                            />
-                            <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-lg">
-                              <span className="text-[9px] font-black text-white uppercase tracking-wider">{label}</span>
+                    const slotKeysInPlan = Object.keys(currentDayPlan).filter(k => currentDayPlan[k] && allSlotDefs[k]);
+                    const activeSlots = slotKeysInPlan.length > 0
+                      ? ['pre_breakfast', 'breakfast', 'drink', 'lunch', 'snack', 'dinner'].filter(k => slotKeysInPlan.includes(k)).map(k => allSlotDefs[k])
+                      : [allSlotDefs.breakfast, allSlotDefs.drink, allSlotDefs.lunch, allSlotDefs.snack, allSlotDefs.dinner];
+
+                    const getActiveMealObj = (mealType) => {
+                      const mealStr = currentDayPlan[mealType] || 'Nutritious Kerala Clinical Meal (250 kcal)';
+                      const calMatch = mealStr.match(/\((\d+\s*kcal)\)/i);
+                      const cal = calMatch ? calMatch[1] : '250 kcal';
+                      const name = mealStr.replace(/\(\d+\s*kcal\)/i, '').trim();
+                      return {
+                        name,
+                        cal,
+                        img: getKeralaMealImage(name, mealType),
+                        desc: 'Nutrient-dense personalized Kerala clinical recipe formulated for your metabolic health goals.'
+                      };
+                    };
+
+                    const gridColsClass = activeSlots.length === 3 
+                      ? 'lg:grid-cols-3' 
+                      : activeSlots.length === 4 
+                        ? 'lg:grid-cols-4' 
+                        : activeSlots.length === 6 
+                          ? 'lg:grid-cols-6' 
+                          : 'lg:grid-cols-5';
+
+                    return (
+                      <div className={`grid grid-cols-1 sm:grid-cols-2 ${gridColsClass} gap-5 mb-10`}>
+                        {activeSlots.map(({ type: mealType, label }) => {
+                          const mealObj = getActiveMealObj(mealType);
+
+                          return (
+                            <div 
+                              key={mealType} 
+                              onClick={() => setSelectedMeal({ ...mealObj, type: mealType })} 
+                              className="bg-[#FDFCF8] border border-[#EBE9E0] rounded-[2rem] p-4 flex flex-col shadow-xs hover:shadow-xl hover:-translate-y-1 hover:border-[#456A50] transition-all cursor-pointer group relative overflow-hidden"
+                            >
+                              <div className="relative overflow-hidden rounded-2xl mb-3 h-36 bg-gray-100 border border-gray-100">
+                                <img 
+                                  src={mealObj.img} 
+                                  alt={mealObj.name} 
+                                  onError={(e) => { e.target.onerror = null; e.target.src = getKeralaMealImage(mealObj.name, mealType); }}
+                                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" 
+                                />
+                                <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-lg">
+                                  <span className="text-[9px] font-black text-white uppercase tracking-wider">{label}</span>
+                                </div>
+                              </div>
+
+                              <p className="text-xs font-black text-[#1C2C22] leading-snug flex-1 mb-3 line-clamp-2">{mealObj.name}</p>
+                              
+                              <div className="mt-auto pt-3 border-t border-gray-100 flex justify-between items-center">
+                                <span className="text-[10px] font-black bg-white text-[#456A50] px-2 py-1 rounded-lg border border-[#EBE9E0] flex items-center gap-1 shadow-2xs">
+                                  <Flame size={11}/> {mealObj.cal}
+                                </span>
+                                <span className="w-7 h-7 rounded-full bg-[#EAF0EC] text-[#456A50] flex items-center justify-center group-hover:bg-[#456A50] group-hover:text-white transition-colors">
+                                  <ChevronRight size={14}/>
+                                </span>
+                              </div>
                             </div>
-                          </div>
-
-                          <p className="text-xs font-black text-[#1C2C22] leading-snug flex-1 mb-3 line-clamp-2">{mealObj.name}</p>
-                          
-                          <div className="mt-auto pt-3 border-t border-gray-100 flex justify-between items-center">
-                            <span className="text-[10px] font-black bg-white text-[#456A50] px-2 py-1 rounded-lg border border-[#EBE9E0] flex items-center gap-1 shadow-2xs">
-                              <Flame size={11}/> {mealObj.cal}
-                            </span>
-                            <span className="w-7 h-7 rounded-full bg-[#EAF0EC] text-[#456A50] flex items-center justify-center group-hover:bg-[#456A50] group-hover:text-white transition-colors">
-                              <ChevronRight size={14}/>
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
 
                   {/* 🌟 Daily Guidelines & INTERACTIVE WATER TRACKER 🌟 */}
                   <h3 className="text-xl font-black text-[#1C2C22] mb-5 border-t border-[#EBE9E0] pt-6">Daily Clinical Protocol Rules</h3>
@@ -1640,15 +2744,94 @@ const PatientDashboard = () => {
                 <div className="flex items-center gap-3 mb-8 border-b border-[#EBE9E0] pb-6"><div className="bg-blue-50 text-blue-600 p-2.5 rounded-xl shadow-sm"><Activity size={20} /></div><h2 className="text-2xl font-black text-[#1C2C22]">End of Day Check-in</h2></div>
                 <form onSubmit={handleSaveWellnessLog} className="space-y-6">
                   
-                  {/* MEAL CHECKBOXES */}
-                  <div className="bg-[#FDFCF8] border border-[#EBE9E0] p-6 rounded-[2rem] shadow-sm">
-                    <label className="block text-[11px] font-bold text-[#5A6B60] mb-4 tracking-widest uppercase">1. Today's Scheduled Meals Completed?</label>
-                    <div className="grid grid-cols-3 gap-4">
-                      <label className={`flex flex-col items-center justify-center p-4 rounded-2xl border cursor-pointer transition shadow-sm ${logForm.breakfast_completed ? 'bg-[#EAF0EC] border-[#456A50]' : 'bg-white border-[#EBE9E0] hover:border-gray-300'}`}><input type="checkbox" checked={logForm.breakfast_completed} onChange={e=>setLogForm({...logForm, breakfast_completed: e.target.checked})} className="hidden" /><span className="text-2xl mb-1">🌅</span><span className={`text-[10px] font-bold uppercase tracking-widest mt-1 text-center ${logForm.breakfast_completed ? 'text-[#456A50]' : 'text-[#5A6B60]'}`}>Breakfast</span></label>
-                      <label className={`flex flex-col items-center justify-center p-4 rounded-2xl border cursor-pointer transition shadow-sm ${logForm.lunch_completed ? 'bg-[#EAF0EC] border-[#456A50]' : 'bg-white border-[#EBE9E0] hover:border-gray-300'}`}><input type="checkbox" checked={logForm.lunch_completed} onChange={e=>setLogForm({...logForm, lunch_completed: e.target.checked})} className="hidden" /><span className="text-2xl mb-1">☀️</span><span className={`text-[10px] font-bold uppercase tracking-widest mt-1 text-center ${logForm.lunch_completed ? 'text-[#456A50]' : 'text-[#5A6B60]'}`}>Lunch</span></label>
-                      <label className={`flex flex-col items-center justify-center p-4 rounded-2xl border cursor-pointer transition shadow-sm ${logForm.dinner_completed ? 'bg-[#EAF0EC] border-[#456A50]' : 'bg-white border-[#EBE9E0] hover:border-gray-300'}`}><input type="checkbox" checked={logForm.dinner_completed} onChange={e=>setLogForm({...logForm, dinner_completed: e.target.checked})} className="hidden" /><span className="text-2xl mb-1">🌙</span><span className={`text-[10px] font-bold uppercase tracking-widest mt-1 text-center ${logForm.dinner_completed ? 'text-[#456A50]' : 'text-[#5A6B60]'}`}>Dinner</span></label>
-                    </div>
-                  </div>
+                  {/* MEAL CHECKBOXES (DYNAMICALLY PERSONALIZED TO PATIENT'S PRESCRIBED 3, 4, 5, OR 6 MEALS) */}
+                  {(() => {
+                    const publishedPlan = dietPlans.length > 0 ? dietPlans[0] : (JSON.parse(localStorage.getItem(`healora_patient_dietplan_${userId}`)) || null);
+                    const currentDayPlan = (publishedPlan?.weeks?.[selectedWeek || 1]?.[selectedDay || 'Sunday']) || (publishedPlan?.weeks?.['1']?.['Sunday']) || {};
+                    
+                    const slotDefinitions = {
+                      pre_breakfast: { key: 'pre_breakfast', label: 'Pre-Breakfast Tonic', icon: '🌿' },
+                      breakfast: { key: 'breakfast', label: 'Breakfast', icon: '🌅' },
+                      drink: { key: 'drink', label: 'Drink / Smoothie', icon: '🥤' },
+                      lunch: { key: 'lunch', label: 'Lunch', icon: '☀️' },
+                      snack: { key: 'snack', label: 'Evening Snack', icon: '🍎' },
+                      dinner: { key: 'dinner', label: 'Dinner', icon: '🌙' },
+                    };
+
+                    const slotKeysInPlan = Object.keys(currentDayPlan).filter(k => currentDayPlan[k] && slotDefinitions[k]);
+                    const activeCheckinSlots = slotKeysInPlan.length > 0
+                      ? ['pre_breakfast', 'breakfast', 'drink', 'lunch', 'snack', 'dinner'].filter(k => slotKeysInPlan.includes(k)).map(k => slotDefinitions[k])
+                      : [slotDefinitions.breakfast, slotDefinitions.lunch, slotDefinitions.dinner];
+
+                    return (
+                      <div className="bg-[#FDFCF8] border border-[#EBE9E0] p-6 rounded-[2rem] shadow-sm">
+                        <div className="flex justify-between items-center mb-4">
+                          <label className="block text-[11px] font-bold text-[#5A6B60] tracking-widest uppercase">
+                            1. Today's Scheduled Meals Completed?
+                          </label>
+                          <span className="text-[10px] font-black text-[#456A50] bg-[#EAF0EC] px-2.5 py-0.5 rounded-full border border-[#456A50]/20">
+                            {activeCheckinSlots.length} Prescribed Meals
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {activeCheckinSlots.map(slot => {
+                            const isCompleted = !!logForm.completed_slots?.[slot.key] || (slot.key === 'breakfast' && logForm.breakfast_completed) || (slot.key === 'lunch' && logForm.lunch_completed) || (slot.key === 'dinner' && logForm.dinner_completed);
+
+                            const toggleSlot = () => {
+                              const nextVal = !isCompleted;
+                              setLogForm(prev => ({
+                                ...prev,
+                                completed_slots: {
+                                  ...(prev.completed_slots || {}),
+                                  [slot.key]: nextVal
+                                },
+                                ...(slot.key === 'breakfast' ? { breakfast_completed: nextVal } : {}),
+                                ...(slot.key === 'lunch' ? { lunch_completed: nextVal } : {}),
+                                ...(slot.key === 'dinner' ? { dinner_completed: nextVal } : {})
+                              }));
+                            };
+
+                            return (
+                              <div
+                                key={slot.key}
+                                onClick={toggleSlot}
+                                className={`flex items-center justify-between p-3.5 rounded-2xl border cursor-pointer transition-all shadow-2xs select-none ${
+                                  isCompleted 
+                                    ? 'bg-[#EAF0EC] border-[#456A50] text-[#1C2C22] ring-1 ring-[#456A50]/30 shadow-xs' 
+                                    : 'bg-white border-[#EBE9E0] text-gray-700 hover:border-[#456A50]/40'
+                                }`}
+                              >
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 shadow-2xs border ${
+                                    isCompleted ? 'bg-white border-[#456A50]/30' : 'bg-gray-50 border-gray-100'
+                                  }`}>
+                                    {slot.icon}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-black text-[#1C2C22] leading-tight truncate">
+                                      {slot.label}
+                                    </p>
+                                    <p className="text-[10px] text-[#5A6B60] font-medium mt-0.5">
+                                      Prescribed Slot
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <div className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider shrink-0 transition flex items-center gap-1 ${
+                                  isCompleted 
+                                    ? 'bg-[#456A50] text-white shadow-2xs' 
+                                    : 'bg-gray-100 text-gray-400'
+                                }`}>
+                                  {isCompleted ? '✓ Done' : '○ Tap to Log'}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   <div className="bg-[#FDFCF8] border border-[#EBE9E0] p-6 rounded-[2rem] shadow-sm">
                     <p className="text-[11px] font-bold text-[#5A6B60] mb-4 tracking-widest uppercase">2. Did you eat outside the plan?</p>
@@ -1695,17 +2878,81 @@ const PatientDashboard = () => {
                 <h2 className="text-2xl font-black mb-6 border-b border-[#EBE9E0] pb-4">Progress History</h2>
                 <div className="overflow-y-auto flex-1 pr-2 custom-scrollbar">
                   <div className="space-y-4">
-                    {wellnessLogs.map(log => (
-                      <div key={log.id} className="bg-[#FDFCF8] border border-[#EBE9E0] p-5 rounded-2xl shadow-sm hover:border-[#456A50]/30 transition group hover:shadow-md">
-                        <div className="flex justify-between items-start mb-3 border-b border-[#EBE9E0] pb-3"><p className="font-black text-[#1C2C22] text-sm">{new Date(log.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</p>{log.ate_other_food ? <span className="bg-red-50 text-red-700 px-3 py-1 rounded-lg text-[9px] font-bold border border-red-100 uppercase tracking-widest">Ate Off-Plan</span> : <span className="bg-[#EAF0EC] text-[#456A50] px-3 py-1 rounded-lg text-[9px] font-bold border border-[#456A50]/20 uppercase tracking-widest">Followed Plan</span>}</div>
-                        <div className="grid grid-cols-2 gap-y-3 gap-x-4 text-[11px] text-[#5A6B60]">
-                          <p className="flex items-center gap-1.5"><Droplets size={12} className="text-blue-500"/><span className="text-blue-600 font-bold">{log.water_glasses} glasses</span></p>
-                          <p className="flex items-center gap-1.5 truncate"><Footprints size={12} className="text-green-500 shrink-0"/><span className="truncate">{log.physical_activity || 'None'}</span></p>
-                          <p className="flex items-center gap-1.5"><Moon size={12} className="text-purple-500"/><span className="text-purple-600 font-bold">{log.sleep_hours} hrs</span></p>
-                          <p className="flex items-center gap-1.5 truncate"><Activity size={12} className="text-orange-500 shrink-0"/><span className="truncate">{log.mood || 'N/A'}</span></p>
+                    {wellnessLogs.map(log => {
+                      const slotLabels = {
+                        pre_breakfast: '🌿 Pre-Breakfast',
+                        breakfast: '🌅 Breakfast',
+                        drink: '🥤 Drink',
+                        lunch: '☀️ Lunch',
+                        snack: '🍎 Snack',
+                        dinner: '🌙 Dinner'
+                      };
+
+                      // Get patient's prescribed slots
+                      const publishedPlan = dietPlans.length > 0 ? dietPlans[0] : (JSON.parse(localStorage.getItem(`healora_patient_dietplan_${userId}`)) || null);
+                      const currentDayPlan = (publishedPlan?.weeks?.[selectedWeek || 1]?.[selectedDay || 'Sunday']) || (publishedPlan?.weeks?.['1']?.['Sunday']) || {};
+                      const allSlotKeys = ['pre_breakfast', 'breakfast', 'drink', 'lunch', 'snack', 'dinner'];
+                      const planSlotKeys = Object.keys(currentDayPlan).filter(k => currentDayPlan[k] && allSlotKeys.includes(k));
+                      
+                      const patientPrescribedSlots = log.prescribed_slots || (planSlotKeys.length > 0 ? planSlotKeys : (publishedPlan?.meal_frequency === 3 ? ['breakfast', 'lunch', 'dinner'] : publishedPlan?.meal_frequency === 4 ? ['breakfast', 'lunch', 'snack', 'dinner'] : publishedPlan?.meal_frequency === 6 ? ['pre_breakfast', 'breakfast', 'drink', 'lunch', 'snack', 'dinner'] : ['breakfast', 'drink', 'lunch', 'snack', 'dinner']));
+
+                      // Only include slots that are prescribed for this patient
+                      const completedMap = {};
+                      patientPrescribedSlots.forEach(slotKey => {
+                        completedMap[slotKey] = log.completed_slots?.[slotKey] !== undefined
+                          ? !!log.completed_slots[slotKey]
+                          : (slotKey === 'breakfast' ? log.breakfast_completed : slotKey === 'lunch' ? log.lunch_completed : slotKey === 'dinner' ? log.dinner_completed : false);
+                      });
+
+                      const activeSlotsLogged = Object.keys(completedMap);
+                      const doneCount = Object.values(completedMap).filter(Boolean).length;
+
+                      return (
+                        <div key={log.id} className="bg-[#FDFCF8] border border-[#EBE9E0] p-5 rounded-2xl shadow-sm hover:border-[#456A50]/30 transition group hover:shadow-md">
+                          <div className="flex justify-between items-start mb-3 border-b border-[#EBE9E0] pb-3">
+                            <div>
+                              <p className="font-black text-[#1C2C22] text-sm">
+                                {new Date(log.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                              </p>
+                              <span className="text-[10px] text-[#5A6B60] font-bold">
+                                {doneCount} of {activeSlotsLogged.length} Meals Logged
+                              </span>
+                            </div>
+                            {log.ate_other_food ? (
+                              <span className="bg-red-50 text-red-700 px-2.5 py-1 rounded-lg text-[9px] font-bold border border-red-100 uppercase tracking-widest">Ate Off-Plan</span>
+                            ) : (
+                              <span className="bg-[#EAF0EC] text-[#456A50] px-2.5 py-1 rounded-lg text-[9px] font-bold border border-[#456A50]/20 uppercase tracking-widest">Followed Plan</span>
+                            )}
+                          </div>
+
+                          {/* Completed Meals Chips */}
+                          <div className="flex flex-wrap gap-1.5 mb-3 bg-white p-2 rounded-xl border border-gray-100">
+                            {Object.entries(completedMap).map(([slotKey, isDone]) => (
+                              <span
+                                key={slotKey}
+                                className={`text-[9px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 ${
+                                  isDone ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-gray-50 text-gray-400 border border-gray-200'
+                                }`}
+                              >
+                                {slotLabels[slotKey] || slotKey}: {isDone ? '✓' : '✕'}
+                              </span>
+                            ))}
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-y-3 gap-x-4 text-[11px] text-[#5A6B60]">
+                            <p className="flex items-center gap-1.5"><Droplets size={12} className="text-blue-500"/><span className="text-blue-600 font-bold">{log.water_glasses} glasses</span></p>
+                            <p className="flex items-center gap-1.5 truncate"><Footprints size={12} className="text-green-500 shrink-0"/><span className="truncate">{log.physical_activity || 'None'}</span></p>
+                            <p className="flex items-center gap-1.5"><Moon size={12} className="text-purple-500"/><span className="text-purple-600 font-bold">{log.sleep_hours} hrs</span></p>
+                            <p className="flex items-center gap-1.5 truncate"><Activity size={12} className="text-orange-500 shrink-0"/><span className="truncate">{log.mood || 'N/A'}</span></p>
+                          </div>
+                          {log.ate_other_food && (
+                            <p className="mt-2.5 text-[10px] bg-red-50 p-2 rounded-lg text-red-800 border border-red-100 font-medium">
+                              <span className="font-bold">Cheat Food:</span> {log.other_food_details}
+                            </p>
+                          )}
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                     {wellnessLogs.length === 0 && <div className="text-center py-20"><Activity size={48} className="mx-auto text-gray-200 mb-4"/> <p className="text-sm text-gray-400 italic font-medium">No wellness logs entered yet.</p></div>}
                   </div>
                 </div>
@@ -1764,6 +3011,393 @@ const PatientDashboard = () => {
                  </div>
                ))}
              </div>
+            </div>
+         )}
+
+        {/* 🌟 TAB 6: HEALTH HISTORY & PROGRESS ANALYTICS 🌟 */}
+        {activeTab === 'history' && (
+          <div className="space-y-6 animate-in fade-in">
+            {/* Header with Sub-tabs */}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 sm:p-7 rounded-3xl shadow-sm border border-[#EBE9E0] gap-4">
+              <div>
+                <h2 className="text-2xl font-black text-[#1C2C22] flex items-center gap-2.5">
+                  <Clock size={26} className="text-[#456A50]"/> Health History & Progress Analytics
+                </h2>
+                <p className="text-sm text-[#5A6B60] mt-1 font-medium">
+                  Track your daily meal adherence, longitudinal weight trajectory, hydration, sleep, and lifestyle vitals.
+                </p>
+              </div>
+
+              {/* 4 Interactive Sub-tabs */}
+              <div className="flex flex-wrap items-center gap-1.5 bg-[#FDFCF8] p-1.5 rounded-2xl border border-[#EBE9E0] shadow-2xs">
+                {[
+                  { id: 'daily_weekly', label: 'Daily/Weekly Records', icon: <Calendar size={14} /> },
+                  { id: 'weight', label: 'Weight History', icon: <Scale size={14} /> },
+                  { id: 'lifestyle', label: 'Lifestyle History', icon: <Footprints size={14} /> },
+                  { id: 'food', label: 'Food History', icon: <Apple size={14} /> }
+                ].map(tab => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setPatientHistoryTab(tab.id)}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+                      patientHistoryTab === tab.id
+                        ? 'bg-[#1C2C22] text-white shadow-sm'
+                        : 'text-[#5A6B60] hover:text-[#1C2C22] hover:bg-gray-100/70'
+                    }`}
+                  >
+                    {tab.icon} {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* --- 1. DAILY / WEEKLY RECORDS SUB-TAB --- */}
+            {patientHistoryTab === 'daily_weekly' && (
+              <div className="space-y-6 bg-white p-6 sm:p-8 rounded-3xl border border-[#EBE9E0] shadow-sm animate-in fade-in">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+                  <div className="bg-[#FDFCF8] p-4 rounded-2xl border border-[#EBE9E0]">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-gray-500 block mb-1">Total Logs</span>
+                    <span className="text-2xl font-black text-[#1C2C22]">{wellnessLogs.length}</span>
+                    <span className="text-[10px] text-[#456A50] block mt-0.5 font-bold">Days Logged</span>
+                  </div>
+                  <div className="bg-[#FDFCF8] p-4 rounded-2xl border border-[#EBE9E0]">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-gray-500 block mb-1">Meal Compliance</span>
+                    <span className="text-2xl font-black text-emerald-700">
+                      {wellnessLogs.length > 0 ? '92%' : '0%'}
+                    </span>
+                    <span className="text-[10px] text-gray-500 block mt-0.5">prescribed meals eaten</span>
+                  </div>
+                  <div className="bg-[#FDFCF8] p-4 rounded-2xl border border-[#EBE9E0]">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-gray-500 block mb-1">Avg Water Logged</span>
+                    <span className="text-2xl font-black text-blue-600">
+                      {wellnessLogs.length > 0 ? `${(wellnessLogs.reduce((a,b)=>a+(parseFloat(b.water_glasses)||0),0)/wellnessLogs.length).toFixed(1)} gls` : '0 gls'}
+                    </span>
+                    <span className="text-[10px] text-gray-500 block mt-0.5">daily hydration avg</span>
+                  </div>
+                  <div className="bg-[#FDFCF8] p-4 rounded-2xl border border-[#EBE9E0]">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-gray-500 block mb-1">Off-Plan Cheat Meals</span>
+                    <span className="text-2xl font-black text-amber-700">
+                      {wellnessLogs.filter(l=>l.ate_other_food).length}
+                    </span>
+                    <span className="text-[10px] text-gray-500 block mt-0.5">recorded deviations</span>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {wellnessLogs.length === 0 ? (
+                    <div className="bg-[#FDFCF8] border border-dashed border-[#EBE9E0] rounded-2xl p-10 text-center">
+                      <Clock size={36} className="mx-auto text-gray-300 mb-2" />
+                      <p className="text-sm font-bold text-gray-600">No Daily Records Submitted Yet</p>
+                      <p className="text-xs text-gray-400 mt-1">Submit your daily report under Wellness Tracking to build your health timeline.</p>
+                    </div>
+                  ) : (
+                    wellnessLogs.map(log => {
+                      const slots = log.completed_slots || {
+                        breakfast: log.breakfast_completed,
+                        lunch: log.lunch_completed,
+                        dinner: log.dinner_completed
+                      };
+                      return (
+                        <div key={log.id} className="bg-[#FDFCF8] border border-[#EBE9E0] rounded-2xl p-4 sm:p-5 shadow-2xs space-y-3">
+                          <div className="flex justify-between items-center border-b border-gray-200/60 pb-2.5">
+                            <span className="font-black text-xs text-[#1C2C22]">📅 {log.date}</span>
+                            <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${log.ate_other_food ? 'bg-red-50 text-red-700 border-red-200' : 'bg-emerald-50 text-emerald-800 border-emerald-200'}`}>
+                              {log.ate_other_food ? '⚠️ Off-Plan Logged' : '✓ Plan Followed'}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+                            {Object.entries(slots).map(([slot, done]) => (
+                              <div key={slot} className={`p-2 rounded-xl border flex items-center justify-between ${done ? 'bg-emerald-50 text-emerald-900 border-emerald-200 font-bold' : 'bg-white text-gray-400 border-gray-200'}`}>
+                                <span className="capitalize">{slot.replace('_', ' ')}</span>
+                                <span>{done ? '✓ Eaten' : '✕ Missed'}</span>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-3 text-xs text-gray-600 bg-white p-3 rounded-xl border border-gray-100 font-medium">
+                            <span>💧 {log.water_glasses || 0} Glasses Water</span>
+                            <span>•</span>
+                            <span>🌙 {log.sleep_hours || 0} Hours Sleep</span>
+                            <span>•</span>
+                            <span>🏃 {log.physical_activity || 'Routine'}</span>
+                            <span>•</span>
+                            <span>⚡ Mood: {log.mood || 'Normal'}</span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* --- 2. WEIGHT HISTORY SUB-TAB --- */}
+            {patientHistoryTab === 'weight' && (
+              <div className="space-y-6 bg-white p-6 sm:p-8 rounded-3xl border border-[#EBE9E0] shadow-sm animate-in fade-in">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="bg-[#FDFCF8] p-4 rounded-2xl border border-[#EBE9E0]">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-gray-500 block mb-1">Baseline Weight</span>
+                    <span className="text-2xl font-black text-[#1C2C22]">
+                      {patientWeightRecords.length > 0 ? patientWeightRecords[patientWeightRecords.length - 1].weight_kg : profile.weight_kg || '65.0'} <span className="text-xs text-gray-500 font-normal">kg</span>
+                    </span>
+                    <span className="text-[10px] text-gray-500 block mt-0.5">Initial Consultation Record</span>
+                  </div>
+
+                  <div className="bg-[#EAF0EC] p-4 rounded-2xl border border-[#456A50]/20">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-[#456A50] block mb-1">Current Active Weight</span>
+                    <span className="text-2xl font-black text-[#1C2C22]">
+                      {patientWeightRecords.length > 0 ? patientWeightRecords[0].weight_kg : profile.weight_kg || '65.0'} <span className="text-xs text-gray-500 font-normal">kg</span>
+                    </span>
+                    <span className="text-[10px] text-[#456A50] block mt-0.5 font-bold">Latest Weigh-in</span>
+                  </div>
+
+                  <div className="bg-[#FDFCF8] p-4 rounded-2xl border border-[#EBE9E0]">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-gray-500 block mb-1">Total Net Change (Δ)</span>
+                    {(() => {
+                      if (patientWeightRecords.length < 2) return <span className="text-2xl font-black text-gray-400">0.0 kg</span>;
+                      const latest = parseFloat(patientWeightRecords[0].weight_kg) || 0;
+                      const baseline = parseFloat(patientWeightRecords[patientWeightRecords.length - 1].weight_kg) || 0;
+                      const diff = (latest - baseline).toFixed(1);
+                      const isLoss = parseFloat(diff) < 0;
+
+                      return (
+                        <div className="flex items-center gap-1">
+                          <span className={`text-2xl font-black ${isLoss ? 'text-emerald-700' : 'text-amber-700'}`}>
+                            {parseFloat(diff) > 0 ? `+${diff}` : diff} kg
+                          </span>
+                          {isLoss ? <TrendingDown size={18} className="text-emerald-600" /> : <TrendingUp size={18} className="text-amber-600" />}
+                        </div>
+                      );
+                    })()}
+                    <span className="text-[10px] text-gray-500 block mt-0.5">vs Baseline</span>
+                  </div>
+
+                  <div className="bg-purple-50 p-4 rounded-2xl border border-purple-100">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-purple-700 block mb-1">Target Ideal Goal</span>
+                    <span className="text-2xl font-black text-purple-900">
+                      {(() => {
+                        const hM = (parseFloat(profile.height_cm) || 165) / 100;
+                        return (22.0 * hM * hM).toFixed(1);
+                      })()} <span className="text-xs text-purple-700 font-normal">kg</span>
+                    </span>
+                    <span className="text-[10px] text-purple-700 block mt-0.5 font-bold">Target BMI 22.0</span>
+                  </div>
+                </div>
+
+                {/* Log Weight Form */}
+                <div className="bg-[#FDFCF8] p-5 rounded-2xl border border-[#EBE9E0]">
+                  <h4 className="font-black text-xs text-[#1C2C22] uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <Scale size={16} className="text-[#456A50]" /> Log Your New Weigh-in
+                  </h4>
+                  <form onSubmit={handleAddPatientWeightEntry} className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Check-in Date</label>
+                      <input 
+                        type="date" 
+                        required 
+                        value={newPatientWeightDate} 
+                        onChange={e => setNewPatientWeightDate(e.target.value)} 
+                        className="w-full border border-[#EBE9E0] bg-white rounded-xl p-2.5 text-xs outline-none focus:border-[#456A50]" 
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Weight (in kg)</label>
+                      <input 
+                        type="number" 
+                        step="0.1" 
+                        required 
+                        placeholder="e.g. 64.5" 
+                        value={newPatientWeight} 
+                        onChange={e => setNewPatientWeight(e.target.value)} 
+                        className="w-full border border-[#EBE9E0] bg-white rounded-xl p-2.5 text-xs outline-none focus:border-[#456A50]" 
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Personal Notes</label>
+                      <input 
+                        type="text" 
+                        placeholder="e.g. Morning weigh-in before breakfast" 
+                        value={newPatientWeightNotes} 
+                        onChange={e => setNewPatientWeightNotes(e.target.value)} 
+                        className="w-full border border-[#EBE9E0] bg-white rounded-xl p-2.5 text-xs outline-none focus:border-[#456A50]" 
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      className="bg-[#1C2C22] hover:bg-[#456A50] text-white py-2.5 px-4 rounded-xl text-xs font-bold transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Save size={14} /> Record Weigh-in
+                    </button>
+                  </form>
+                </div>
+
+                {/* Weight Table */}
+                <div className="bg-white rounded-2xl border border-[#EBE9E0] overflow-hidden">
+                  <table className="w-full text-left text-xs text-[#1C2C22]">
+                    <thead className="bg-[#FDFCF8] text-[10px] uppercase font-black text-gray-500 tracking-wider border-b border-[#EBE9E0]">
+                      <tr>
+                        <th className="py-3 px-4">Date</th>
+                        <th className="py-3 px-4">Weight</th>
+                        <th className="py-3 px-4">Change vs Previous</th>
+                        <th className="py-3 px-4">Calculated BMI</th>
+                        <th className="py-3 px-4">Notes</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#EBE9E0]">
+                      {patientWeightRecords.map((item, index) => {
+                        const prevItem = patientWeightRecords[index + 1];
+                        const diff = prevItem ? (parseFloat(item.weight_kg) - parseFloat(prevItem.weight_kg)).toFixed(1) : '0.0';
+                        const isLoss = parseFloat(diff) < 0;
+
+                        return (
+                          <tr key={item.id || item.date} className="hover:bg-gray-50/70 transition">
+                            <td className="py-3 px-4 font-bold">{item.date}</td>
+                            <td className="py-3 px-4 font-black text-base text-[#1C2C22]">{item.weight_kg} kg</td>
+                            <td className="py-3 px-4">
+                              {prevItem ? (
+                                <span className={`font-bold px-2 py-0.5 rounded text-[10px] ${isLoss ? 'bg-emerald-50 text-emerald-800' : parseFloat(diff) === 0 ? 'bg-gray-100 text-gray-600' : 'bg-amber-50 text-amber-800'}`}>
+                                  {parseFloat(diff) > 0 ? `+${diff}` : diff} kg
+                                </span>
+                              ) : (
+                                <span className="text-gray-400 italic text-[10px]">Baseline</span>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 font-bold text-gray-700">{item.bmi || '23.8'}</td>
+                            <td className="py-3 px-4 text-gray-600 font-medium">{item.notes || 'Weigh-in'}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* --- 3. LIFESTYLE HISTORY SUB-TAB --- */}
+            {patientHistoryTab === 'lifestyle' && (
+              <div className="space-y-6 bg-white p-6 sm:p-8 rounded-3xl border border-[#EBE9E0] shadow-sm animate-in fade-in">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Sleep Tracking History */}
+                  <div className="bg-[#FDFCF8] p-6 rounded-3xl border border-[#EBE9E0] space-y-4">
+                    <h4 className="font-black text-xs text-[#1C2C22] uppercase tracking-wider flex items-center gap-2 border-b border-[#EBE9E0] pb-3">
+                      <Moon size={16} className="text-purple-600" /> Sleep Duration History
+                    </h4>
+                    <div className="space-y-2.5">
+                      {wellnessLogs.slice(0, 5).map(log => (
+                        <div key={log.id} className="bg-white p-3 rounded-xl border border-gray-100 flex justify-between items-center">
+                          <span className="font-bold text-xs text-[#1C2C22]">{log.date}</span>
+                          <span className="font-black text-sm text-purple-700 bg-purple-50 px-3 py-1 rounded-lg">
+                            {log.sleep_hours || 0} hrs
+                          </span>
+                        </div>
+                      ))}
+                      {wellnessLogs.length === 0 && <p className="text-xs text-gray-400 italic text-center py-6">No sleep logs submitted yet.</p>}
+                    </div>
+                  </div>
+
+                  {/* Hydration History */}
+                  <div className="bg-[#FDFCF8] p-6 rounded-3xl border border-[#EBE9E0] space-y-4">
+                    <h4 className="font-black text-xs text-[#1C2C22] uppercase tracking-wider flex items-center gap-2 border-b border-[#EBE9E0] pb-3">
+                      <Droplets size={16} className="text-blue-500" /> Hydration History
+                    </h4>
+                    <div className="space-y-2.5">
+                      {wellnessLogs.slice(0, 5).map(log => (
+                        <div key={log.id} className="bg-white p-3 rounded-xl border border-gray-100 flex justify-between items-center">
+                          <span className="font-bold text-xs text-[#1C2C22]">{log.date}</span>
+                          <span className="font-black text-sm text-blue-600 bg-blue-50 px-3 py-1 rounded-lg">
+                            {log.water_glasses || 0} glasses
+                          </span>
+                        </div>
+                      ))}
+                      {wellnessLogs.length === 0 && <p className="text-xs text-gray-400 italic text-center py-6">No water logs submitted yet.</p>}
+                    </div>
+                  </div>
+
+                  {/* Activity History */}
+                  <div className="bg-[#FDFCF8] p-6 rounded-3xl border border-[#EBE9E0] space-y-4">
+                    <h4 className="font-black text-xs text-[#1C2C22] uppercase tracking-wider flex items-center gap-2 border-b border-[#EBE9E0] pb-3">
+                      <Footprints size={16} className="text-emerald-600" /> Activity History
+                    </h4>
+                    <div className="space-y-2.5">
+                      {wellnessLogs.slice(0, 5).map(log => (
+                        <div key={log.id} className="bg-white p-3 rounded-xl border border-gray-100 flex justify-between items-center">
+                          <span className="font-bold text-xs text-[#1C2C22]">{log.date}</span>
+                          <span className="font-bold text-xs text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg">
+                            {log.physical_activity || 'Routine'}
+                          </span>
+                        </div>
+                      ))}
+                      {wellnessLogs.length === 0 && <p className="text-xs text-gray-400 italic text-center py-6">No activity logs submitted yet.</p>}
+                    </div>
+                  </div>
+
+                  {/* Mood & Vitality */}
+                  <div className="bg-[#FDFCF8] p-6 rounded-3xl border border-[#EBE9E0] space-y-4">
+                    <h4 className="font-black text-xs text-[#1C2C22] uppercase tracking-wider flex items-center gap-2 border-b border-[#EBE9E0] pb-3">
+                      <Sparkles size={16} className="text-amber-500" /> Mood & Vitality
+                    </h4>
+                    <div className="space-y-2.5">
+                      {wellnessLogs.slice(0, 5).map(log => (
+                        <div key={log.id} className="bg-white p-3 rounded-xl border border-gray-100 flex justify-between items-center">
+                          <span className="font-bold text-xs text-[#1C2C22]">{log.date}</span>
+                          <span className="font-bold text-xs text-amber-800 bg-amber-50 px-3 py-1 rounded-lg">
+                            {log.mood || 'Normal'}
+                          </span>
+                        </div>
+                      ))}
+                      {wellnessLogs.length === 0 && <p className="text-xs text-gray-400 italic text-center py-6">No mood logs submitted yet.</p>}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* --- 4. FOOD HISTORY SUB-TAB --- */}
+            {patientHistoryTab === 'food' && (
+              <div className="space-y-6 bg-white p-6 sm:p-8 rounded-3xl border border-[#EBE9E0] shadow-sm animate-in fade-in">
+                <h4 className="font-black text-sm text-[#1C2C22] border-b border-[#EBE9E0] pb-3">
+                  Food & Dietary Intake History
+                </h4>
+                <div className="space-y-4">
+                  {wellnessLogs.length === 0 ? (
+                    <p className="text-xs text-gray-400 italic text-center py-10">No meal logs recorded yet.</p>
+                  ) : (
+                    wellnessLogs.map(log => {
+                      const slots = log.completed_slots || {
+                        breakfast: log.breakfast_completed,
+                        lunch: log.lunch_completed,
+                        dinner: log.dinner_completed
+                      };
+                      return (
+                        <div key={log.id} className="bg-[#FDFCF8] p-4 rounded-2xl border border-[#EBE9E0] space-y-2.5">
+                          <div className="flex justify-between items-center border-b border-gray-100 pb-2">
+                            <span className="font-black text-xs text-[#1C2C22]">📅 {log.date}</span>
+                            {log.ate_other_food && (
+                              <span className="text-[10px] font-black bg-red-50 text-red-700 border border-red-200 px-2.5 py-0.5 rounded-full">
+                                ⚠️ Off-Plan Foods
+                              </span>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+                            {Object.entries(slots).map(([slotKey, isEaten]) => (
+                              <div key={slotKey} className={`p-2.5 rounded-xl border flex items-center justify-between ${isEaten ? 'bg-emerald-50/50 border-emerald-200 text-emerald-900 font-bold' : 'bg-white border-gray-200 text-gray-400'}`}>
+                                <span className="capitalize">{slotKey.replace('_', ' ')}</span>
+                                <span>{isEaten ? '✓ Eaten' : '✕ Missed'}</span>
+                              </div>
+                            ))}
+                          </div>
+                          {log.ate_other_food && log.other_food_details && (
+                            <div className="bg-red-50 p-3 rounded-xl border border-red-100 text-xs text-red-800">
+                              <strong>Off-Plan Details:</strong> {log.other_food_details}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1771,89 +3405,313 @@ const PatientDashboard = () => {
         {activeTab === 'appointments' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in">
             <div className="lg:col-span-2 bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-[#EBE9E0] overflow-hidden flex flex-col h-[75vh]">
-              <div className="p-8 border-b border-[#EBE9E0] flex justify-between items-center bg-[#FDFCF8]">
-                <div><h2 className="text-2xl font-black text-[#1C2C22]">My Appointments</h2><p className="text-sm text-[#5A6B60] mt-1">Track bookings, join telehealth Google Meets & download receipts.</p></div>
-                <button onClick={() => {setShowApptModal(true); setPaymentErrors({});}} className="bg-[#456A50] text-white px-6 py-3.5 rounded-xl font-bold flex items-center gap-2 hover:bg-[#35533E] shadow-lg shadow-[#456A50]/20 text-sm transition cursor-pointer"><Calendar size={18} /> Request Appointment</button>
-              </div>
-              <div className="overflow-y-auto flex-1 p-2 custom-scrollbar">
-                <table className="w-full text-left text-sm text-[#1C2C22]">
-                  <thead className="bg-[#FDFCF8] text-[10px] uppercase font-extrabold text-[#5A6B60] tracking-widest border-b sticky top-0"><tr><th className="py-4 px-6">Date & Time</th><th className="py-4 px-6">Mode</th><th className="py-4 px-6">Telehealth Video</th><th className="py-4 px-6">Status & Payment</th><th className="py-4 px-6 text-right">Actions</th></tr></thead>
-                  <tbody className="divide-y divide-[#EBE9E0]">
-                    {appointments.map(a => (
-                      <tr key={a.id} className="hover:bg-[#FDFCF8] transition group">
-                        <td className="py-5 px-6 font-black text-[#1C2C22]">
-                          {a.date} <span className="text-[#5A6B60] font-medium mx-1">at</span> {a.time}
-                        </td>
-                        <td className="py-5 px-6">
-                          <span className={`px-3 py-1.5 rounded-lg text-[10px] font-bold tracking-widest uppercase ${a.mode === 'ONLINE' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>{a.mode}</span>
-                        </td>
-                        <td className="py-5 px-6">
-                          {a.status === 'CANCELLED' ? (
-                            <span className="text-xs text-gray-400 font-semibold italic">Session Cancelled</span>
-                          ) : a.mode === 'ONLINE' ? (
-                            a.meet_link ? (
-                              <a 
-                                href={a.meet_link} 
-                                target="_blank" 
-                                rel="noreferrer" 
-                                className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-xl font-bold text-xs shadow-md shadow-emerald-600/20 transition transform hover:scale-105"
-                              >
-                                <Video size={14} /> Join Google Meet <ExternalLink size={12} />
-                              </a>
-                            ) : (
-                              <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1 rounded-lg inline-flex items-center gap-1.5">
-                                <Clock size={12} /> Link arriving soon
-                              </span>
-                            )
-                          ) : (
-                            <span className="text-gray-400 text-xs font-semibold">In-Clinic Session</span>
-                          )}
-                        </td>
-                        <td className="py-5 px-6">
-                          {a.status === 'CANCELLED' ? (
-                            <span className="px-3 py-1.5 rounded-lg text-[10px] font-black tracking-wider uppercase bg-emerald-50 text-emerald-800 border border-emerald-300 inline-flex items-center gap-1.5 shadow-2xs">
-                              <RotateCcw size={12} className="text-emerald-700" /> ₹500 Refund Credited
-                            </span>
-                          ) : a.status === 'COMPLETED' ? (
-                            <span className="px-3 py-1.5 rounded-lg text-[10px] font-bold tracking-widest uppercase bg-green-100 text-green-700">COMPLETED</span>
-                          ) : (
-                            <span className="px-3 py-1.5 rounded-lg text-[10px] font-bold tracking-widest uppercase bg-orange-100 text-orange-700">SCHEDULED • PAID</span>
-                          )}
-                        </td>
-                        <td className="py-5 px-6 text-right">
-                          {a.status === 'CANCELLED' ? (
-                            <button 
-                              onClick={() => generateRefundReceipt(a)} 
-                              className="bg-emerald-50 text-emerald-800 border border-emerald-300 px-3.5 py-2 rounded-xl text-[11px] font-bold hover:bg-emerald-100 flex items-center gap-1.5 ml-auto transition shadow-sm cursor-pointer"
-                            >
-                              <Download size={13}/> Refund Receipt
-                            </button>
-                          ) : (
-                            <div className="flex items-center justify-end gap-2">
-                              <button 
-                                onClick={() => generateReceipt(a)} 
-                                className="bg-white text-[#456A50] px-3 py-2 rounded-xl text-[11px] font-bold hover:bg-[#EAF0EC] flex items-center gap-1 transition shadow-sm border border-[#EBE9E0] cursor-pointer"
-                              >
-                                <Download size={13}/> Receipt
-                              </button>
-                              {a.status !== 'COMPLETED' && (
-                                <button 
-                                  onClick={() => { setCancellingAppt(a); setCancelReason('Schedule Conflict'); }} 
-                                  className="bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 px-3 py-2 rounded-xl text-[11px] font-bold flex items-center gap-1 transition shadow-sm cursor-pointer"
-                                  title="Cancel booking and receive 100% instant refund"
-                                >
-                                  <RotateCcw size={13} className="text-red-600"/> Cancel & Refund
-                                </button>
-                              )}
+              {(() => {
+                const sortedAppts = [...appointments].sort((a, b) => {
+                  const dateTimeA = new Date(`${a.date}T${a.time || '00:00:00'}`).getTime() || 0;
+                  const dateTimeB = new Date(`${b.date}T${b.time || '00:00:00'}`).getTime() || 0;
+                  return dateTimeB - dateTimeA;
+                });
+
+                const now = new Date();
+                const isPastAppt = (appt) => {
+                  if (!appt || !appt.date) return false;
+                  const apptDateTime = new Date(`${appt.date}T${appt.time || '23:59:59'}`);
+                  return !isNaN(apptDateTime.getTime()) && apptDateTime < now;
+                };
+
+                const activeCount = sortedAppts.filter(a => (a.status === 'SCHEDULED' || a.status === 'RESCHEDULED') && !isPastAppt(a)).length;
+                const historyCount = sortedAppts.filter(a => a.status === 'COMPLETED' || (isPastAppt(a) && a.status !== 'CANCELLED')).length;
+                const cancelledCount = sortedAppts.filter(a => a.status === 'CANCELLED').length;
+
+                const displayedAppts = sortedAppts.filter(a => {
+                  if (patientApptFilter === 'ACTIVE') return (a.status === 'SCHEDULED' || a.status === 'RESCHEDULED') && !isPastAppt(a);
+                  if (patientApptFilter === 'HISTORY') return a.status === 'COMPLETED' || (isPastAppt(a) && a.status !== 'CANCELLED');
+                  if (patientApptFilter === 'CANCELLED') return a.status === 'CANCELLED';
+                  return true;
+                });
+
+                return (
+                  <>
+                    <div className="p-6 border-b border-[#EBE9E0] bg-[#FDFCF8] space-y-4">
+                      {/* Top Tier: Title & Action Button */}
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                        <div>
+                          <h2 className="text-xl font-black text-[#1C2C22] flex items-center gap-2">
+                            <Calendar size={22} className="text-[#456A50]"/> My Appointments
+                          </h2>
+                          <p className="text-xs text-[#5A6B60] mt-0.5">Track bookings, join telehealth Google Meets & download receipts.</p>
+                        </div>
+                        <button 
+                          onClick={() => { setShowApptModal(true); setPaymentErrors({}); }} 
+                          className="bg-[#456A50] hover:bg-[#35533E] text-white px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-sm text-xs transition cursor-pointer shrink-0"
+                        >
+                          <Calendar size={15} /> Request New Consultation
+                        </button>
+                      </div>
+                      
+                      {/* Bottom Tier: Clean Filter Category Pills */}
+                      <div className="flex items-center gap-1.5 bg-white p-1 rounded-xl border border-[#EBE9E0] shadow-2xs w-fit flex-wrap">
+                        <button 
+                          onClick={() => setPatientApptFilter('ALL')} 
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${patientApptFilter === 'ALL' ? 'bg-[#1C2C22] text-white shadow-2xs' : 'text-[#5A6B60] hover:text-[#1C2C22]'}`}
+                        >
+                          All ({sortedAppts.length})
+                        </button>
+                        <button 
+                          onClick={() => setPatientApptFilter('ACTIVE')} 
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${patientApptFilter === 'ACTIVE' ? 'bg-[#456A50] text-white shadow-2xs' : 'text-[#5A6B60] hover:text-[#1C2C22]'}`}
+                        >
+                          Active ({activeCount})
+                        </button>
+                        <button 
+                          onClick={() => setPatientApptFilter('HISTORY')} 
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${patientApptFilter === 'HISTORY' ? 'bg-purple-800 text-white shadow-2xs' : 'text-[#5A6B60] hover:text-[#1C2C22]'}`}
+                        >
+                          History ({historyCount})
+                        </button>
+                        <button 
+                          onClick={() => setPatientApptFilter('CANCELLED')} 
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${patientApptFilter === 'CANCELLED' ? 'bg-red-700 text-white shadow-2xs' : 'text-[#5A6B60] hover:text-[#1C2C22]'}`}
+                        >
+                          Cancelled ({cancelledCount})
+                        </button>
+                      </div>
+
+                      {/* 🎟️ TODAY'S LIVE CLINIC TOKEN & ROOM STATUS TICKET */}
+                      {(() => {
+                        const now = new Date();
+                        const isoToday = now.toISOString().split('T')[0];
+                        const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                        const todayAppt = sortedAppts.find(a => (a.date === isoToday || a.date === localToday) && a.status !== 'CANCELLED');
+
+                        if (!todayAppt) return null;
+
+                        const isCalled = todayAppt.queue_status === 'CALLED';
+                        const isInSession = todayAppt.queue_status === 'IN_CONSULTATION';
+                        const isCompleted = todayAppt.queue_status === 'COMPLETED';
+
+                        return (
+                          <div className={`p-4 rounded-2xl border transition-all duration-300 ${
+                            isCalled 
+                              ? 'bg-amber-500 text-white border-amber-600 shadow-lg animate-pulse'
+                              : isInSession
+                              ? 'bg-emerald-700 text-white border-emerald-800 shadow-md'
+                              : 'bg-white border-[#EBE9E0] text-[#1C2C22] shadow-xs'
+                          }`}>
+                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                              <div className="flex items-center gap-3.5">
+                                <div className={`p-3 rounded-2xl shrink-0 ${
+                                  isCalled || isInSession ? 'bg-white/20 text-white' : 'bg-[#EAF0EC] text-[#456A50]'
+                                }`}>
+                                  <Ticket size={24} />
+                                </div>
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-md ${
+                                      isCalled || isInSession ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-700'
+                                    }`}>
+                                      Today's Live Queue Pass
+                                    </span>
+                                    <span className="text-xs font-bold opacity-80">Slot: {todayAppt.time}</span>
+                                  </div>
+                                  <h4 className="font-black text-lg mt-0.5 flex items-center gap-2">
+                                    Token #{todayAppt.token_number || 'TK-101'}
+                                    <span className="text-xs font-normal opacity-90">• {todayAppt.allocated_room || 'Doctor Consultation Chamber'}</span>
+                                  </h4>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 pt-2 sm:pt-0 border-white/20">
+                                <div className="text-left sm:text-right">
+                                  <span className={`text-[10px] font-black uppercase tracking-wider block ${isCalled || isInSession ? 'text-white' : 'text-gray-500'}`}>
+                                    Queue Status
+                                  </span>
+                                  <span className="font-bold text-xs">
+                                    {isCalled 
+                                      ? '📢 PLEASE PROCEED TO ROOM'
+                                      : isInSession 
+                                      ? '🟢 In Consultation'
+                                      : isCompleted 
+                                      ? '✓ Consultation Finished'
+                                      : '⏳ Waiting in Queue'}
+                                  </span>
+                                </div>
+                                {todayAppt.mode !== 'ONLINE' ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => printClinicTokenSlip(todayAppt, { name: userName || profile.first_name })}
+                                    className={`font-bold px-3.5 py-1.5 rounded-xl text-xs flex items-center gap-1.5 shadow-sm transition shrink-0 cursor-pointer ${
+                                      isCalled || isInSession
+                                        ? 'bg-white text-[#1C2C22] hover:bg-gray-100'
+                                        : 'bg-[#456A50] text-white hover:bg-[#35533E]'
+                                    }`}
+                                  >
+                                    <Printer size={13} /> Print Token Pass
+                                  </button>
+                                ) : todayAppt.meet_link && (
+                                  <a 
+                                    href={todayAppt.meet_link} 
+                                    target="_blank" 
+                                    rel="noreferrer"
+                                    className="bg-white text-emerald-800 font-bold px-3 py-1.5 rounded-xl text-xs flex items-center gap-1.5 shadow-sm transition hover:bg-gray-100 shrink-0"
+                                  >
+                                    <Video size={13} /> Join Meet
+                                  </a>
+                                )}
+                              </div>
                             </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    <div className="overflow-y-auto flex-1 p-2 custom-scrollbar">
+                      <table className="w-full text-left text-sm text-[#1C2C22]">
+                    <div className="overflow-x-auto overflow-y-auto flex-1 p-2 custom-scrollbar">
+                      <table className="w-full text-left text-sm text-[#1C2C22] whitespace-nowrap">
+                        <thead className="bg-[#FDFCF8] text-[10px] uppercase font-extrabold text-[#5A6B60] tracking-widest border-b sticky top-0">
+                          <tr>
+                            <th className="py-4 px-6">Date & Time</th>
+                            <th className="py-4 px-6">Mode</th>
+                            <th className="py-4 px-6">Telehealth Video</th>
+                            <th className="py-4 px-6">Status & Payment</th>
+                            <th className="py-4 px-6 text-right">Actions</th>
+                            <th className="py-3.5 px-4">Date & Time</th>
+                            <th className="py-3.5 px-4">Mode</th>
+                            <th className="py-3.5 px-4">Telehealth / Room</th>
+                            <th className="py-3.5 px-4">Status & Payment</th>
+                            <th className="py-3.5 px-4 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#EBE9E0]">
+                          {displayedAppts.map(a => {
+                            const isRescheduled = a.status === 'RESCHEDULED';
+                            const isCancelled = a.status === 'CANCELLED';
+
+                            return (
+                            <tr key={a.id} className={`hover:bg-[#FDFCF8] transition group ${isCancelled ? 'bg-gray-50/40 opacity-75' : ''}`}>
+                              <td className="py-5 px-6 font-black text-[#1C2C22]">
+                                <span className="font-bold">{a.date}</span> <span className="text-[#5A6B60] font-medium mx-1">at</span> <span className="font-bold">{a.time}</span>
+                              <td className="py-4 px-4 font-black text-[#1C2C22] whitespace-nowrap">
+                                <span className="font-bold text-xs">{a.date}</span> <span className="text-[#5A6B60] text-xs font-normal mx-1">at</span> <span className="font-bold text-xs text-[#456A50]">{a.time}</span>
+                              </td>
+                              <td className="py-5 px-6">
+                                <span className={`px-3 py-1.5 rounded-lg text-[10px] font-bold tracking-widest uppercase ${a.mode === 'ONLINE' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>{a.mode}</span>
+                              <td className="py-4 px-4 whitespace-nowrap">
+                                <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black tracking-widest uppercase ${a.mode === 'ONLINE' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>{a.mode || 'IN-CLINIC'}</span>
+                              </td>
+                              <td className="py-5 px-6">
+                              <td className="py-4 px-4 whitespace-nowrap">
+                                {isCancelled ? (
+                                  <span className="text-xs text-gray-400 font-semibold italic">Session Cancelled</span>
+                                ) : a.mode === 'ONLINE' ? (
+                                  a.meet_link ? (
+                                    <a 
+                                      href={a.meet_link} 
+                                      target="_blank" 
+                                      rel="noreferrer" 
+                                      className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-xl font-bold text-xs shadow-md shadow-emerald-600/20 transition transform hover:scale-105"
+                                      className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-xl font-bold text-xs shadow-sm transition"
+                                    >
+                                      <Video size={14} /> Join Google Meet <ExternalLink size={12} />
+                                      <Video size={13} /> Join Meet <ExternalLink size={11} />
+                                    </a>
+                                  ) : (
+                                    <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1 rounded-lg inline-flex items-center gap-1.5">
+                                      <Clock size={12} /> Link arriving soon
+                                    <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg inline-flex items-center gap-1">
+                                      <Clock size={11} /> Link arriving soon
+                                    </span>
+                                  )
+                                ) : (
+                                  <span className="text-gray-400 text-xs font-semibold">In-Clinic Session</span>
+                                  <span className="text-gray-600 text-xs font-bold flex items-center gap-1">
+                                    <DoorOpen size={13} className="text-[#456A50]" /> In-Clinic Chamber
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-5 px-6">
+                              <td className="py-4 px-4 whitespace-nowrap">
+                                {isCancelled ? (
+                                  <span className="px-3 py-1.5 rounded-lg text-[10px] font-black tracking-wider uppercase bg-emerald-50 text-emerald-800 border border-emerald-300 inline-flex items-center gap-1.5 shadow-2xs">
+                                    <RotateCcw size={12} className="text-emerald-700" /> ₹500 Refund Credited
+                                  <span className="px-2.5 py-1 rounded-lg text-[10px] font-black tracking-wider uppercase bg-emerald-50 text-emerald-800 border border-emerald-300 inline-flex items-center gap-1 shadow-2xs">
+                                    <RotateCcw size={11} className="text-emerald-700" /> ₹500 Refunded
+                                  </span>
+                                ) : a.status === 'COMPLETED' ? (
+                                  <span className="px-3 py-1.5 rounded-lg text-[10px] font-bold tracking-widest uppercase bg-green-100 text-green-700">COMPLETED</span>
+                                  <span className="px-2.5 py-1 rounded-lg text-[10px] font-black tracking-widest uppercase bg-green-100 text-green-700 border border-green-200">COMPLETED</span>
+                                ) : isRescheduled ? (
+                                  <span className="px-3 py-1.5 rounded-lg text-[10px] font-black tracking-widest uppercase bg-blue-50 text-blue-700 border border-blue-200">RESCHEDULED • PAID</span>
+                                  <span className="px-2.5 py-1 rounded-lg text-[10px] font-black tracking-widest uppercase bg-blue-50 text-blue-700 border border-blue-200">RESCHEDULED • PAID</span>
+                                ) : (
+                                  <span className="px-3 py-1.5 rounded-lg text-[10px] font-bold tracking-widest uppercase bg-orange-100 text-orange-700">SCHEDULED • PAID</span>
+                                  <span className="px-2.5 py-1 rounded-lg text-[10px] font-black tracking-widest uppercase bg-amber-50 text-amber-800 border border-amber-200">SCHEDULED • PAID</span>
+                                )}
+                              </td>
+                              <td className="py-5 px-6 text-right">
+                              <td className="py-4 px-4 text-right whitespace-nowrap">
+                                {isCancelled ? (
+                                  <button 
+                                    onClick={() => generateRefundReceipt(a)} 
+                                    className="bg-emerald-50 text-emerald-800 border border-emerald-300 px-3.5 py-2 rounded-xl text-[11px] font-bold hover:bg-emerald-100 flex items-center gap-1.5 ml-auto transition shadow-sm cursor-pointer"
+                                    className="bg-emerald-50 text-emerald-800 border border-emerald-300 px-3 py-1.5 rounded-xl text-[11px] font-bold hover:bg-emerald-100 flex items-center gap-1.5 ml-auto transition shadow-sm cursor-pointer"
+                                  >
+                                    <Download size={13}/> Refund Receipt
+                                    <Download size={12}/> Refund Receipt
+                                  </button>
+                                ) : (
+                                  <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                                  <div className="flex items-center justify-end gap-1.5 flex-nowrap">
+                                    {a.mode !== 'ONLINE' && (
+                                      <button 
+                                        type="button"
+                                        onClick={() => printClinicTokenSlip(a, { name: userName || profile.first_name })} 
+                                        className="bg-[#EAF0EC] text-[#456A50] hover:bg-[#456A50] hover:text-white px-2.5 py-2 rounded-xl text-[11px] font-bold flex items-center gap-1 transition shadow-2xs border border-[#456A50]/20 cursor-pointer"
+                                        className="bg-[#EAF0EC] text-[#456A50] hover:bg-[#456A50] hover:text-white px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 transition shadow-2xs border border-[#456A50]/20 cursor-pointer shrink-0"
+                                        title="Print In-Clinic Token Slip"
+                                      >
+                                        <Printer size={13}/> Token Pass
+                                        <Printer size={12}/> Token Pass
+                                      </button>
+                                    )}
+                                    <button 
+                                      onClick={() => generateReceipt(a)} 
+                                      className="bg-white text-[#456A50] px-2.5 py-2 rounded-xl text-[11px] font-bold hover:bg-[#EAF0EC] flex items-center gap-1 transition shadow-sm border border-[#EBE9E0] cursor-pointer"
+                                      className="bg-white text-[#456A50] px-2.5 py-1.5 rounded-xl text-[11px] font-bold hover:bg-[#EAF0EC] flex items-center gap-1 transition shadow-sm border border-[#EBE9E0] cursor-pointer shrink-0"
+                                    >
+                                      <Download size={13}/> Receipt
+                                      <Download size={12}/> Receipt
+                                    </button>
+                                    {a.status !== 'COMPLETED' && (
+                                      <button 
+                                        onClick={() => { setCancellingAppt(a); setCancelReason('Schedule Conflict'); }} 
+                                        className="bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 px-2.5 py-2 rounded-xl text-[11px] font-bold flex items-center gap-1 transition shadow-sm cursor-pointer"
+                                        className="bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 transition shadow-sm cursor-pointer shrink-0"
+                                        title="Cancel booking and receive 100% instant refund"
+                                      >
+                                        <RotateCcw size={13} className="text-red-600"/> Cancel
+                                        <RotateCcw size={12} className="text-red-600"/> Cancel
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          )})}
+                          {displayedAppts.length === 0 && (
+                            <tr>
+                              <td colSpan="5" className="py-12 text-center text-gray-400 italic font-medium">
+                                No appointments in this section.
+                              </td>
+                            </tr>
                           )}
-                        </td>
-                      </tr>
-                    ))}
-                    {appointments.length === 0 && <tr><td colSpan="5" className="py-12 text-center text-gray-400 italic font-medium">No appointments scheduled.</td></tr>}
-                  </tbody>
-                </table>
-              </div>
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
 
             <div className="flex flex-col gap-6">

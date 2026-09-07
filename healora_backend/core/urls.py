@@ -6,11 +6,17 @@ from .views import (
     NutritionistPublishDietPlanView, NutritionistPatientListView, PatientDocumentListCreateView,
     AdminUserListView, AdminAppointmentListView, AdminDeleteUserView, 
     AdminToggleUserStatusView, AdminEditUserView, AdminAuditLogListView,
-    ClinicHolidayListCreateView, ClinicHolidayDeleteView, AppointmentUpdateView
+    ClinicHolidayListCreateView, ClinicHolidayDeleteView, AppointmentUpdateView,
+    RazorpayCreateOrderView, RazorpayVerifyPaymentView, RazorpayRefundPaymentView
 )
 from rest_framework_simplejwt.views import TokenRefreshView
 
 urlpatterns = [
+    # --- RAZORPAY PAYMENT GATEWAY ROUTES ---
+    path('payments/create-order/', RazorpayCreateOrderView.as_view(), name='razorpay-create-order'),
+    path('payments/verify-payment/', RazorpayVerifyPaymentView.as_view(), name='razorpay-verify-payment'),
+    path('payments/refund/', RazorpayRefundPaymentView.as_view(), name='razorpay-refund'),
+
     # --- AUTH ROUTES ---
     path('register/', RegisterView.as_view(), name='register'),
     path('login/', CustomLoginView.as_view(), name='login'), 

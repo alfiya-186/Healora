@@ -38,7 +38,13 @@ class Appointment(models.Model):
     meet_link = models.URLField(max_length=500, blank=True, null=True)
     health_notes = models.TextField(blank=True)
     amount_paid = models.DecimalField(max_digits=6, decimal_places=2, default=0.00)
+    payment_status = models.CharField(max_length=20, default='PENDING')  # PENDING, PAID, REFUNDED, FAILED
+    razorpay_order_id = models.CharField(max_length=100, blank=True, null=True)
+    razorpay_payment_id = models.CharField(max_length=100, blank=True, null=True)
+    razorpay_signature = models.CharField(max_length=200, blank=True, null=True)
+    refund_id = models.CharField(max_length=100, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
 
 
 class DietPlan(models.Model):

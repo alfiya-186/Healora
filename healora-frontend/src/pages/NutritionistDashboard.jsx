@@ -5,9 +5,10 @@ import {
   CheckCircle2, Save, Send, LogOut, HeartPulse, UserCheck, 
   ArrowRight, Sparkles, AlertCircle, Clock, CheckCircle, Scale, 
   Flame, Stethoscope, UserCircle, Layers, Bell, MessageSquare, X, ShieldAlert, Droplets, Moon, Footprints, Star,
-  Video, ExternalLink, Link2, Eye, ShieldCheck, Download, Lock, Unlock
+  Video, ExternalLink, Link2, Eye, ShieldCheck, Download, Lock, Unlock, AlertTriangle, TrendingUp, TrendingDown, Target, Award, Zap,
+  ClipboardList, Edit3
 } from 'lucide-react';
-import { getKeralaPersonalizedOptions, getKeralaMealImage } from '../utils/keralaNutritionEngine.js';
+import { getKeralaPersonalizedOptions, getKeralaMealImage, generatePersonalizedKeralaWeeks } from '../utils/keralaNutritionEngine.js';
 
 const NutritionistDashboard = () => {
   const navigate = useNavigate();
@@ -16,6 +17,7 @@ const NutritionistDashboard = () => {
 
   const [activeTab, setActiveTab] = useState('directory'); // 'directory', 'case', 'messages'
   const [searchQuery, setSearchQuery] = useState('');
+  const [adherenceFilter, setAdherenceFilter] = useState('ALL'); // 'ALL' | 'ATTENTION' | 'HIGH' | 'MODERATE' | 'STRUGGLING'
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [appointments, setAppointments] = useState(() => {
     try { return JSON.parse(localStorage.getItem('healora_all_appointments')) || []; } catch { return []; }
@@ -23,6 +25,62 @@ const NutritionistDashboard = () => {
   const [patientReports, setPatientReports] = useState([]);
   const [selectedReportModal, setSelectedReportModal] = useState(null);
   const [modalViewMode, setModalViewMode] = useState('diagnostic'); // 'diagnostic' or 'original'
+
+  // --- 4. DOCUMENT STATUS & CLINICAL REVIEW ---
+  const [reviewingDocModal, setReviewingDocModal] = useState(null);
+  const [docReviewStatus, setDocReviewStatus] = useState('REVIEWED'); // 'AVAILABLE_FOR_REVIEW' | 'REVIEWED'
+  const [docReviewNotes, setDocReviewNotes] = useState('');
+
+  const handleOpenDocReview = (report) => {
+    setReviewingDocModal(report);
+    setDocReviewStatus(report.status === 'REVIEWED' ? 'REVIEWED' : 'REVIEWED');
+    setDocReviewNotes(report.review_notes || '');
+  };
+
+  const handleSaveDocReview = (e) => {
+    e.preventDefault();
+    if (!reviewingDocModal || !selectedPatient) return;
+
+    const reviewerName = `Dr. ${nutritionistName}`;
+    const reviewedAt = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) + ' at ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    const updatedDoc = {
+      ...reviewingDocModal,
+      status: docReviewStatus,
+      review_notes: docReviewNotes.trim(),
+      reviewed_by: docReviewStatus === 'REVIEWED' ? reviewerName : '',
+      reviewed_at: docReviewStatus === 'REVIEWED' ? reviewedAt : ''
+    };
+
+    // 1. Update local patientReports state
+    const updatedReports = patientReports.map(r => (r.id === updatedDoc.id || r.name === updatedDoc.name) ? updatedDoc : r);
+    setPatientReports(updatedReports);
+
+    // 2. Persist to patient's labReports in localStorage
+    localStorage.setItem(`labReports_${selectedPatient.id}`, JSON.stringify(updatedReports));
+
+    // 3. Persist to all vault
+    const allVault = JSON.parse(localStorage.getItem('healora_all_patient_reports')) || {};
+    allVault[selectedPatient.id] = updatedReports;
+    localStorage.setItem('healora_all_patient_reports', JSON.stringify(allVault));
+
+    // 4. Send notification to Patient Portal
+    if (docReviewStatus === 'REVIEWED') {
+      const patientNotifs = JSON.parse(localStorage.getItem(`healora_notifications_${selectedPatient.id}`)) || [];
+      patientNotifs.unshift({
+        id: Date.now(),
+        title: "Clinical Document Reviewed by Nutritionist",
+        message: `${reviewerName} reviewed your document "${updatedDoc.name}". ${docReviewNotes ? `Note: "${docReviewNotes}"` : 'Status updated to Reviewed.'}`,
+        date: new Date().toLocaleString(),
+        read: false
+      });
+      localStorage.setItem(`healora_notifications_${selectedPatient.id}`, JSON.stringify(patientNotifs));
+    }
+
+    setReviewingDocModal(null);
+    setDocReviewNotes('');
+    alert(`✅ Document marked as "${docReviewStatus === 'REVIEWED' ? 'Reviewed' : 'Available for Review'}"!`);
+  };
 
   const getClinicalReportDetails = (report, patient) => {
     const type = (report?.type || report?.document_type || report?.name || '').toLowerCase();
@@ -147,6 +205,47 @@ const NutritionistDashboard = () => {
   const [chats, setChats] = useState([]);
   const chatEndRef = useRef(null);
 
+  // --- 5. PATIENT CLINICAL HISTORY & LONGITUDINAL TRACKING ---
+  const [historySubTab, setHistorySubTab] = useState('daily_weekly'); // 'daily_weekly' | 'weight' | 'lifestyle' | 'food'
+  const [patientWeightHistory, setPatientWeightHistory] = useState([]);
+  const [newWeightInput, setNewWeightInput] = useState('');
+  const [newWeightDate, setNewWeightDate] = useState(new Date().toISOString().split('T')[0]);
+  const [newWeightNotes, setNewWeightNotes] = useState('');
+  const [historyWeekFilter, setHistoryWeekFilter] = useState('ALL'); // 'ALL' | '1' | '2' | '3' | '4'
+
+  const handleAddWeightEntry = (e) => {
+    e.preventDefault();
+    if (!newWeightInput || !selectedPatient) return;
+    const wVal = parseFloat(newWeightInput);
+    if (isNaN(wVal) || wVal <= 0) {
+      alert('Please enter a valid weight in kg.');
+      return;
+    }
+    const hM = (parseFloat(selectedPatient.height_cm) || 165) / 100;
+    const calcBMI = (wVal / (hM * hM)).toFixed(1);
+
+    const entry = {
+      id: Date.now(),
+      date: newWeightDate || new Date().toISOString().split('T')[0],
+      weight_kg: wVal.toFixed(1),
+      bmi: calcBMI,
+      notes: newWeightNotes || 'Clinical Weigh-in Recorded'
+    };
+    const updated = [entry, ...patientWeightHistory.filter(w => w.date !== entry.date)].sort((a, b) => new Date(b.date) - new Date(a.date));
+    setPatientWeightHistory(updated);
+    localStorage.setItem(`healora_weight_history_${selectedPatient.id}`, JSON.stringify(updated));
+
+    // Also update selected patient's current weight
+    setSelectedPatient(prev => ({ ...prev, weight_kg: entry.weight_kg }));
+    const pProfile = JSON.parse(localStorage.getItem(`healora_profile_${selectedPatient.id}`) || '{}');
+    pProfile.weight_kg = entry.weight_kg;
+    localStorage.setItem(`healora_profile_${selectedPatient.id}`, JSON.stringify(pProfile));
+
+    setNewWeightInput('');
+    setNewWeightNotes('');
+    alert(`✅ Weight record (${entry.weight_kg} kg on ${entry.date}) saved successfully!`);
+  };
+
   // --- PROGRAM-WISE SMART FOOD SUGGESTIONS DATABASE ---
   // --- CLINICAL PERSONALIZED KERALA MEAL SUGGESTION ENGINE (2-3 PERSONALIZED OPTIONS) ---
   const getSuggestionsForPatient = (mealType) => {
@@ -251,9 +350,10 @@ const NutritionistDashboard = () => {
         const apptRes = await fetch('/api/admin-api/appointments/');
         if (apptRes.ok) {
           const apptData = await apptRes.json();
+          const cleanAppts = (Array.isArray(apptData) ? apptData : []).filter(a => a.patient !== 1 && String(a.patient) !== '1');
           if (!cancelled) {
-            setAppointments(apptData);
-            localStorage.setItem('healora_all_appointments', JSON.stringify(apptData));
+            setAppointments(cleanAppts);
+            localStorage.setItem('healora_all_appointments', JSON.stringify(cleanAppts));
           }
         }
       } catch(e) {}
@@ -304,6 +404,18 @@ const NutritionistDashboard = () => {
       reportsFromVault.forEach(r => mergedReportsMap.set(r.id || r.name, r));
       
       setPatientReports(Array.from(mergedReportsMap.values()));
+
+      // Load Weight History
+      const hM = (parseFloat(selectedPatient.height_cm) || 165) / 100;
+      const wKg = parseFloat(selectedPatient.weight_kg) || 65;
+      const patientBMI = (wKg / (hM * hM)).toFixed(1);
+
+      const storedWeightHistory = JSON.parse(localStorage.getItem(`healora_weight_history_${selectedPatient.id}`)) || [
+        { id: 1, date: '2026-08-01', weight_kg: parseFloat(selectedPatient.weight_kg) ? (parseFloat(selectedPatient.weight_kg) + 2.4).toFixed(1) : '67.4', bmi: '24.7', notes: 'Initial Baseline Weigh-in' },
+        { id: 2, date: '2026-08-15', weight_kg: parseFloat(selectedPatient.weight_kg) ? (parseFloat(selectedPatient.weight_kg) + 1.1).toFixed(1) : '66.1', bmi: '24.2', notes: 'Mid-Month Clinical Check-in' },
+        { id: 3, date: new Date().toISOString().split('T')[0], weight_kg: String(selectedPatient.weight_kg || '65.0'), bmi: patientBMI, notes: 'Current Active Record' }
+      ];
+      setPatientWeightHistory(storedWeightHistory);
 
       // Set Evaluation text draft if they didn't send last time
       const allEvals = JSON.parse(localStorage.getItem('healora_evaluations')) || {};
@@ -374,59 +486,20 @@ const NutritionistDashboard = () => {
   const [selectedDay, setSelectedDay] = useState('Sunday');
   const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-  const generateDefaultKeralaWeeks = () => ({
-    1: {
-      Sunday: { breakfast: 'Oats & Ragi Puttu with Spiced Kadala Curry (240 kcal)', drink: 'Amla & Mint Detox Cooler with Chia Seeds (45 kcal)', lunch: 'Kerala Red Matta Rice (1 cup) with Kudampuli Fish Curry & Cheera Thoran (380 kcal)', snack: 'Steamed Nendran Pazham with Cinnamon (120 kcal)', dinner: 'Steamed Wheat Dosa (2 pcs) with Kerala Vegetable Stew (280 kcal)' },
-      Monday: { breakfast: 'Cheera (Red Spinach) & Paneer Dosa with Mint Chammanthi (220 kcal)', drink: 'Kerala Sambharam (Spiced Herbal Buttermilk) (55 kcal)', lunch: 'Brown Rice with Kerala Moru Curry & Cabbage Thoran (340 kcal)', snack: 'Spiced Boiled Cherupayar Sundal with Coconut (140 kcal)', dinner: 'Fish Pollichathu (Banana Leaf Grilled) with Salad (290 kcal)' },
-      Tuesday: { breakfast: 'Steamed Idiyappam with Kerala Vegetable Stew (230 kcal)', drink: 'ABC Detox Juice with Chia Seeds (95 kcal)', lunch: 'Millets with Kerala Sambar & Snake Gourd Thoran (350 kcal)', snack: 'Roasted Makhana with Curry Leaves & Pepper (110 kcal)', dinner: 'Light Moong Dal Matta Kanji with Payar Thoran (260 kcal)' },
-      Wednesday: { breakfast: 'Moringa Leaf 2-Egg White Appam with Chammanthi (210 kcal)', drink: 'Spearmint & Cinnamon Herbal Iced Infusion (20 kcal)', lunch: 'Mathi (Sardine) Pollichathu with Matta Rice & Salad (390 kcal)', snack: 'Fresh Papaya & Pomegranate Bowl with Chia (100 kcal)', dinner: 'Methi Phulka (2 pcs) with Tofu / Paneer Bhurji (290 kcal)' },
-      Thursday: { breakfast: 'Oats & Fenugreek Dosa with Roasted Tomato Chutney (210 kcal)', drink: 'Tender Coconut Water (Elaneer) with Mint (75 kcal)', lunch: 'Quinoa Avial Bowl with Yellow Moong Dal (350 kcal)', snack: 'Steamed Nendran Pazham with Cinnamon (120 kcal)', dinner: 'Steamed Wheat Dosa (2 pcs) with Light Veg Stew (280 kcal)' },
-      Friday: { breakfast: 'Oats & Ragi Puttu with Spiced Kadala Curry (240 kcal)', drink: 'Kerala Sambharam with Ginger & Curry Leaves (55 kcal)', lunch: 'Kerala Red Matta Rice with Kudampuli Fish Curry & Cheera Thoran (380 kcal)', snack: 'Spiced Boiled Cherupayar Sundal (140 kcal)', dinner: 'Fish Pollichathu with Sautéed Green Salad (290 kcal)' },
-      Saturday: { breakfast: 'Cheera & Paneer Dosa with Mint Chammanthi (220 kcal)', drink: 'Turmeric & Ginger Golden Herbal Infusion (35 kcal)', lunch: 'Brown Rice with Moru Curry & Cabbage Thoran (340 kcal)', snack: 'Roasted Makhana with Curry Leaves (110 kcal)', dinner: 'Light Moong Dal Matta Kanji with Payar Thoran (260 kcal)' }
-    },
-    2: {
-      Sunday: { breakfast: 'Cheera & Paneer Dosa with Mint Chammanthi (220 kcal)', drink: 'Kerala Sambharam with Ginger & Curry Leaves (55 kcal)', lunch: 'Kerala Red Matta Rice with Fish Curry & Cheera Thoran (380 kcal)', snack: 'Steamed Nendran Pazham with Cinnamon (120 kcal)', dinner: 'Fish Pollichathu with Garden Salad (290 kcal)' },
-      Monday: { breakfast: 'Oats & Ragi Puttu with Kadala Curry (240 kcal)', drink: 'Amla & Mint Detox Cooler (45 kcal)', lunch: 'Brown Rice with Moru Curry & Cabbage Thoran (340 kcal)', snack: 'Spiced Boiled Cherupayar Sundal (140 kcal)', dinner: 'Steamed Wheat Dosa with Veg Stew (280 kcal)' },
-      Tuesday: { breakfast: 'Moringa Leaf Egg Appam with Chammanthi (230 kcal)', drink: 'Tender Coconut Water with Chia (75 kcal)', lunch: 'Millets with Kerala Sambar & Snake Gourd Thoran (350 kcal)', snack: 'Roasted Makhana with Curry Leaves (110 kcal)', dinner: 'Methi Phulka with Tofu / Paneer Bhurji (290 kcal)' },
-      Wednesday: { breakfast: 'Steamed Idiyappam with Kerala Veg Stew (230 kcal)', drink: 'ABC Detox Juice with Chia Seeds (95 kcal)', lunch: 'Mathi Pollichathu with Matta Rice & Salad (390 kcal)', snack: 'Fresh Papaya Bowl with Chia (100 kcal)', dinner: 'Light Moong Dal Matta Kanji with Payar Thoran (260 kcal)' },
-      Thursday: { breakfast: 'Oats & Fenugreek Dosa with Tomato Chutney (210 kcal)', drink: 'Spearmint Cinnamon Herbal Infusion (20 kcal)', lunch: 'Quinoa Avial Bowl with Moong Dal (350 kcal)', snack: 'Steamed Nendran Pazham with Cinnamon (120 kcal)', dinner: 'Steamed Wheat Dosa with Veg Stew (280 kcal)' },
-      Friday: { breakfast: 'Oats & Ragi Puttu with Kadala Curry (240 kcal)', drink: 'Kerala Sambharam with Ginger (55 kcal)', lunch: 'Kerala Red Matta Rice with Fish Curry & Thoran (380 kcal)', snack: 'Spiced Boiled Cherupayar Sundal (140 kcal)', dinner: 'Fish Pollichathu with Sautéed Greens (290 kcal)' },
-      Saturday: { breakfast: 'Cheera & Paneer Dosa with Mint Chammanthi (220 kcal)', drink: 'Turmeric Ginger Golden Herbal Infusion (35 kcal)', lunch: 'Brown Rice with Moru Curry & Cabbage Thoran (340 kcal)', snack: 'Roasted Makhana with Curry Leaves (110 kcal)', dinner: 'Light Moong Dal Matta Kanji with Payar Thoran (260 kcal)' }
-    },
-    3: {
-      Sunday: { breakfast: 'Oats & Ragi Puttu with Kadala Curry (240 kcal)', drink: 'Amla & Mint Detox Cooler (45 kcal)', lunch: 'Kerala Red Matta Rice with Fish Curry & Cheera Thoran (380 kcal)', snack: 'Steamed Nendran Pazham (120 kcal)', dinner: 'Steamed Wheat Dosa with Veg Stew (280 kcal)' },
-      Monday: { breakfast: 'Cheera & Paneer Dosa with Mint Chammanthi (220 kcal)', drink: 'Kerala Sambharam (55 kcal)', lunch: 'Brown Rice with Moru Curry & Cabbage Thoran (340 kcal)', snack: 'Cherupayar Sundal (140 kcal)', dinner: 'Fish Pollichathu with Salad (290 kcal)' },
-      Tuesday: { breakfast: 'Steamed Idiyappam with Veg Stew (230 kcal)', drink: 'ABC Detox Juice (95 kcal)', lunch: 'Millets with Kerala Sambar & Thoran (350 kcal)', snack: 'Roasted Makhana (110 kcal)', dinner: 'Light Moong Dal Matta Kanji with Thoran (260 kcal)' },
-      Wednesday: { breakfast: 'Moringa Leaf Egg Appam (230 kcal)', drink: 'Spearmint Cinnamon Infusion (20 kcal)', lunch: 'Mathi Pollichathu with Matta Rice (390 kcal)', snack: 'Fresh Papaya Bowl (100 kcal)', dinner: 'Methi Phulka with Paneer Bhurji (290 kcal)' },
-      Thursday: { breakfast: 'Oats & Fenugreek Dosa (210 kcal)', drink: 'Tender Coconut Chia Cooler (75 kcal)', lunch: 'Quinoa Avial Bowl (350 kcal)', snack: 'Steamed Nendran Pazham (120 kcal)', dinner: 'Steamed Wheat Dosa with Stew (280 kcal)' },
-      Friday: { breakfast: 'Oats & Ragi Puttu with Kadala Curry (240 kcal)', drink: 'Kerala Sambharam (55 kcal)', lunch: 'Kerala Red Matta Rice with Fish Curry (380 kcal)', snack: 'Cherupayar Sundal (140 kcal)', dinner: 'Fish Pollichathu with Salad (290 kcal)' },
-      Saturday: { breakfast: 'Cheera & Paneer Dosa (220 kcal)', drink: 'Turmeric Ginger Golden Tea (35 kcal)', lunch: 'Brown Rice with Moru Curry (340 kcal)', snack: 'Roasted Makhana (110 kcal)', dinner: 'Light Moong Dal Matta Kanji (260 kcal)' }
-    },
-    4: {
-      Sunday: { breakfast: 'Oats & Ragi Puttu with Kadala Curry (240 kcal)', drink: 'Amla & Mint Detox Cooler (45 kcal)', lunch: 'Kerala Red Matta Rice with Fish Curry (380 kcal)', snack: 'Steamed Nendran Pazham (120 kcal)', dinner: 'Steamed Wheat Dosa with Veg Stew (280 kcal)' },
-      Monday: { breakfast: 'Cheera & Paneer Dosa with Chammanthi (220 kcal)', drink: 'Kerala Sambharam (55 kcal)', lunch: 'Brown Rice with Moru Curry (340 kcal)', snack: 'Cherupayar Sundal (140 kcal)', dinner: 'Fish Pollichathu with Salad (290 kcal)' },
-      Tuesday: { breakfast: 'Steamed Idiyappam with Stew (230 kcal)', drink: 'ABC Detox Juice (95 kcal)', lunch: 'Millets with Kerala Sambar (350 kcal)', snack: 'Roasted Makhana (110 kcal)', dinner: 'Light Moong Dal Matta Kanji (260 kcal)' },
-      Wednesday: { breakfast: 'Moringa Leaf Egg Appam (230 kcal)', drink: 'Spearmint Cinnamon Infusion (20 kcal)', lunch: 'Mathi Pollichathu with Matta Rice (390 kcal)', snack: 'Fresh Papaya Bowl (100 kcal)', dinner: 'Methi Phulka with Paneer Bhurji (290 kcal)' },
-      Thursday: { breakfast: 'Oats & Fenugreek Dosa (210 kcal)', drink: 'Tender Coconut Chia Cooler (75 kcal)', lunch: 'Quinoa Avial Bowl (350 kcal)', snack: 'Steamed Nendran Pazham (120 kcal)', dinner: 'Steamed Wheat Dosa with Stew (280 kcal)' },
-      Friday: { breakfast: 'Oats & Ragi Puttu with Kadala Curry (240 kcal)', drink: 'Kerala Sambharam (55 kcal)', lunch: 'Kerala Red Matta Rice with Fish Curry (380 kcal)', snack: 'Cherupayar Sundal (140 kcal)', dinner: 'Fish Pollichathu with Salad (290 kcal)' },
-      Saturday: { breakfast: 'Cheera & Paneer Dosa (220 kcal)', drink: 'Turmeric Ginger Golden Tea (35 kcal)', lunch: 'Brown Rice with Moru Curry (340 kcal)', snack: 'Roasted Makhana (110 kcal)', dinner: 'Light Moong Dal Matta Kanji (260 kcal)' }
-    }
-  });
-
   const [monthlyPlanData, setMonthlyPlanData] = useState({
     nutrition_goal: 'Sustainable Fat Loss & Metabolic Optimization (Kerala Protocol)',
     target_calories: 1550,
+    meal_frequency: 5,
     start_date: new Date().toISOString().split('T')[0],
     review_date: new Date(Date.now() + 14*86400000).toISOString().split('T')[0],
     status: 'Draft',
     phase1_status: 'ACTIVE',
-    phase2_status: 'LOCKED_REQUIRES_CONSULTATION', // Weeks 3 & 4 require 2-week follow-up consultation
+    phase2_status: 'LOCKED_REQUIRES_CONSULTATION',
     activity_recommendation: '30 mins brisk walking daily + 15 min core strengthening.',
     lifestyle_recommendation: 'Hydrate 3L daily with Sambharam/Herbal infusions, sleep by 10:30 PM.',
     nutritionist_notes: 'Phase 1: Initial 2-week adaptation. Re-evaluate biomarkers at consultation before Phase 2 progression.',
-    weeks: generateDefaultKeralaWeeks()
+    weeks: generatePersonalizedKeralaWeeks({}, [], 5)
   });
-
 
   useEffect(() => {
     localStorage.setItem('healora_assessments', JSON.stringify(assessments));
@@ -435,6 +508,17 @@ const NutritionistDashboard = () => {
   useEffect(() => {
     localStorage.setItem('healora_care_plans', JSON.stringify(carePlans));
   }, [carePlans]);
+
+  const handleMealFrequencyChange = (newFreq) => {
+    if (!selectedPatient) return;
+    const patientLabDocs = (selectedPatient?.medical_documents || []).concat(patientReports.filter(r => String(r.patient) === String(selectedPatient?.id)));
+    const newWeeks = generatePersonalizedKeralaWeeks(selectedPatient, patientLabDocs, newFreq);
+    setMonthlyPlanData(prev => ({
+      ...prev,
+      meal_frequency: newFreq,
+      weeks: newWeeks
+    }));
+  };
 
   const handleOpenCase = (patient) => {
     setSelectedPatient(patient);
@@ -446,19 +530,56 @@ const NutritionistDashboard = () => {
       setCurrentAssessment({ dietary_assessment: '', lifestyle_assessment: '', physical_activity_assessment: '', nutrition_diagnosis: '' });
     }
 
+    const patientLabDocs = (patient.medical_documents || []).concat(patientReports.filter(r => String(r.patient) === String(patient.id)));
+
     if (carePlans[patient.id]) {
-      setMonthlyPlanData(carePlans[patient.id]);
+      const existing = carePlans[patient.id];
+      const freq = existing.meal_frequency || 5;
+      if (!existing.weeks) {
+        existing.weeks = generatePersonalizedKeralaWeeks(patient, patientLabDocs, freq);
+      }
+      existing.meal_frequency = freq;
+      setMonthlyPlanData(existing);
     } else {
       const programGoals = {
-        'Weight Management': 'Sustainable Fat Loss & Caloric Deficit',
-        'PCOS Care': 'Hormonal Balance & Anti-Inflammatory Diet',
-        'Diabetes Reversal': 'Glycemic Control & Low Carb Matrix',
-        'Muscle Building': 'Hypertrophy & High Protein Matrix'
+        'Weight Management': 'Sustainable Fat Loss & Caloric Deficit (Kerala Protocol)',
+        'Weight Loss': 'Metabolic Reset & Caloric Deficit (Kerala Protocol)',
+        'PCOS Care': 'Hormonal Balance & Anti-Inflammatory Kerala Protocol',
+        'Diabetes Reversal': 'Glycemic Regulation & Low-GI Kerala Protocol',
+        'Thyroid Health': 'Thyroid Optimization & Micronutrient Balance (Kerala Protocol)',
+        'Cholesterol Management': 'Cardiovascular Lipid Balancing Kerala Protocol',
+        'Muscle Building': 'Hypertrophy & High-Protein Kerala Protocol'
       };
-      setMonthlyPlanData(prev => ({
-        ...prev,
-        nutrition_goal: programGoals[patient.enrolled_program || patient.health_goals] || 'Metabolic Optimization & Vitality'
-      }));
+
+      const defaultFreq = 5;
+      const personalizedWeeks = generatePersonalizedKeralaWeeks(patient, patientLabDocs, defaultFreq);
+
+      // Calibrate Target Calories
+      const hM = (parseFloat(patient.height_cm) || 165) / 100;
+      const wKg = parseFloat(patient.weight_kg) || 68;
+      const age = parseFloat(patient.age) || 28;
+      const bmr = Math.round((10 * wKg) + (6.25 * (hM * 100)) - (5 * age) - (patient.gender === 'Male' ? -5 : 161));
+      let targetCals = bmr || 1550;
+      const prog = (patient.enrolled_program || patient.health_goals || '').toLowerCase();
+      if (prog.includes('weight') || prog.includes('loss')) targetCals = Math.max(1350, bmr - 300);
+      else if (prog.includes('muscle') || prog.includes('gain')) targetCals = bmr + 400;
+      else if (prog.includes('pcos')) targetCals = Math.max(1400, bmr - 150);
+      else if (prog.includes('diabet')) targetCals = Math.max(1450, bmr - 200);
+
+      setMonthlyPlanData({
+        nutrition_goal: programGoals[patient.enrolled_program || patient.health_goals] || 'Personalized Kerala Metabolic Protocol',
+        target_calories: targetCals,
+        meal_frequency: defaultFreq,
+        start_date: new Date().toISOString().split('T')[0],
+        review_date: new Date(Date.now() + 14*86400000).toISOString().split('T')[0],
+        status: 'Draft',
+        phase1_status: 'ACTIVE',
+        phase2_status: 'LOCKED_REQUIRES_CONSULTATION',
+        activity_recommendation: '30 mins brisk walking daily + 15 min core strengthening.',
+        lifestyle_recommendation: 'Hydrate 3L daily with Sambharam/Herbal infusions, sleep by 10:30 PM.',
+        nutritionist_notes: 'Phase 1: Initial 2-week adaptation. Re-evaluate biomarkers at consultation before Phase 2 progression.',
+        weeks: personalizedWeeks
+      });
     }
   };
 
@@ -476,15 +597,6 @@ const NutritionistDashboard = () => {
     const a = parseFloat(selectedPatient.age);
     return Math.round((10 * w) + (6.25 * h) - (5 * a) - 161);
   }, [selectedPatient]);
-
-  const filteredPatients = useMemo(() => {
-    const q = searchQuery.toLowerCase().trim();
-    if (!q) return patients;
-    return patients.filter(p => 
-      String(p.id).toLowerCase().includes(q) || 
-      `${p.first_name || ''} ${p.last_name || ''}`.toLowerCase().includes(q)
-    );
-  }, [patients, searchQuery]);
 
   const handleSaveAssessment = (e) => {
     e.preventDefault();
@@ -671,6 +783,190 @@ const NutritionistDashboard = () => {
     navigate('/', { replace: true });
   };
 
+  const handleMessagePatient = (patient) => {
+    setSelectedPatient(patient);
+    setActiveChatContact(String(patient.id));
+    setActiveTab('messages');
+  };
+
+  // --- 🌟 CLINICAL ADHERENCE SCORE & TRIAGE CALCULATION ENGINE 🌟 ---
+  // Only evaluate adherence and struggling for patients who have been assigned/published a meal plan
+  const patientAdherenceMap = useMemo(() => {
+    const globalLogs = JSON.parse(localStorage.getItem('healora_all_wellness_logs')) || [];
+    const allEvals = JSON.parse(localStorage.getItem('healora_all_evaluations')) || {};
+
+    const map = {};
+
+    patients.forEach(patient => {
+      const pId = String(patient.id);
+      
+      // 1. Check if patient has an active/published meal plan
+      const patientCarePlan = carePlans[pId] || 
+        JSON.parse(localStorage.getItem(`healora_patient_dietplan_${pId}`)) || 
+        JSON.parse(localStorage.getItem(`healora_diet_plan_${pId}`)) || null;
+
+      const hasPublishedMealPlan = Boolean(
+        patientCarePlan && (
+          patientCarePlan.status === 'Published' || 
+          (patientCarePlan.weeks && Object.keys(patientCarePlan.weeks).length > 0)
+        )
+      );
+
+      const localLogs = JSON.parse(localStorage.getItem(`healora_wellness_${pId}`)) || [];
+      const mergedMap = new Map();
+      localLogs.forEach(l => mergedMap.set(l.id, l));
+      globalLogs.filter(l => String(l.patientId) === pId).forEach(l => mergedMap.set(l.id, l));
+      const logs = Array.from(mergedMap.values()).sort((a, b) => new Date(b.date) - new Date(a.date));
+
+      // CASE A: Patient has NO meal plan assigned yet -> NOT struggling, just awaiting plan!
+      if (!hasPublishedMealPlan) {
+        map[pId] = {
+          score: null,
+          hasMealPlan: false,
+          status: 'PLAN_PENDING',
+          label: 'Plan Pending',
+          color: 'text-blue-800 bg-blue-50 border-blue-200',
+          barColor: 'bg-blue-300',
+          daysSinceLastLog: null,
+          mealAdherencePct: 0,
+          totalLogs: logs.length,
+          offPlanCount: 0,
+          needsAttention: false, // NOT marked struggling
+          attentionReasons: []
+        };
+        return;
+      }
+
+      // CASE B: Patient HAS a meal plan -> evaluate adherence against their plan
+      if (logs.length === 0) {
+        map[pId] = {
+          score: 0,
+          hasMealPlan: true,
+          status: 'STRUGGLING',
+          label: 'Struggling (No Logs)',
+          color: 'text-red-700 bg-red-50 border-red-200',
+          barColor: 'bg-red-500',
+          daysSinceLastLog: 999,
+          mealAdherencePct: 0,
+          totalLogs: 0,
+          offPlanCount: 0,
+          needsAttention: true,
+          attentionReasons: ['Meal plan assigned but 0 daily logs submitted']
+        };
+        return;
+      }
+
+      // Calculate days since last log
+      const lastLogDate = new Date(logs[0].date);
+      const now = new Date();
+      const diffHours = (now.getTime() - lastLogDate.getTime()) / (1000 * 60 * 60);
+      const daysSinceLastLog = Math.floor(diffHours / 24);
+
+      // Calculate meal completion
+      let totalPrescribed = 0;
+      let totalCompleted = 0;
+      let offPlanCount = 0;
+      let waterGoalsMet = 0;
+
+      const recentLogs = logs.slice(0, 14);
+      recentLogs.forEach(log => {
+        const completedMap = log.completed_slots || {
+          breakfast: log.breakfast_completed,
+          lunch: log.lunch_completed,
+          dinner: log.dinner_completed
+        };
+        const slots = log.prescribed_slots || Object.keys(completedMap);
+        slots.forEach(slotKey => {
+          totalPrescribed++;
+          if (completedMap[slotKey]) totalCompleted++;
+        });
+
+        if (log.ate_other_food) offPlanCount++;
+        if ((log.water_glasses || 0) >= 6) waterGoalsMet++;
+      });
+
+      const mealAdherencePct = totalPrescribed > 0 ? Math.round((totalCompleted / totalPrescribed) * 100) : 0;
+      const waterScore = Math.round((waterGoalsMet / recentLogs.length) * 100);
+      const offPlanPenalty = Math.min(offPlanCount * 7, 25);
+      const recencyPenalty = daysSinceLastLog >= 3 ? 30 : daysSinceLastLog >= 2 ? 15 : 0;
+
+      let finalScore = Math.round((mealAdherencePct * 0.65) + (waterScore * 0.20) + (recentLogs.length >= 4 ? 15 : 5) - offPlanPenalty - recencyPenalty);
+      finalScore = Math.max(5, Math.min(100, finalScore));
+
+      const attentionReasons = [];
+      if (daysSinceLastLog >= 2) attentionReasons.push(`Missed daily tracking (${daysSinceLastLog} days)`);
+      if (finalScore < 60) attentionReasons.push(`Low meal adherence (${finalScore}%)`);
+      if (offPlanCount >= 2) attentionReasons.push(`${offPlanCount} off-plan cheat meals logged`);
+      
+      const patientEval = allEvals[pId] || JSON.parse(localStorage.getItem(`healora_eval_${pId}`)) || null;
+      if (!patientEval) {
+        attentionReasons.push('Weekly evaluation pending');
+      }
+
+      let status = 'HIGH';
+      let label = 'High';
+      let color = 'text-emerald-800 bg-emerald-50 border-emerald-200';
+      let barColor = 'bg-emerald-500';
+
+      if (finalScore < 60) {
+        status = 'STRUGGLING';
+        label = 'Struggling';
+        color = 'text-red-700 bg-red-50 border-red-200';
+        barColor = 'bg-red-500';
+      } else if (finalScore < 85) {
+        status = 'MODERATE';
+        label = 'Moderate';
+        color = 'text-amber-800 bg-amber-50 border-amber-200';
+        barColor = 'bg-amber-500';
+      }
+
+      map[pId] = {
+        score: finalScore,
+        hasMealPlan: true,
+        status,
+        label,
+        color,
+        barColor,
+        daysSinceLastLog,
+        mealAdherencePct,
+        totalLogs: logs.length,
+        offPlanCount,
+        needsAttention: attentionReasons.length > 0 || finalScore < 60 || daysSinceLastLog >= 2,
+        attentionReasons
+      };
+    });
+
+    return map;
+  }, [patients, wellnessLogs, carePlans]);
+
+  // Patients who have a meal plan AND are struggling / needing attention
+  const patientsNeedingAttention = useMemo(() => {
+    return patients.filter(p => {
+      const adh = patientAdherenceMap[String(p.id)];
+      return adh && adh.hasMealPlan && adh.needsAttention;
+    });
+  }, [patients, patientAdherenceMap]);
+
+  // Filtered patients for directory table
+  const filteredPatients = useMemo(() => {
+    return patients.filter(p => {
+      const q = searchQuery.toLowerCase().trim();
+      const matchesSearch = !q || 
+        `${p.first_name || ''} ${p.last_name || ''}`.toLowerCase().includes(q) || 
+        String(p.id).includes(q) || 
+        (p.enrolled_program || '').toLowerCase().includes(q);
+
+      if (!matchesSearch) return false;
+
+      const adh = patientAdherenceMap[String(p.id)];
+      if (adherenceFilter === 'ATTENTION') return adh?.hasMealPlan && adh?.needsAttention;
+      if (adherenceFilter === 'HIGH') return adh?.hasMealPlan && adh?.status === 'HIGH';
+      if (adherenceFilter === 'STRUGGLING') return adh?.hasMealPlan && adh?.status === 'STRUGGLING';
+      if (adherenceFilter === 'PLAN_PENDING') return !adh?.hasMealPlan;
+      return true;
+    });
+  }, [patients, searchQuery, adherenceFilter, patientAdherenceMap]);
+
   return (
     <div className="h-screen w-screen overflow-hidden flex bg-[#FDFCF8] font-sans text-[#1C2C22]">
       
@@ -783,26 +1079,190 @@ const NutritionistDashboard = () => {
           </div>
 
 
-          {/* 1. ASSIGNED PATIENT DIRECTORY + SEARCH */}
+          {/* 1. ASSIGNED PATIENT DIRECTORY + CLINICAL TRIAGE & ADHERENCE */}
           {activeTab === 'directory' && (
             <div className="space-y-6 animate-in fade-in">
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-[#EBE9E0] flex flex-col md:flex-row justify-between items-center gap-4">
-                <div>
-                  <h2 className="text-xl font-black text-[#1C2C22]">My Assigned Patients</h2>
-                  <p className="text-xs text-[#5A6B60] mt-0.5">Showing exact logged-in patient synchronized with session storage.</p>
+
+              {/* 🚨 CLINICAL TRIAGE: PATIENTS NEEDING ATTENTION WIDGET 🚨 */}
+              <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-[#EBE9E0] space-y-6">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-[#EBE9E0] pb-5">
+                  <div className="flex items-center gap-3.5">
+                    <div className={`p-3 rounded-2xl ${patientsNeedingAttention.length > 0 ? 'bg-amber-100 text-amber-900 shadow-2xs' : 'bg-emerald-100 text-emerald-900'}`}>
+                      <AlertTriangle size={22} className={patientsNeedingAttention.length > 0 ? 'text-amber-700 animate-bounce' : 'text-emerald-700'} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-xl font-black text-[#1C2C22]">Patients Needing Attention</h2>
+                        {patientsNeedingAttention.length > 0 ? (
+                          <span className="bg-red-50 text-red-700 text-[11px] font-black px-2.5 py-0.5 rounded-full border border-red-200 shadow-2xs">
+                            {patientsNeedingAttention.length} Patient{patientsNeedingAttention.length > 1 ? 's' : ''} Flagged
+                          </span>
+                        ) : (
+                          <span className="bg-emerald-50 text-emerald-700 text-[11px] font-black px-2.5 py-0.5 rounded-full border border-emerald-200">
+                            All On Track
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-[#5A6B60] mt-0.5">
+                        Automated clinical triage identifying missed daily tracking, low adherence (&lt;60%), or pending weekly evaluations.
+                      </p>
+                    </div>
+                  </div>
+
+                  {patientsNeedingAttention.length > 0 && (
+                    <button
+                      onClick={() => setAdherenceFilter('ATTENTION')}
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition border cursor-pointer ${adherenceFilter === 'ATTENTION' ? 'bg-amber-500 text-white border-amber-600 shadow-xs' : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'}`}
+                    >
+                      Filter Table to Flagged ({patientsNeedingAttention.length})
+                    </button>
+                  )}
                 </div>
-                <div className="relative w-full md:w-80">
-                  <Search className="absolute left-4 top-3.5 text-gray-400" size={16} />
-                  <input 
-                    type="text" 
-                    value={searchQuery} 
-                    onChange={e => setSearchQuery(e.target.value)} 
-                    placeholder="Search by name or ID..." 
-                    className="w-full bg-[#FDFCF8] border border-[#EBE9E0] rounded-2xl py-3 pl-11 pr-4 text-xs outline-none focus:border-[#456A50] transition shadow-inner"
-                  />
+
+                {patientsNeedingAttention.length === 0 ? (
+                  <div className="bg-[#FDFCF8] border border-[#EBE9E0] rounded-2xl p-6 text-center space-y-2">
+                    <div className="w-12 h-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto shadow-2xs">
+                      <CheckCircle2 size={24} />
+                    </div>
+                    <p className="text-sm font-black text-[#1C2C22]">All Patients Are Actively Adhering!</p>
+                    <p className="text-xs text-[#5A6B60] max-w-md mx-auto">
+                      All assigned patients are consistently logging their meals, meeting prescribed targets, and up-to-date on weekly evaluations.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {patientsNeedingAttention.map(patient => {
+                      const adh = patientAdherenceMap[String(patient.id)] || {};
+                      return (
+                        <div key={patient.id} className="bg-[#FDFCF8] border border-[#EBE9E0] hover:border-amber-400 p-5 rounded-2xl shadow-2xs hover:shadow-md transition space-y-4 flex flex-col justify-between">
+                          <div>
+                            <div className="flex justify-between items-start mb-3">
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center font-bold text-[#5A6B60] overflow-hidden border border-gray-200 shadow-2xs">
+                                  {patient.profile_image ? (
+                                    <img src={patient.profile_image} className="w-full h-full object-cover" alt="Profile" />
+                                  ) : (
+                                    <UserCircle size={22} />
+                                  )}
+                                </div>
+                                <div>
+                                  <h3 className="font-black text-sm text-[#1C2C22]">{patient.first_name} {patient.last_name || ''}</h3>
+                                  <span className="text-[10px] text-[#456A50] font-bold block">{patient.enrolled_program || 'Weight Management'}</span>
+                                </div>
+                              </div>
+
+                              {/* Score Badge */}
+                              <div className="text-right">
+                                <span className={`text-xs font-black px-2.5 py-1 rounded-xl border inline-block ${adh.color}`}>
+                                  {adh.score}%
+                                </span>
+                                <span className="block text-[9px] font-extrabold text-[#5A6B60] uppercase tracking-wider mt-0.5">
+                                  {adh.label}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Progress bar */}
+                            <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden mb-3">
+                              <div 
+                                className={`h-full rounded-full transition-all duration-500 ${adh.barColor}`} 
+                                style={{ width: `${Math.min(100, Math.max(5, adh.score))}%` }}
+                              />
+                            </div>
+
+                            {/* Attention Trigger Pills */}
+                            <div className="space-y-1.5">
+                              <p className="text-[9px] font-extrabold text-[#5A6B60] uppercase tracking-widest">Clinical Flags:</p>
+                              <div className="flex flex-wrap gap-1">
+                                {adh.attentionReasons?.map((reason, idx) => (
+                                  <span key={idx} className="text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-200 px-2 py-0.5 rounded-md flex items-center gap-1">
+                                    <AlertCircle size={10} className="text-amber-700 shrink-0" /> {reason}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Quick Action Buttons */}
+                          <div className="flex items-center gap-2 pt-3 border-t border-[#EBE9E0]">
+                            <button 
+                              onClick={() => handleOpenCase(patient)}
+                              className="flex-1 bg-[#1C2C22] hover:bg-[#456A50] text-white py-2 rounded-xl text-xs font-black transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                              Open Case <ArrowRight size={12} />
+                            </button>
+                            <button 
+                              onClick={() => handleMessagePatient(patient)}
+                              className="bg-white hover:bg-emerald-50 text-[#456A50] border border-[#456A50]/20 p-2 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+                              title="Send direct message"
+                            >
+                              <MessageSquare size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* DIRECTORY SEARCH & CATEGORY FILTERS */}
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-[#EBE9E0] space-y-4">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                  <div>
+                    <h2 className="text-xl font-black text-[#1C2C22]">Patient Directory & Adherence</h2>
+                    <p className="text-xs text-[#5A6B60] mt-0.5">Live adherence tracking computed from daily meals, hydration, and protocol compliance.</p>
+                  </div>
+
+                  <div className="relative w-full md:w-80 shrink-0">
+                    <Search className="absolute left-3.5 top-3 text-gray-400" size={14} />
+                    <input 
+                      type="text" 
+                      value={searchQuery} 
+                      onChange={e => setSearchQuery(e.target.value)} 
+                      placeholder="Search patient, ID, or program..." 
+                      className="w-full bg-[#FDFCF8] border border-[#EBE9E0] rounded-xl py-2.5 pl-9 pr-3 text-xs outline-none focus:border-[#456A50] focus:ring-1 focus:ring-[#456A50]/20 transition shadow-inner"
+                    />
+                  </div>
+                </div>
+
+                {/* Category Filter Pills in dedicated responsive row */}
+                <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-gray-100">
+                  <span className="text-[10px] font-black text-[#5A6B60] uppercase tracking-widest mr-1">Filter By:</span>
+                  <button 
+                    onClick={() => setAdherenceFilter('ALL')} 
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${adherenceFilter === 'ALL' ? 'bg-[#1C2C22] text-white shadow-xs' : 'bg-[#FDFCF8] border border-[#EBE9E0] text-[#5A6B60] hover:text-[#1C2C22] hover:bg-gray-100'}`}
+                  >
+                    All ({patients.length})
+                  </button>
+                  <button 
+                    onClick={() => setAdherenceFilter('ATTENTION')} 
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${adherenceFilter === 'ATTENTION' ? 'bg-amber-600 text-white shadow-xs' : 'bg-amber-50/70 border border-amber-200 text-amber-800 hover:bg-amber-100'}`}
+                  >
+                    <span>⚠️</span> Needing Attention ({patientsNeedingAttention.length})
+                  </button>
+                  <button 
+                    onClick={() => setAdherenceFilter('HIGH')} 
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${adherenceFilter === 'HIGH' ? 'bg-emerald-700 text-white shadow-xs' : 'bg-emerald-50/70 border border-emerald-200 text-emerald-800 hover:bg-emerald-100'}`}
+                  >
+                    <span>🟢</span> High Adherence ({patients.filter(p => patientAdherenceMap[String(p.id)]?.hasMealPlan && patientAdherenceMap[String(p.id)]?.status === 'HIGH').length})
+                  </button>
+                  <button 
+                    onClick={() => setAdherenceFilter('STRUGGLING')} 
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${adherenceFilter === 'STRUGGLING' ? 'bg-red-700 text-white shadow-xs' : 'bg-red-50/70 border border-red-200 text-red-800 hover:bg-red-100'}`}
+                  >
+                    <span>🔴</span> Struggling ({patients.filter(p => patientAdherenceMap[String(p.id)]?.hasMealPlan && patientAdherenceMap[String(p.id)]?.status === 'STRUGGLING').length})
+                  </button>
+                  <button 
+                    onClick={() => setAdherenceFilter('PLAN_PENDING')} 
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${adherenceFilter === 'PLAN_PENDING' ? 'bg-blue-700 text-white shadow-xs' : 'bg-blue-50/70 border border-blue-200 text-blue-800 hover:bg-blue-100'}`}
+                  >
+                    <span>📋</span> Plan Pending ({patients.filter(p => !patientAdherenceMap[String(p.id)]?.hasMealPlan).length})
+                  </button>
                 </div>
               </div>
 
+              {/* DIRECTORY TABLE WITH PATIENT ADHERENCE SCORE */}
               <div className="bg-white rounded-3xl shadow-sm border border-[#EBE9E0] overflow-hidden">
                 <table className="w-full text-left text-sm text-[#1C2C22]">
                   <thead className="bg-[#FDFCF8] text-[10px] uppercase font-extrabold text-[#5A6B60] tracking-widest border-b">
@@ -810,41 +1270,104 @@ const NutritionistDashboard = () => {
                       <th className="py-4 px-6">Patient ID</th>
                       <th className="py-4 px-6">Patient Name</th>
                       <th className="py-4 px-6">Enrolled Program</th>
+                      <th className="py-4 px-6">Patient Adherence Score</th>
                       <th className="py-4 px-6">Biometrics</th>
                       <th className="py-4 px-6 text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#EBE9E0]">
-                    {filteredPatients.map(patient => (
+                    {filteredPatients.map(patient => {
+                      const adh = patientAdherenceMap[String(patient.id)] || {
+                        score: null,
+                        hasMealPlan: false,
+                        label: 'Plan Pending',
+                        color: 'text-blue-800 bg-blue-50 border-blue-200',
+                        barColor: 'bg-blue-300',
+                        mealAdherencePct: 0,
+                        totalLogs: 0
+                      };
+
+                      return (
                       <tr key={patient.id} className="hover:bg-[#FDFCF8] transition group">
                         <td className="py-5 px-6 font-bold text-[#456A50]">#{patient.id}</td>
                         <td className="py-5 px-6 font-black text-[#1C2C22] flex items-center gap-3">
                           <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center text-[#5A6B60] font-bold overflow-hidden shadow-sm border border-[#EBE9E0]">
                             {patient.profile_image ? <img src={patient.profile_image} className="w-full h-full object-cover" alt="Profile" /> : <UserCircle size={20}/>}
                           </div>
-                          {patient.first_name || 'Patient'} {patient.last_name || ''}
+                          <div>
+                            <span>{patient.first_name || 'Patient'} {patient.last_name || ''}</span>
+                            {adh.hasMealPlan && adh.needsAttention && (
+                              <span className="ml-2 inline-flex items-center gap-0.5 text-[9px] font-black text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-md">
+                                ⚠️ Needs Follow-up
+                              </span>
+                            )}
+                            {!adh.hasMealPlan && (
+                              <span className="ml-2 inline-flex items-center gap-0.5 text-[9px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded-md">
+                                New • Plan Pending
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="py-5 px-6">
                           <span className="bg-[#EAF0EC] text-[#456A50] px-3 py-1 rounded-lg text-xs font-bold border border-[#456A50]/20">
                             {patient.enrolled_program || patient.health_goals || 'Weight Management'}
                           </span>
                         </td>
+                        <td className="py-5 px-6">
+                          {adh.hasMealPlan ? (
+                            <div className="space-y-1.5 w-40">
+                              <div className="flex justify-between items-center text-xs">
+                                <span className="font-black text-[#1C2C22]">{adh.score}%</span>
+                                <span className={`text-[9px] font-black px-2 py-0.5 rounded-md border ${adh.color}`}>
+                                  {adh.label}
+                                </span>
+                              </div>
+                              <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
+                                <div 
+                                  className={`h-full rounded-full transition-all duration-500 ${adh.barColor}`} 
+                                  style={{ width: `${Math.min(100, Math.max(5, adh.score))}%` }}
+                                />
+                              </div>
+                              <span className="text-[10px] text-[#5A6B60] block font-medium">
+                                {adh.totalLogs} Log{adh.totalLogs === 1 ? '' : 's'} • {adh.mealAdherencePct}% Meals Logged
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="space-y-1 w-40">
+                              <span className="text-[10px] font-black px-2.5 py-1 rounded-lg border bg-blue-50 text-blue-800 border-blue-200 inline-flex items-center gap-1">
+                                <FileText size={11} /> Plan Pending
+                              </span>
+                              <span className="text-[10px] text-[#5A6B60] block font-medium">
+                                Meal protocol not yet assigned
+                              </span>
+                            </div>
+                          )}
+                        </td>
                         <td className="py-5 px-6 text-[#5A6B60]">
                           {patient.age ? `${patient.age} yrs` : 'Age N/A'} • {patient.weight_kg ? `${patient.weight_kg} kg` : 'Weight N/A'}
                         </td>
                         <td className="py-5 px-6 text-right">
-                          <button 
-                            onClick={() => handleOpenCase(patient)}
-                            className="bg-[#456A50] text-white px-5 py-2.5 rounded-xl text-xs font-bold hover:bg-[#35533E] transition shadow-sm inline-flex items-center gap-1.5 ml-auto"
-                          >
-                            Open Case <ArrowRight size={14} />
-                          </button>
+                          <div className="flex items-center justify-end gap-2">
+                            <button 
+                              onClick={() => handleMessagePatient(patient)}
+                              className="bg-white hover:bg-emerald-50 text-[#456A50] border border-[#456A50]/20 p-2 rounded-xl text-xs font-bold transition shadow-2xs cursor-pointer"
+                              title="Message Patient"
+                            >
+                              <MessageSquare size={14} />
+                            </button>
+                            <button 
+                              onClick={() => handleOpenCase(patient)}
+                              className="bg-[#456A50] text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-[#35533E] transition shadow-sm inline-flex items-center gap-1.5 cursor-pointer"
+                            >
+                              Open Case <ArrowRight size={13} />
+                            </button>
+                          </div>
                         </td>
                       </tr>
-                    ))}
+                    )})}
                     {filteredPatients.length === 0 && (
                       <tr>
-                        <td colSpan="5" className="py-16 text-center text-gray-400 italic">No assigned patients match your search criteria.</td>
+                        <td colSpan="6" className="py-16 text-center text-gray-400 italic">No assigned patients match your search or filter criteria.</td>
                       </tr>
                     )}
                   </tbody>
@@ -922,9 +1445,9 @@ const NutritionistDashboard = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#EBE9E0]">
-                    {appointments.map(a => {
+                    {appointments.filter(a => a.patient !== 1 && String(a.patient) !== '1' && patients.some(p => String(p.id) === String(a.patient))).map(a => {
                       const patientObj = patients.find(p => String(p.id) === String(a.patient));
-                      const pName = patientObj ? `${patientObj.first_name} ${patientObj.last_name}` : `Patient #${a.patient}`;
+                      const pName = patientObj ? `${patientObj.first_name} ${patientObj.last_name}` : `Patient`;
                       const pPhone = patientObj?.phone_number || patientObj?.phone;
                       const isToday = (() => {
                         const now = new Date();
@@ -1066,6 +1589,98 @@ const NutritionistDashboard = () => {
                 );
               })()}
 
+              {/* 🌟 CLINICAL ADHERENCE & COMPLIANCE INTELLIGENCE BANNER 🌟 */}
+              {(() => {
+                const adh = patientAdherenceMap[String(selectedPatient.id)] || {
+                  score: 0,
+                  status: 'NO_LOGS',
+                  label: 'No Logs',
+                  color: 'text-gray-500 bg-gray-50 border-gray-200',
+                  barColor: 'bg-gray-300',
+                  mealAdherencePct: 0,
+                  totalLogs: 0,
+                  offPlanCount: 0,
+                  daysSinceLastLog: 0,
+                  attentionReasons: []
+                };
+
+                return (
+                  <div className="bg-white rounded-3xl shadow-sm border border-[#EBE9E0] p-6 sm:p-8 space-y-6">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-[#EBE9E0] pb-5">
+                      <div className="flex items-center gap-3">
+                        <div className={`p-3.5 rounded-2xl ${adh.score >= 80 ? 'bg-emerald-100 text-emerald-800' : adh.score >= 60 ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-800'}`}>
+                          <Award size={24} />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-xl font-black text-[#1C2C22]">Patient Adherence & Behavioral Score</h3>
+                            <span className={`text-xs font-black px-2.5 py-0.5 rounded-xl border ${adh.color}`}>
+                              {adh.label}
+                            </span>
+                          </div>
+                          <p className="text-xs text-[#5A6B60] mt-0.5">
+                            Real-time index calculated from daily prescribed meal slots logged, water goals, and plan fidelity.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+                        <div className="text-right">
+                          <span className="text-3xl font-black text-[#1C2C22]">{adh.score}%</span>
+                          <span className="block text-[10px] font-extrabold text-[#5A6B60] uppercase tracking-wider">Overall Score</span>
+                        </div>
+                        <button
+                          onClick={() => handleMessagePatient(selectedPatient)}
+                          className="bg-[#1C2C22] hover:bg-[#456A50] text-white px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+                        >
+                          <MessageSquare size={14} /> Direct Message
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="bg-[#FDFCF8] p-4 rounded-2xl border border-[#EBE9E0] space-y-1">
+                        <p className="text-[10px] font-extrabold text-[#5A6B60] uppercase tracking-wider flex items-center gap-1">
+                          <Apple size={12} className="text-[#456A50]"/> Meal Slot Compliance
+                        </p>
+                        <p className="text-2xl font-black text-[#1C2C22]">{adh.mealAdherencePct}%</p>
+                        <p className="text-[10px] text-gray-500">of prescribed meals marked eaten</p>
+                      </div>
+
+                      <div className="bg-[#FDFCF8] p-4 rounded-2xl border border-[#EBE9E0] space-y-1">
+                        <p className="text-[10px] font-extrabold text-[#5A6B60] uppercase tracking-wider flex items-center gap-1">
+                          <Flame size={12} className="text-orange-500"/> Total Logs Tracked
+                        </p>
+                        <p className="text-2xl font-black text-[#1C2C22]">{adh.totalLogs}</p>
+                        <p className="text-[10px] text-gray-500">{adh.daysSinceLastLog === 0 ? 'Logged today' : adh.daysSinceLastLog === 999 ? 'No logs yet' : `${adh.daysSinceLastLog} days since last log`}</p>
+                      </div>
+
+                      <div className="bg-[#FDFCF8] p-4 rounded-2xl border border-[#EBE9E0] space-y-1">
+                        <p className="text-[10px] font-extrabold text-[#5A6B60] uppercase tracking-wider flex items-center gap-1">
+                          <AlertTriangle size={12} className="text-amber-600"/> Off-Plan Cheat Food
+                        </p>
+                        <p className={`text-2xl font-black ${adh.offPlanCount > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>
+                          {adh.offPlanCount}
+                        </p>
+                        <p className="text-[10px] text-gray-500">{adh.offPlanCount === 0 ? '100% strict plan adherence' : `${adh.offPlanCount} cheat entries recorded`}</p>
+                      </div>
+
+                      <div className="bg-[#FDFCF8] p-4 rounded-2xl border border-[#EBE9E0] space-y-1">
+                        <p className="text-[10px] font-extrabold text-[#5A6B60] uppercase tracking-wider flex items-center gap-1">
+                          <Target size={12} className="text-purple-600"/> Clinical Triage
+                        </p>
+                        <p className="text-sm font-black text-[#1C2C22] pt-1">
+                          {adh.needsAttention ? '⚠️ Needs Intervention' : '🟢 Adhering Well'}
+                        </p>
+                        <p className="text-[10px] text-gray-500">
+                          {adh.attentionReasons?.length > 0 ? adh.attentionReasons[0] : 'Protocol on schedule'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* HEALTH INFORMATION & AUTOMATED CALCULATIONS */}
               <div className="bg-white rounded-3xl shadow-sm border border-[#EBE9E0] p-8">
                 <div className="flex justify-between items-center mb-6">
@@ -1135,16 +1750,32 @@ const NutritionistDashboard = () => {
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {patientReports.map((report) => (
+                    {patientReports.map((report) => {
+                      const isReviewed = report.status === 'REVIEWED';
+                      return (
                       <div key={report.id || report.name} className="p-4 bg-[#FDFCF8] border border-[#EBE9E0] hover:border-[#456A50]/40 rounded-2xl flex flex-col justify-between gap-3 shadow-2xs transition hover:shadow-xs group">
                         <div className="flex items-start gap-3">
-                          <div className="p-3 bg-[#EAF0EC] text-[#456A50] rounded-xl shrink-0 group-hover:bg-[#456A50] group-hover:text-white transition">
+                          <div className={`p-3 rounded-xl shrink-0 transition ${isReviewed ? 'bg-emerald-50 text-emerald-700' : 'bg-[#EAF0EC] text-[#456A50]'}`}>
                             <FileText size={20} />
                           </div>
                           <div className="overflow-hidden flex-1">
-                            <span className="bg-white border border-[#456A50]/30 text-[#456A50] text-[10px] font-extrabold px-2.5 py-0.5 rounded-md uppercase tracking-wider block w-max max-w-full truncate mb-1">
-                              {report.type || report.document_type || 'Clinical Report'}
-                            </span>
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                              <span className="bg-white border border-[#456A50]/30 text-[#456A50] text-[10px] font-extrabold px-2.5 py-0.5 rounded-md uppercase tracking-wider block w-max max-w-full truncate">
+                                {report.type || report.document_type || 'Clinical Report'}
+                              </span>
+
+                              {/* Document Status Flow Badge */}
+                              {isReviewed ? (
+                                <span className="bg-emerald-50 text-emerald-800 border border-emerald-300 text-[9px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1 shadow-2xs">
+                                  <CheckCircle2 size={11} className="text-emerald-700" /> Reviewed
+                                </span>
+                              ) : (
+                                <span className="bg-amber-50 text-amber-800 border border-amber-300 text-[9px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1 shadow-2xs">
+                                  <Clock size={11} className="text-amber-700" /> Available for Review
+                                </span>
+                              )}
+                            </div>
+
                             <p className="font-bold text-xs text-[#1C2C22] truncate" title={report.name}>{report.name || 'Laboratory Document'}</p>
                             <div className="flex items-center gap-2 mt-1 text-[10px] text-gray-500 font-medium">
                               <span>📅 {report.date || (report.uploaded_at ? new Date(report.uploaded_at).toLocaleDateString() : 'Recent')}</span>
@@ -1153,30 +1784,57 @@ const NutritionistDashboard = () => {
                           </div>
                         </div>
 
-                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EBE9E0]">
-                          <button 
-                            onClick={() => {
-                              setSelectedReportModal(report);
-                              setModalViewMode(report.fileUrl ? 'original' : 'diagnostic');
-                            }} 
-                            className="bg-[#456A50] hover:bg-[#35533E] text-white px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
+                        {/* Nutritionist Clinical Notes Display */}
+                        {isReviewed && report.review_notes && (
+                          <div className="bg-white border border-emerald-200/80 rounded-xl p-2.5 text-xs text-[#1C2C22] shadow-inner">
+                            <p className="font-extrabold text-[#456A50] text-[10px] uppercase tracking-wider flex items-center gap-1.5 mb-0.5">
+                              <ClipboardList size={12}/> Clinical Findings & Diet Adjustments:
+                            </p>
+                            <p className="text-gray-700 italic">"{report.review_notes}"</p>
+                            {report.reviewed_at && (
+                              <p className="text-[9px] text-gray-400 mt-1 text-right">Reviewed by {report.reviewed_by || 'Nutritionist'} on {report.reviewed_at}</p>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-between gap-2 pt-2 border-t border-[#EBE9E0] flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenDocReview(report)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-2xs cursor-pointer ${
+                              isReviewed 
+                                ? 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200' 
+                                : 'bg-[#1C2C22] text-white hover:bg-[#456A50]'
+                            }`}
                           >
-                            <Eye size={13} /> View Document
+                            <CheckCircle size={13} /> {isReviewed ? 'Edit Review Note' : 'Review & Add Note'}
                           </button>
-                          {report.fileUrl && (
-                            <a 
-                              href={report.fileUrl} 
-                              download={report.name} 
-                              target="_blank" 
-                              rel="noreferrer"
-                              className="bg-white hover:bg-gray-50 border border-[#EBE9E0] text-[#1C2C22] px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-2xs"
+
+                          <div className="flex items-center gap-2 ml-auto">
+                            <button 
+                              onClick={() => {
+                                setSelectedReportModal(report);
+                                setModalViewMode(report.fileUrl ? 'original' : 'diagnostic');
+                              }} 
+                              className="bg-[#456A50] hover:bg-[#35533E] text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
                             >
-                              <Download size={13} /> Download
-                            </a>
-                          )}
+                              <Eye size={13} /> View
+                            </button>
+                            {report.fileUrl && (
+                              <a 
+                                href={report.fileUrl} 
+                                download={report.name} 
+                                target="_blank" 
+                                rel="noreferrer"
+                                className="bg-white hover:bg-gray-50 border border-[#EBE9E0] text-[#1C2C22] px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-2xs"
+                              >
+                                <Download size={13} /> Download
+                              </a>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    ))}
+                    )})}
                   </div>
                 )}
               </div>
@@ -1237,28 +1895,107 @@ const NutritionistDashboard = () => {
                     <p className="text-[11px] text-[#5A6B60] mt-1">Review end-of-day reports submitted by {selectedPatient.first_name}.</p>
                   </div>
                   
-                  {/* Logs list */}
-                  <div className="h-64 overflow-y-auto p-6 bg-[#FDFCF8]/50 custom-scrollbar space-y-4 border-b border-[#EBE9E0]">
+                  {/* Logs list with Complete Multi-Meal Check-in Report */}
+                  <div className="h-80 overflow-y-auto p-6 bg-[#FDFCF8]/50 custom-scrollbar space-y-4 border-b border-[#EBE9E0]">
                     {wellnessLogs.length === 0 ? (
                       <div className="flex flex-col items-center justify-center h-full text-gray-400">
                         <Activity size={32} className="mb-2 opacity-50"/>
-                        <p className="text-xs italic font-medium">No wellness logs submitted yet.</p>
+                        <p className="text-xs italic font-medium">No wellness logs submitted by {selectedPatient.first_name} yet.</p>
                       </div>
-                    ) : wellnessLogs.map(log => (
-                      <div key={log.id} className="bg-white border border-[#EBE9E0] p-4 rounded-2xl shadow-sm">
-                        <div className="flex justify-between items-start mb-3 border-b border-gray-100 pb-2">
-                          <p className="font-black text-[#1C2C22] text-xs">{new Date(log.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</p>
-                          {log.ate_other_food ? <span className="bg-red-50 text-red-700 px-2 py-0.5 rounded text-[8px] font-bold border border-red-100 uppercase tracking-widest">Ate Off-Plan</span> : <span className="bg-[#EAF0EC] text-[#456A50] px-2 py-0.5 rounded text-[8px] font-bold border border-[#456A50]/20 uppercase tracking-widest">Followed Plan</span>}
+                    ) : wellnessLogs.map(log => {
+                      const slotLabels = {
+                        pre_breakfast: '🌿 Pre-Breakfast',
+                        breakfast: '🌅 Breakfast',
+                        drink: '🥤 Drink / Smoothie',
+                        lunch: '☀️ Lunch',
+                        snack: '🍎 Snack',
+                        dinner: '🌙 Dinner'
+                      };
+
+                      // Determine this selected patient's active prescribed slots
+                      const allSlotKeys = ['pre_breakfast', 'breakfast', 'drink', 'lunch', 'snack', 'dinner'];
+                      const currentDayPlan = (monthlyPlanData?.weeks?.[selectedWeek || 1]?.[selectedDay || 'Sunday']) || (monthlyPlanData?.weeks?.['1']?.['Sunday']) || {};
+                      const planSlotKeys = Object.keys(currentDayPlan).filter(k => currentDayPlan[k] && allSlotKeys.includes(k));
+
+                      const patientPrescribedSlots = log.prescribed_slots || (planSlotKeys.length > 0 ? planSlotKeys : (monthlyPlanData.meal_frequency === 3 ? ['breakfast', 'lunch', 'dinner'] : monthlyPlanData.meal_frequency === 4 ? ['breakfast', 'lunch', 'snack', 'dinner'] : monthlyPlanData.meal_frequency === 6 ? ['pre_breakfast', 'breakfast', 'drink', 'lunch', 'snack', 'dinner'] : ['breakfast', 'drink', 'lunch', 'snack', 'dinner']));
+
+                      // Only include slots that are prescribed for this patient
+                      const completedMap = {};
+                      patientPrescribedSlots.forEach(slotKey => {
+                        completedMap[slotKey] = log.completed_slots?.[slotKey] !== undefined
+                          ? !!log.completed_slots[slotKey]
+                          : (slotKey === 'breakfast' ? log.breakfast_completed : slotKey === 'lunch' ? log.lunch_completed : slotKey === 'dinner' ? log.dinner_completed : false);
+                      });
+
+                      const activeSlots = Object.keys(completedMap);
+                      const doneCount = Object.values(completedMap).filter(Boolean).length;
+
+                      return (
+                        <div key={log.id} className="bg-white border border-[#EBE9E0] p-4 rounded-2xl shadow-sm space-y-3">
+                          <div className="flex justify-between items-start border-b border-gray-100 pb-2.5">
+                            <div>
+                              <p className="font-black text-[#1C2C22] text-xs">
+                                📅 {new Date(log.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                              </p>
+                              <span className="text-[10px] text-[#456A50] font-black">
+                                {doneCount} of {activeSlots.length} Prescribed Meals Done
+                              </span>
+                            </div>
+                            {log.ate_other_food ? (
+                              <span className="bg-red-50 text-red-700 px-2 py-0.5 rounded text-[8px] font-bold border border-red-100 uppercase tracking-widest">
+                                Ate Off-Plan
+                              </span>
+                            ) : (
+                              <span className="bg-[#EAF0EC] text-[#456A50] px-2 py-0.5 rounded text-[8px] font-bold border border-[#456A50]/20 uppercase tracking-widest">
+                                Followed Protocol
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Individual Meal Slots Breakdown */}
+                          <div>
+                            <p className="text-[9px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1.5">Scheduled Meals Status:</p>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                              {Object.entries(completedMap).map(([slotKey, isDone]) => (
+                                <div 
+                                  key={slotKey} 
+                                  className={`text-[9px] font-bold px-2 py-1 rounded-lg flex items-center justify-between border ${
+                                    isDone 
+                                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200' 
+                                      : 'bg-gray-50 text-gray-400 border-gray-200'
+                                  }`}
+                                >
+                                  <span className="truncate">{slotLabels[slotKey] || slotKey}</span>
+                                  <span className="shrink-0 ml-1">{isDone ? '✓' : '✕'}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Clinical Vitals */}
+                          <div className="grid grid-cols-2 gap-y-2 gap-x-3 text-[10px] text-[#5A6B60] pt-2 border-t border-gray-100">
+                            <p className="flex items-center gap-1.5"><Droplets size={12} className="text-blue-500"/><span className="text-blue-600 font-bold">{log.water_glasses || 0} glasses water</span></p>
+                            <p className="flex items-center gap-1.5 truncate"><Footprints size={12} className="text-green-500 shrink-0"/><span className="truncate">{log.physical_activity || 'No activity'}</span></p>
+                            <p className="flex items-center gap-1.5"><Moon size={12} className="text-purple-500"/><span className="text-purple-600 font-bold">{log.sleep_hours || 0} hrs sleep</span></p>
+                            <p className="flex items-center gap-1.5 truncate"><Activity size={12} className="text-orange-500 shrink-0"/><span className="truncate">{log.mood || 'N/A'}</span></p>
+                          </div>
+
+                          {/* Supplements status */}
+                          <div className="text-[10px] text-gray-600 flex items-center justify-between bg-[#FDFCF8] px-2.5 py-1 rounded-lg border border-[#EBE9E0]">
+                            <span>💊 Supplements Taken:</span>
+                            <span className={`font-bold ${log.supplements_taken ? 'text-green-700' : 'text-gray-400'}`}>
+                              {log.supplements_taken ? '✓ Yes (Compliant)' : '✕ Not Logged'}
+                            </span>
+                          </div>
+
+                          {log.ate_other_food && (
+                            <p className="text-[10px] bg-red-50 p-2 rounded-lg text-red-800 border border-red-100 font-medium">
+                              <span className="font-bold">⚠️ Off-Plan Details:</span> {log.other_food_details}
+                            </p>
+                          )}
                         </div>
-                        <div className="grid grid-cols-2 gap-y-2 gap-x-3 text-[10px] text-[#5A6B60]">
-                          <p className="flex items-center gap-1.5"><Droplets size={12} className="text-blue-500"/><span className="text-blue-600 font-bold">{log.water_glasses} glasses</span></p>
-                          <p className="flex items-center gap-1.5 truncate"><Footprints size={12} className="text-green-500 shrink-0"/><span className="truncate">{log.physical_activity || 'None'}</span></p>
-                          <p className="flex items-center gap-1.5"><Moon size={12} className="text-purple-500"/><span className="text-purple-600 font-bold">{log.sleep_hours} hrs</span></p>
-                          <p className="flex items-center gap-1.5 truncate"><Activity size={12} className="text-orange-500 shrink-0"/><span className="truncate">{log.mood || 'N/A'}</span></p>
-                        </div>
-                        {log.ate_other_food && <p className="mt-2 text-[10px] bg-red-50 p-2 rounded text-red-800 border border-red-100"><span className="font-bold">Cheat Details:</span> {log.other_food_details}</p>}
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
 
                   {/* 🌟 ENHANCED WEEKLY EVALUATION FORM W/ STARS 🌟 */}
@@ -1294,6 +2031,508 @@ const NutritionistDashboard = () => {
                   </div>
                 </div>
 
+              </div>
+
+              {/* 🌟 5. PATIENT CLINICAL HISTORY & LONGITUDINAL TRACKING VAULT 🌟 */}
+              <div className="bg-white rounded-3xl shadow-sm border border-[#EBE9E0] p-6 sm:p-8 space-y-6 animate-in fade-in">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-[#EBE9E0] pb-5">
+                  <div>
+                    <h3 className="text-xl font-black text-[#1C2C22] flex items-center gap-2.5">
+                      <Clock size={22} className="text-[#456A50]"/> 5. Patient Clinical History & Longitudinal Tracking
+                    </h3>
+                    <p className="text-xs text-[#5A6B60] mt-1">
+                      Comprehensive clinical records, longitudinal weight trajectory, lifestyle metrics, and meal history for <strong>{selectedPatient.first_name} {selectedPatient.last_name}</strong>.
+                    </p>
+                  </div>
+
+                  {/* 4 Interactive Sub-tabs */}
+                  <div className="flex flex-wrap items-center gap-1.5 bg-[#FDFCF8] p-1.5 rounded-2xl border border-[#EBE9E0] shadow-2xs">
+                    {[
+                      { id: 'daily_weekly', label: 'Daily/Weekly Records', icon: <Calendar size={14} /> },
+                      { id: 'weight', label: 'Weight History', icon: <Scale size={14} /> },
+                      { id: 'lifestyle', label: 'Lifestyle History', icon: <Footprints size={14} /> },
+                      { id: 'food', label: 'Food History', icon: <Apple size={14} /> }
+                    ].map(tab => (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setHistorySubTab(tab.id)}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+                          historySubTab === tab.id
+                            ? 'bg-[#1C2C22] text-white shadow-sm'
+                            : 'text-[#5A6B60] hover:text-[#1C2C22] hover:bg-gray-100/70'
+                        }`}
+                      >
+                        {tab.icon} {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* --- 5.1 DAILY / WEEKLY RECORDS SUB-TAB --- */}
+                {historySubTab === 'daily_weekly' && (
+                  <div className="space-y-6 animate-in fade-in">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                      <div>
+                        <h4 className="font-black text-sm text-[#1C2C22]">Clinical Tracking Timeline</h4>
+                        <p className="text-xs text-[#5A6B60]">Filter and inspect daily patient adherence reports and weekly summaries.</p>
+                      </div>
+                      <div className="flex items-center gap-1.5 bg-gray-50 p-1 rounded-xl border border-[#EBE9E0]">
+                        {['ALL', '1', '2', '3', '4'].map(wk => (
+                          <button
+                            key={wk}
+                            onClick={() => setHistoryWeekFilter(wk)}
+                            className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                              historyWeekFilter === wk
+                                ? 'bg-[#456A50] text-white shadow-2xs'
+                                : 'text-gray-600 hover:text-black'
+                            }`}
+                          >
+                            {wk === 'ALL' ? 'All Weeks' : `Week ${wk}`}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Summary Metric Cards */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+                      <div className="bg-[#FDFCF8] p-4 rounded-2xl border border-[#EBE9E0]">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-gray-500 block mb-1">Total Logs Logged</span>
+                        <span className="text-2xl font-black text-[#1C2C22]">{wellnessLogs.length}</span>
+                        <span className="text-[10px] text-[#456A50] block mt-0.5 font-bold">Recorded Check-ins</span>
+                      </div>
+                      <div className="bg-[#FDFCF8] p-4 rounded-2xl border border-[#EBE9E0]">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-gray-500 block mb-1">Meal Compliance Rate</span>
+                        <span className="text-2xl font-black text-emerald-700">
+                          {(() => {
+                            if (wellnessLogs.length === 0) return '0%';
+                            const totalDone = wellnessLogs.reduce((acc, log) => {
+                              const done = Object.values(log.completed_slots || {}).filter(Boolean).length || 
+                                ((log.breakfast_completed ? 1 : 0) + (log.lunch_completed ? 1 : 0) + (log.dinner_completed ? 1 : 0));
+                              return acc + done;
+                            }, 0);
+                            const totalPrescribed = wellnessLogs.reduce((acc, log) => {
+                              return acc + (log.prescribed_slots?.length || 3);
+                            }, 0);
+                            return totalPrescribed > 0 ? `${Math.round((totalDone / totalPrescribed) * 100)}%` : '100%';
+                          })()}
+                        </span>
+                        <span className="text-[10px] text-gray-500 block mt-0.5">prescribed meals eaten</span>
+                      </div>
+                      <div className="bg-[#FDFCF8] p-4 rounded-2xl border border-[#EBE9E0]">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-gray-500 block mb-1">Average Daily Water</span>
+                        <span className="text-2xl font-black text-blue-600">
+                          {(() => {
+                            if (wellnessLogs.length === 0) return '0';
+                            const avg = (wellnessLogs.reduce((a, b) => a + (parseFloat(b.water_glasses) || 0), 0) / wellnessLogs.length).toFixed(1);
+                            return `${avg} gls`;
+                          })()}
+                        </span>
+                        <span className="text-[10px] text-gray-500 block mt-0.5">~ 2.2L target / day</span>
+                      </div>
+                      <div className="bg-[#FDFCF8] p-4 rounded-2xl border border-[#EBE9E0]">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-gray-500 block mb-1">Off-Plan Cheat Meals</span>
+                        <span className="text-2xl font-black text-amber-700">
+                          {wellnessLogs.filter(l => l.ate_other_food).length}
+                        </span>
+                        <span className="text-[10px] text-gray-500 block mt-0.5">recorded deviations</span>
+                      </div>
+                    </div>
+
+                    {/* Day-by-Day Detailed Log Cards */}
+                    <div className="space-y-3">
+                      {wellnessLogs.length === 0 ? (
+                        <div className="bg-[#FDFCF8] border border-dashed border-[#EBE9E0] rounded-2xl p-10 text-center">
+                          <Clock size={36} className="mx-auto text-gray-300 mb-2" />
+                          <p className="text-sm font-bold text-gray-600">No Daily Records Submitted Yet</p>
+                          <p className="text-xs text-gray-400 mt-1">When {selectedPatient.first_name} logs their daily meals, water, sleep, and activity, longitudinal reports will be automatically compiled here.</p>
+                        </div>
+                      ) : (
+                        wellnessLogs.map(log => {
+                          const slotsMap = log.completed_slots || {
+                            breakfast: log.breakfast_completed,
+                            lunch: log.lunch_completed,
+                            dinner: log.dinner_completed
+                          };
+                          const slotsDone = Object.values(slotsMap).filter(Boolean).length;
+                          const slotsTotal = Object.keys(slotsMap).length || 3;
+                          const logPct = Math.round((slotsDone / (slotsTotal || 1)) * 100);
+
+                          return (
+                            <div key={log.id} className="bg-[#FDFCF8] border border-[#EBE9E0] rounded-2xl p-4 sm:p-5 hover:border-[#456A50]/40 transition shadow-2xs space-y-3">
+                              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-gray-200/60 pb-3">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-10 h-10 rounded-xl bg-white border border-[#EBE9E0] flex items-center justify-center font-black text-xs text-[#1C2C22] shadow-2xs">
+                                    {new Date(log.date).getDate()}
+                                  </div>
+                                  <div>
+                                    <h5 className="font-black text-xs text-[#1C2C22]">
+                                      {new Date(log.date).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' })}
+                                    </h5>
+                                    <span className="text-[10px] text-gray-500 font-medium">Logged Check-in • {slotsDone}/{slotsTotal} Prescribed Meals Logged</span>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg border ${
+                                    logPct >= 80 ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
+                                    logPct >= 50 ? 'bg-amber-50 text-amber-800 border-amber-200' :
+                                    'bg-red-50 text-red-800 border-red-200'
+                                  }`}>
+                                    {logPct}% Compliance
+                                  </span>
+                                  {log.ate_other_food && (
+                                    <span className="text-[10px] font-black px-2.5 py-1 rounded-lg bg-red-50 text-red-700 border border-red-200">
+                                      ⚠️ Off-Plan
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Slot Checkboxes */}
+                              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2">
+                                {Object.entries(slotsMap).map(([slot, done]) => (
+                                  <div key={slot} className={`p-2 rounded-xl border text-[10px] font-bold flex items-center justify-between ${done ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-white text-gray-400 border-gray-200'}`}>
+                                    <span className="capitalize">{slot.replace('_', ' ')}</span>
+                                    <span>{done ? '✓' : '✕'}</span>
+                                  </div>
+                                ))}
+                              </div>
+
+                              {/* Lifestyle & Vitals summary */}
+                              <div className="flex flex-wrap items-center gap-4 text-xs font-semibold text-gray-600 bg-white p-3 rounded-xl border border-gray-100">
+                                <span className="flex items-center gap-1.5"><Droplets size={13} className="text-blue-500"/> {log.water_glasses || 0} Glasses Water</span>
+                                <span>•</span>
+                                <span className="flex items-center gap-1.5"><Moon size={13} className="text-purple-500"/> {log.sleep_hours || 0} Hours Sleep</span>
+                                <span>•</span>
+                                <span className="flex items-center gap-1.5"><Footprints size={13} className="text-emerald-600"/> {log.physical_activity || 'No workout'}</span>
+                                <span>•</span>
+                                <span className="flex items-center gap-1.5"><Sparkles size={13} className="text-amber-500"/> Mood: {log.mood || 'Normal'}</span>
+                              </div>
+
+                              {log.ate_other_food && log.other_food_details && (
+                                <div className="bg-red-50/70 border border-red-100 rounded-xl p-3 text-xs text-red-900 font-medium">
+                                  <strong>⚠️ Deviation Note:</strong> {log.other_food_details}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* --- 5.2 WEIGHT HISTORY SUB-TAB --- */}
+                {historySubTab === 'weight' && (
+                  <div className="space-y-6 animate-in fade-in">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="bg-[#FDFCF8] p-4 rounded-2xl border border-[#EBE9E0]">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-gray-500 block mb-1">Baseline Weight</span>
+                        <span className="text-2xl font-black text-[#1C2C22]">
+                          {patientWeightHistory.length > 0 ? patientWeightHistory[patientWeightHistory.length - 1].weight_kg : selectedPatient.weight_kg || '65.0'} <span className="text-xs font-medium text-gray-500">kg</span>
+                        </span>
+                        <span className="text-[10px] text-gray-500 block mt-0.5">Initial Consultation Record</span>
+                      </div>
+
+                      <div className="bg-[#EAF0EC] p-4 rounded-2xl border border-[#456A50]/20">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-[#456A50] block mb-1">Current Active Weight</span>
+                        <span className="text-2xl font-black text-[#1C2C22]">
+                          {patientWeightHistory.length > 0 ? patientWeightHistory[0].weight_kg : selectedPatient.weight_kg || '65.0'} <span className="text-xs font-medium text-gray-500">kg</span>
+                        </span>
+                        <span className="text-[10px] text-[#456A50] block mt-0.5 font-bold">Latest Verified Record</span>
+                      </div>
+
+                      <div className="bg-[#FDFCF8] p-4 rounded-2xl border border-[#EBE9E0]">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-gray-500 block mb-1">Total Net Change (Δ)</span>
+                        {(() => {
+                          if (patientWeightHistory.length < 2) {
+                            return <span className="text-2xl font-black text-gray-400">0.0 kg</span>;
+                          }
+                          const latest = parseFloat(patientWeightHistory[0].weight_kg) || 0;
+                          const baseline = parseFloat(patientWeightHistory[patientWeightHistory.length - 1].weight_kg) || 0;
+                          const diff = (latest - baseline).toFixed(1);
+                          const isLoss = parseFloat(diff) < 0;
+
+                          return (
+                            <div className="flex items-center gap-1">
+                              <span className={`text-2xl font-black ${isLoss ? 'text-emerald-700' : 'text-amber-700'}`}>
+                                {parseFloat(diff) > 0 ? `+${diff}` : diff} kg
+                              </span>
+                              {isLoss ? <TrendingDown size={18} className="text-emerald-600" /> : <TrendingUp size={18} className="text-amber-600" />}
+                            </div>
+                          );
+                        })()}
+                        <span className="text-[10px] text-gray-500 block mt-0.5">Trajectory vs Baseline</span>
+                      </div>
+
+                      <div className="bg-purple-50 p-4 rounded-2xl border border-purple-100">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-purple-700 block mb-1">Target Healthy Goal</span>
+                        <span className="text-2xl font-black text-purple-900">
+                          {(() => {
+                            const hM = (parseFloat(selectedPatient.height_cm) || 165) / 100;
+                            return (22.0 * hM * hM).toFixed(1);
+                          })()} <span className="text-xs font-medium text-purple-700">kg</span>
+                        </span>
+                        <span className="text-[10px] text-purple-700 block mt-0.5 font-bold">BMI 22.0 Ideal Range</span>
+                      </div>
+                    </div>
+
+                    {/* Weight Check-in Logging Form */}
+                    <div className="bg-[#FDFCF8] p-5 rounded-2xl border border-[#EBE9E0]">
+                      <h4 className="font-black text-xs text-[#1C2C22] uppercase tracking-wider mb-3 flex items-center gap-2">
+                        <Scale size={16} className="text-[#456A50]" /> Record New Verified Clinical Weigh-in
+                      </h4>
+                      <form onSubmit={handleAddWeightEntry} className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
+                        <div>
+                          <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Check-in Date</label>
+                          <input 
+                            type="date" 
+                            required 
+                            value={newWeightDate} 
+                            onChange={e => setNewWeightDate(e.target.value)} 
+                            className="w-full border border-[#EBE9E0] bg-white rounded-xl p-2.5 text-xs outline-none focus:border-[#456A50]" 
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Weight (in kg)</label>
+                          <input 
+                            type="number" 
+                            step="0.1" 
+                            required 
+                            placeholder="e.g. 64.5" 
+                            value={newWeightInput} 
+                            onChange={e => setNewWeightInput(e.target.value)} 
+                            className="w-full border border-[#EBE9E0] bg-white rounded-xl p-2.5 text-xs outline-none focus:border-[#456A50]" 
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Clinical Observation Notes</label>
+                          <input 
+                            type="text" 
+                            placeholder="e.g. Post-fasting morning weigh-in" 
+                            value={newWeightNotes} 
+                            onChange={e => setNewWeightNotes(e.target.value)} 
+                            className="w-full border border-[#EBE9E0] bg-white rounded-xl p-2.5 text-xs outline-none focus:border-[#456A50]" 
+                          />
+                        </div>
+                        <button
+                          type="submit"
+                          className="bg-[#1C2C22] hover:bg-[#456A50] text-white py-2.5 px-4 rounded-xl text-xs font-bold transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <Save size={14} /> Save Weigh-in
+                        </button>
+                      </form>
+                    </div>
+
+                    {/* Weight Log Chronological Table */}
+                    <div className="bg-white rounded-2xl border border-[#EBE9E0] overflow-hidden">
+                      <table className="w-full text-left text-xs text-[#1C2C22]">
+                        <thead className="bg-[#FDFCF8] text-[10px] uppercase font-black text-gray-500 tracking-wider border-b border-[#EBE9E0]">
+                          <tr>
+                            <th className="py-3 px-4">Date</th>
+                            <th className="py-3 px-4">Weight</th>
+                            <th className="py-3 px-4">Change vs Previous</th>
+                            <th className="py-3 px-4">Calculated BMI</th>
+                            <th className="py-3 px-4">Observation Notes</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#EBE9E0]">
+                          {patientWeightHistory.map((item, index) => {
+                            const prevItem = patientWeightHistory[index + 1];
+                            const diff = prevItem ? (parseFloat(item.weight_kg) - parseFloat(prevItem.weight_kg)).toFixed(1) : '0.0';
+                            const isLoss = parseFloat(diff) < 0;
+
+                            return (
+                              <tr key={item.id || item.date} className="hover:bg-gray-50/70 transition">
+                                <td className="py-3 px-4 font-bold">{item.date}</td>
+                                <td className="py-3 px-4 font-black text-base text-[#1C2C22]">{item.weight_kg} kg</td>
+                                <td className="py-3 px-4">
+                                  {prevItem ? (
+                                    <span className={`font-bold px-2 py-0.5 rounded text-[10px] ${isLoss ? 'bg-emerald-50 text-emerald-800' : parseFloat(diff) === 0 ? 'bg-gray-100 text-gray-600' : 'bg-amber-50 text-amber-800'}`}>
+                                      {parseFloat(diff) > 0 ? `+${diff}` : diff} kg
+                                    </span>
+                                  ) : (
+                                    <span className="text-gray-400 italic text-[10px]">Baseline</span>
+                                  )}
+                                </td>
+                                <td className="py-3 px-4 font-bold text-gray-700">{item.bmi || calculatedBMI}</td>
+                                <td className="py-3 px-4 text-gray-600 font-medium">{item.notes || 'Routine check-in'}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* --- 5.3 LIFESTYLE HISTORY SUB-TAB --- */}
+                {historySubTab === 'lifestyle' && (
+                  <div className="space-y-6 animate-in fade-in">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {/* Sleep Tracking History */}
+                      <div className="bg-[#FDFCF8] p-6 rounded-3xl border border-[#EBE9E0] space-y-4">
+                        <div className="flex justify-between items-center border-b border-[#EBE9E0] pb-3">
+                          <h4 className="font-black text-xs text-[#1C2C22] uppercase tracking-wider flex items-center gap-2">
+                            <Moon size={16} className="text-purple-600" /> Sleep Architecture & Duration History
+                          </h4>
+                          <span className="text-[10px] font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md">
+                            Target: 7–8 hrs / night
+                          </span>
+                        </div>
+                        
+                        <div className="space-y-2.5">
+                          {wellnessLogs.slice(0, 5).map(log => (
+                            <div key={log.id} className="bg-white p-3 rounded-xl border border-gray-100 flex justify-between items-center">
+                              <div>
+                                <span className="font-bold text-xs text-[#1C2C22] block">{log.date}</span>
+                                <span className="text-[10px] text-gray-500">{log.sleep_hours >= 7 ? '✓ Optimal restorative sleep' : '⚠️ Mild sleep deficit'}</span>
+                              </div>
+                              <span className="font-black text-sm text-purple-700 bg-purple-50 px-3 py-1 rounded-lg">
+                                {log.sleep_hours || 0} hrs
+                              </span>
+                            </div>
+                          ))}
+                          {wellnessLogs.length === 0 && <p className="text-xs text-gray-400 italic text-center py-6">No sleep logs submitted yet.</p>}
+                        </div>
+                      </div>
+
+                      {/* Hydration History */}
+                      <div className="bg-[#FDFCF8] p-6 rounded-3xl border border-[#EBE9E0] space-y-4">
+                        <div className="flex justify-between items-center border-b border-[#EBE9E0] pb-3">
+                          <h4 className="font-black text-xs text-[#1C2C22] uppercase tracking-wider flex items-center gap-2">
+                            <Droplets size={16} className="text-blue-500" /> Daily Hydration History
+                          </h4>
+                          <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md">
+                            Target: 8–10 glasses (2.5L)
+                          </span>
+                        </div>
+                        
+                        <div className="space-y-2.5">
+                          {wellnessLogs.slice(0, 5).map(log => (
+                            <div key={log.id} className="bg-white p-3 rounded-xl border border-gray-100 flex justify-between items-center">
+                              <div>
+                                <span className="font-bold text-xs text-[#1C2C22] block">{log.date}</span>
+                                <span className="text-[10px] text-gray-500">{log.water_glasses >= 8 ? '✓ Hydration goal met' : '⚠️ Sub-optimal hydration'}</span>
+                              </div>
+                              <span className="font-black text-sm text-blue-600 bg-blue-50 px-3 py-1 rounded-lg">
+                                {log.water_glasses || 0} glasses ({((log.water_glasses || 0) * 0.25).toFixed(1)} L)
+                              </span>
+                            </div>
+                          ))}
+                          {wellnessLogs.length === 0 && <p className="text-xs text-gray-400 italic text-center py-6">No water logs submitted yet.</p>}
+                        </div>
+                      </div>
+
+                      {/* Physical Activity & Steps */}
+                      <div className="bg-[#FDFCF8] p-6 rounded-3xl border border-[#EBE9E0] space-y-4">
+                        <div className="flex justify-between items-center border-b border-[#EBE9E0] pb-3">
+                          <h4 className="font-black text-xs text-[#1C2C22] uppercase tracking-wider flex items-center gap-2">
+                            <Footprints size={16} className="text-emerald-600" /> Physical Activity & Exercise History
+                          </h4>
+                        </div>
+                        <div className="space-y-2.5">
+                          {wellnessLogs.slice(0, 5).map(log => (
+                            <div key={log.id} className="bg-white p-3 rounded-xl border border-gray-100 flex justify-between items-center">
+                              <div>
+                                <span className="font-bold text-xs text-[#1C2C22] block">{log.date}</span>
+                                <span className="text-[10px] text-gray-500">{log.physical_activity || 'Routine physical activity'}</span>
+                              </div>
+                              <span className="font-bold text-xs text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg">
+                                Logged
+                              </span>
+                            </div>
+                          ))}
+                          {wellnessLogs.length === 0 && <p className="text-xs text-gray-400 italic text-center py-6">No exercise logs submitted yet.</p>}
+                        </div>
+                      </div>
+
+                      {/* Vitality & Mood Trends */}
+                      <div className="bg-[#FDFCF8] p-6 rounded-3xl border border-[#EBE9E0] space-y-4">
+                        <div className="flex justify-between items-center border-b border-[#EBE9E0] pb-3">
+                          <h4 className="font-black text-xs text-[#1C2C22] uppercase tracking-wider flex items-center gap-2">
+                            <Sparkles size={16} className="text-amber-500" /> Vitality, Mood & Energy Trends
+                          </h4>
+                        </div>
+                        <div className="space-y-2.5">
+                          {wellnessLogs.slice(0, 5).map(log => (
+                            <div key={log.id} className="bg-white p-3 rounded-xl border border-gray-100 flex justify-between items-center">
+                              <div>
+                                <span className="font-bold text-xs text-[#1C2C22] block">{log.date}</span>
+                                <span className="text-[10px] text-gray-500">Supplements: {log.supplements_taken ? '✓ Taken' : '✕ Missed'}</span>
+                              </div>
+                              <span className="font-bold text-xs text-amber-800 bg-amber-50 px-3 py-1 rounded-lg">
+                                {log.mood || 'Normal'}
+                              </span>
+                            </div>
+                          ))}
+                          {wellnessLogs.length === 0 && <p className="text-xs text-gray-400 italic text-center py-6">No vitality logs submitted yet.</p>}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* --- 5.4 FOOD HISTORY SUB-TAB --- */}
+                {historySubTab === 'food' && (
+                  <div className="space-y-6 animate-in fade-in">
+                    <div className="bg-[#FDFCF8] p-6 rounded-3xl border border-[#EBE9E0] space-y-4">
+                      <div className="flex justify-between items-center border-b border-[#EBE9E0] pb-3">
+                        <div>
+                          <h4 className="font-black text-sm text-[#1C2C22]">Nutritional Log & Meal Intake Vault</h4>
+                          <p className="text-xs text-[#5A6B60]">History of prescribed meals completed versus patient logged meals and off-plan entries.</p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        {wellnessLogs.length === 0 ? (
+                          <div className="p-8 text-center text-gray-400 italic">
+                            No meal logs submitted yet by {selectedPatient.first_name}.
+                          </div>
+                        ) : (
+                          wellnessLogs.map(log => {
+                            const slots = log.completed_slots || {
+                              breakfast: log.breakfast_completed,
+                              lunch: log.lunch_completed,
+                              dinner: log.dinner_completed
+                            };
+                            return (
+                              <div key={log.id} className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-200/70 shadow-2xs space-y-3">
+                                <div className="flex justify-between items-center border-b border-gray-100 pb-2.5">
+                                  <span className="font-black text-xs text-[#1C2C22]">📅 {log.date}</span>
+                                  {log.ate_other_food ? (
+                                    <span className="text-[10px] font-black bg-red-50 text-red-700 border border-red-200 px-2.5 py-0.5 rounded-full">
+                                      ⚠️ Off-Plan Foods Recorded
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] font-black bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+                                      ✓ 100% Plan Compliance
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+                                  {Object.entries(slots).map(([slotKey, isEaten]) => (
+                                    <div key={slotKey} className={`p-2.5 rounded-xl border flex items-center justify-between ${isEaten ? 'bg-emerald-50/50 border-emerald-200 text-emerald-900' : 'bg-gray-50 border-gray-200 text-gray-400'}`}>
+                                      <span className="font-bold capitalize">{slotKey.replace('_', ' ')}</span>
+                                      <span className="font-black">{isEaten ? '✓ Eaten' : '✕ Missed'}</span>
+                                    </div>
+                                  ))}
+                                </div>
+
+                                {log.ate_other_food && (
+                                  <div className="bg-red-50 p-3 rounded-xl border border-red-100 text-xs text-red-800">
+                                    <strong>Off-Plan Details:</strong> {log.other_food_details || 'Patient logged additional snacks/cheat meal.'}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* 4-WEEK MONTHLY STRUCTURED CARE PLAN CREATOR */}
@@ -1400,199 +2639,103 @@ const NutritionistDashboard = () => {
                       </div>
                     </div>
 
-                    {/* Meal Fields with 2-3 Personalized Suggestion Dropdowns & Custom Input */}
+                    {/* CLINICAL MEAL FREQUENCY & TIMETABLE SELECTOR */}
+                    <div className="bg-white p-4 rounded-2xl border border-[#EBE9E0] flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-2xs">
+                      <div>
+                        <h5 className="text-xs font-black text-[#1C2C22] flex items-center gap-1.5">
+                          <Apple size={15} className="text-[#456A50]" /> Prescribed Meal Frequency for {selectedPatient.first_name}
+                        </h5>
+                        <p className="text-[11px] text-[#5A6B60] mt-0.5">Customize daily meal slots based on clinical pathology, insulin spikes & lifestyle routine.</p>
+                      </div>
+
+                      <div className="flex flex-wrap gap-1.5 bg-[#FDFCF8] p-1.5 rounded-xl border border-[#EBE9E0]">
+                        {[
+                          { count: 3, label: '3 Meals', desc: 'B, L, D' },
+                          { count: 4, label: '4 Meals', desc: 'B, L, Snack, D' },
+                          { count: 5, label: '5 Meals (Standard)', desc: 'B, Drink, L, Snack, D' },
+                          { count: 6, label: '6 Meals (Clinical)', desc: 'Pre-B, B, Drink, L, Snack, D' }
+                        ].map(m => (
+                          <button
+                            key={m.count}
+                            type="button"
+                            onClick={() => handleMealFrequencyChange(m.count)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
+                              (monthlyPlanData.meal_frequency || 5) === m.count 
+                                ? 'bg-[#456A50] text-white shadow-xs' 
+                                : 'text-gray-700 hover:bg-gray-200/60'
+                            }`}
+                          >
+                            <span>{m.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Meal Fields with Dynamic Personalized Suggestion Dropdowns & Real Images */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 pt-2">
-                      
-                      {/* 1. Breakfast */}
-                      <div className="space-y-1.5 bg-white p-4 rounded-2xl border border-[#EBE9E0] shadow-2xs flex flex-col justify-between">
-                        <div>
-                          <div className="flex justify-between items-center mb-2">
-                            <label className="block text-[10px] font-black text-orange-600 uppercase tracking-widest">🌅 Breakfast</label>
-                            <span className="text-[10px] text-gray-400 font-bold">W{selectedWeek} • {selectedDay}</span>
-                          </div>
-                          <div className="relative h-24 rounded-xl overflow-hidden mb-2.5 bg-gray-100 border border-gray-100 shadow-2xs">
-                            <img 
-                              src={getKeralaMealImage(monthlyPlanData.weeks?.[selectedWeek]?.[selectedDay]?.breakfast, 'breakfast')} 
-                              alt="Breakfast preview" 
-                              className="w-full h-full object-cover transition-transform duration-500 hover:scale-105" 
-                            />
-                          </div>
-                          <select 
-                            onChange={(e) => { 
-                              if(e.target.value && e.target.value !== '__custom__') {
-                                handleMealChange('breakfast', e.target.value); 
-                              }
-                            }}
-                            className="w-full border border-orange-200 bg-orange-50/50 rounded-xl p-2.5 text-xs font-semibold text-[#1C2C22] outline-none focus:ring-1 focus:ring-orange-400 cursor-pointer mb-2"
-                          >
-                            <option value="">💡 2-3 Tailored Options for {selectedPatient.first_name}...</option>
-                            {getSuggestionsForPatient('breakfast').map((opt, i) => (
-                              <option key={i} value={opt}>✨ Option {i + 1}: {opt}</option>
-                            ))}
-                            <option value="__custom__">✍️ Custom food (Type below)...</option>
-                          </select>
-                        </div>
-                        <input 
-                          type="text" 
-                          value={monthlyPlanData.weeks?.[selectedWeek]?.[selectedDay]?.breakfast || ''} 
-                          onChange={e => handleMealChange('breakfast', e.target.value)} 
-                          placeholder="Type custom breakfast..." 
-                          className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2.5 text-xs outline-none focus:border-[#456A50] text-[#1C2C22] font-medium" 
-                        />
-                      </div>
+                      {(() => {
+                        const slotDefs = {
+                          pre_breakfast: { key: 'pre_breakfast', label: '🌿 Pre-Breakfast Tonic', text: 'text-emerald-700', border: 'border-emerald-200', bg: 'bg-emerald-50/50', ring: 'focus:ring-emerald-400', placeholder: 'Type herbal infusion / morning tonic...' },
+                          breakfast: { key: 'breakfast', label: '🌅 Breakfast', text: 'text-orange-700', border: 'border-orange-200', bg: 'bg-orange-50/50', ring: 'focus:ring-orange-400', placeholder: 'Type custom breakfast...' },
+                          drink: { key: 'drink', label: '🥤 Clinical Drink / Smoothie', text: 'text-teal-700', border: 'border-teal-200', bg: 'bg-teal-50/50', ring: 'focus:ring-teal-400', placeholder: 'Type beverage / smoothie...' },
+                          lunch: { key: 'lunch', label: '☀️ Lunch', text: 'text-yellow-700', border: 'border-yellow-200', bg: 'bg-yellow-50/50', ring: 'focus:ring-yellow-400', placeholder: 'Type custom lunch...' },
+                          snack: { key: 'snack', label: '🍎 Evening Snack', text: 'text-green-700', border: 'border-green-200', bg: 'bg-green-50/50', ring: 'focus:ring-green-400', placeholder: 'Type custom snack...' },
+                          dinner: { key: 'dinner', label: '🌙 Dinner', text: 'text-blue-700', border: 'border-blue-200', bg: 'bg-blue-50/50', ring: 'focus:ring-blue-400', placeholder: 'Type custom dinner...' },
+                        };
 
-                      {/* 2. Clinical Drink / Smoothie */}
-                      <div className="space-y-1.5 bg-white p-4 rounded-2xl border border-[#EBE9E0] shadow-2xs flex flex-col justify-between">
-                        <div>
-                          <div className="flex justify-between items-center mb-2">
-                            <label className="block text-[10px] font-black text-teal-600 uppercase tracking-widest">🥤 Clinical Drink / Smoothie</label>
-                            <span className="text-[10px] text-gray-400 font-bold">W{selectedWeek} • {selectedDay}</span>
-                          </div>
-                          <div className="relative h-24 rounded-xl overflow-hidden mb-2.5 bg-gray-100 border border-gray-100 shadow-2xs">
-                            <img 
-                              src={getKeralaMealImage(monthlyPlanData.weeks?.[selectedWeek]?.[selectedDay]?.drink, 'drink')} 
-                              alt="Drink preview" 
-                              className="w-full h-full object-cover transition-transform duration-500 hover:scale-105" 
-                            />
-                          </div>
-                          <select 
-                            onChange={(e) => { 
-                              if(e.target.value && e.target.value !== '__custom__') {
-                                handleMealChange('drink', e.target.value); 
-                              }
-                            }}
-                            className="w-full border border-teal-200 bg-teal-50/50 rounded-xl p-2.5 text-xs font-semibold text-[#1C2C22] outline-none focus:ring-1 focus:ring-teal-400 cursor-pointer mb-2"
-                          >
-                            <option value="">💡 2-3 Tailored Drinks for {selectedPatient.first_name}...</option>
-                            {getSuggestionsForPatient('drink').map((opt, i) => (
-                              <option key={i} value={opt}>✨ Option {i + 1}: {opt}</option>
-                            ))}
-                            <option value="__custom__">✍️ Custom drink (Type below)...</option>
-                          </select>
-                        </div>
-                        <input 
-                          type="text" 
-                          value={monthlyPlanData.weeks?.[selectedWeek]?.[selectedDay]?.drink || ''} 
-                          onChange={e => handleMealChange('drink', e.target.value)} 
-                          placeholder="Type custom beverage / smoothie..." 
-                          className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2.5 text-xs outline-none focus:border-[#456A50] text-[#1C2C22] font-medium" 
-                        />
-                      </div>
+                        const count = monthlyPlanData.meal_frequency || 5;
+                        let activeSlots = [slotDefs.breakfast, slotDefs.drink, slotDefs.lunch, slotDefs.snack, slotDefs.dinner];
+                        if (count === 3) activeSlots = [slotDefs.breakfast, slotDefs.lunch, slotDefs.dinner];
+                        else if (count === 4) activeSlots = [slotDefs.breakfast, slotDefs.lunch, slotDefs.snack, slotDefs.dinner];
+                        else if (count === 6) activeSlots = [slotDefs.pre_breakfast, slotDefs.breakfast, slotDefs.drink, slotDefs.lunch, slotDefs.snack, slotDefs.dinner];
 
-                      {/* 3. Lunch */}
-                      <div className="space-y-1.5 bg-white p-4 rounded-2xl border border-[#EBE9E0] shadow-2xs flex flex-col justify-between">
-                        <div>
-                          <div className="flex justify-between items-center mb-2">
-                            <label className="block text-[10px] font-black text-yellow-600 uppercase tracking-widest">☀️ Lunch</label>
-                            <span className="text-[10px] text-gray-400 font-bold">W{selectedWeek} • {selectedDay}</span>
-                          </div>
-                          <div className="relative h-24 rounded-xl overflow-hidden mb-2.5 bg-gray-100 border border-gray-100 shadow-2xs">
-                            <img 
-                              src={getKeralaMealImage(monthlyPlanData.weeks?.[selectedWeek]?.[selectedDay]?.lunch, 'lunch')} 
-                              alt="Lunch preview" 
-                              className="w-full h-full object-cover transition-transform duration-500 hover:scale-105" 
-                            />
-                          </div>
-                          <select 
-                            onChange={(e) => { 
-                              if(e.target.value && e.target.value !== '__custom__') {
-                                handleMealChange('lunch', e.target.value); 
-                              }
-                            }}
-                            className="w-full border border-yellow-200 bg-yellow-50/50 rounded-xl p-2.5 text-xs font-semibold text-[#1C2C22] outline-none focus:ring-1 focus:ring-yellow-400 cursor-pointer mb-2"
-                          >
-                            <option value="">💡 2-3 Tailored Options for {selectedPatient.first_name}...</option>
-                            {getSuggestionsForPatient('lunch').map((opt, i) => (
-                              <option key={i} value={opt}>✨ Option {i + 1}: {opt}</option>
-                            ))}
-                            <option value="__custom__">✍️ Custom food (Type below)...</option>
-                          </select>
-                        </div>
-                        <input 
-                          type="text" 
-                          value={monthlyPlanData.weeks?.[selectedWeek]?.[selectedDay]?.lunch || ''} 
-                          onChange={e => handleMealChange('lunch', e.target.value)} 
-                          placeholder="Type custom lunch..." 
-                          className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2.5 text-xs outline-none focus:border-[#456A50] text-[#1C2C22] font-medium" 
-                        />
-                      </div>
+                        return activeSlots.map(slot => {
+                          const mealVal = monthlyPlanData.weeks?.[selectedWeek]?.[selectedDay]?.[slot.key] || '';
+                          const imgUrl = getKeralaMealImage(mealVal, slot.key);
 
-                      {/* 4. Snack */}
-                      <div className="space-y-1.5 bg-white p-4 rounded-2xl border border-[#EBE9E0] shadow-2xs flex flex-col justify-between">
-                        <div>
-                          <div className="flex justify-between items-center mb-2">
-                            <label className="block text-[10px] font-black text-green-600 uppercase tracking-widest">🍎 Snack</label>
-                            <span className="text-[10px] text-gray-400 font-bold">W{selectedWeek} • {selectedDay}</span>
-                          </div>
-                          <div className="relative h-24 rounded-xl overflow-hidden mb-2.5 bg-gray-100 border border-gray-100 shadow-2xs">
-                            <img 
-                              src={getKeralaMealImage(monthlyPlanData.weeks?.[selectedWeek]?.[selectedDay]?.snack, 'snack')} 
-                              alt="Snack preview" 
-                              className="w-full h-full object-cover transition-transform duration-500 hover:scale-105" 
-                            />
-                          </div>
-                          <select 
-                            onChange={(e) => { 
-                              if(e.target.value && e.target.value !== '__custom__') {
-                                handleMealChange('snack', e.target.value); 
-                              }
-                            }}
-                            className="w-full border border-green-200 bg-green-50/50 rounded-xl p-2.5 text-xs font-semibold text-[#1C2C22] outline-none focus:ring-1 focus:ring-green-400 cursor-pointer mb-2"
-                          >
-                            <option value="">💡 2-3 Tailored Options for {selectedPatient.first_name}...</option>
-                            {getSuggestionsForPatient('snack').map((opt, i) => (
-                              <option key={i} value={opt}>✨ Option {i + 1}: {opt}</option>
-                            ))}
-                            <option value="__custom__">✍️ Custom food (Type below)...</option>
-                          </select>
-                        </div>
-                        <input 
-                          type="text" 
-                          value={monthlyPlanData.weeks?.[selectedWeek]?.[selectedDay]?.snack || ''} 
-                          onChange={e => handleMealChange('snack', e.target.value)} 
-                          placeholder="Type custom snack..." 
-                          className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2.5 text-xs outline-none focus:border-[#456A50] text-[#1C2C22] font-medium" 
-                        />
-                      </div>
-
-                      {/* 5. Dinner */}
-                      <div className="space-y-1.5 bg-white p-4 rounded-2xl border border-[#EBE9E0] shadow-2xs flex flex-col justify-between">
-                        <div>
-                          <div className="flex justify-between items-center mb-2">
-                            <label className="block text-[10px] font-black text-blue-600 uppercase tracking-widest">🌙 Dinner</label>
-                            <span className="text-[10px] text-gray-400 font-bold">W{selectedWeek} • {selectedDay}</span>
-                          </div>
-                          <div className="relative h-24 rounded-xl overflow-hidden mb-2.5 bg-gray-100 border border-gray-100 shadow-2xs">
-                            <img 
-                              src={getKeralaMealImage(monthlyPlanData.weeks?.[selectedWeek]?.[selectedDay]?.dinner, 'dinner')} 
-                              alt="Dinner preview" 
-                              className="w-full h-full object-cover transition-transform duration-500 hover:scale-105" 
-                            />
-                          </div>
-                          <select 
-                            onChange={(e) => { 
-                              if(e.target.value && e.target.value !== '__custom__') {
-                                handleMealChange('dinner', e.target.value); 
-                              }
-                            }}
-                            className="w-full border border-blue-200 bg-blue-50/50 rounded-xl p-2.5 text-xs font-semibold text-[#1C2C22] outline-none focus:ring-1 focus:ring-blue-400 cursor-pointer mb-2"
-                          >
-                            <option value="">💡 2-3 Tailored Options for {selectedPatient.first_name}...</option>
-                            {getSuggestionsForPatient('dinner').map((opt, i) => (
-                              <option key={i} value={opt}>✨ Option {i + 1}: {opt}</option>
-                            ))}
-                            <option value="__custom__">✍️ Custom food (Type below)...</option>
-                          </select>
-                        </div>
-                        <input 
-                          type="text" 
-                          value={monthlyPlanData.weeks?.[selectedWeek]?.[selectedDay]?.dinner || ''} 
-                          onChange={e => handleMealChange('dinner', e.target.value)} 
-                          placeholder="Type custom dinner..." 
-                          className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2.5 text-xs outline-none focus:border-[#456A50] text-[#1C2C22] font-medium" 
-                        />
-                      </div>
-
+                          return (
+                            <div key={slot.key} className="space-y-1.5 bg-white p-4 rounded-2xl border border-[#EBE9E0] shadow-2xs flex flex-col justify-between">
+                              <div>
+                                <div className="flex justify-between items-center mb-2">
+                                  <label className={`block text-[10px] font-black uppercase tracking-widest ${slot.text}`}>
+                                    {slot.label}
+                                  </label>
+                                  <span className="text-[10px] text-gray-400 font-bold">W{selectedWeek} • {selectedDay}</span>
+                                </div>
+                                <div className="relative h-28 rounded-xl overflow-hidden mb-2.5 bg-gray-100 border border-gray-100 shadow-2xs">
+                                  <img 
+                                    src={imgUrl} 
+                                    alt={slot.label} 
+                                    onError={(e) => { e.target.onerror = null; e.target.src = getKeralaMealImage(mealVal, slot.key); }}
+                                    className="w-full h-full object-cover transition-transform duration-500 hover:scale-105" 
+                                  />
+                                </div>
+                                <select 
+                                  onChange={(e) => { 
+                                    if(e.target.value && e.target.value !== '__custom__') {
+                                      handleMealChange(slot.key, e.target.value); 
+                                    }
+                                  }}
+                                  className={`w-full border ${slot.border} ${slot.bg} rounded-xl p-2.5 text-xs font-semibold text-[#1C2C22] outline-none focus:ring-1 ${slot.ring} cursor-pointer mb-2`}
+                                >
+                                  <option value="">💡 2-3 Tailored Options for {selectedPatient.first_name}...</option>
+                                  {getSuggestionsForPatient(slot.key).map((opt, i) => (
+                                    <option key={i} value={opt}>✨ Option {i + 1}: {opt}</option>
+                                  ))}
+                                  <option value="__custom__">✍️ Custom food (Type below)...</option>
+                                </select>
+                              </div>
+                              <input 
+                                type="text" 
+                                value={mealVal} 
+                                onChange={e => handleMealChange(slot.key, e.target.value)} 
+                                placeholder={slot.placeholder} 
+                                className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2.5 text-xs outline-none focus:border-[#456A50] text-[#1C2C22] font-medium" 
+                              />
+                            </div>
+                          );
+                        });
+                      })()}
                     </div>
                   </div>
 
@@ -1924,6 +3067,118 @@ const NutritionistDashboard = () => {
         );
       })()}
 
+      {/* 🌟 4. DOCUMENT STATUS & CLINICAL REVIEW MODAL 🌟 */}
+      {reviewingDocModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-[#EBE9E0] space-y-5 animate-in zoom-in-95">
+            <div className="flex justify-between items-start border-b border-[#EBE9E0] pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-[#EAF0EC] text-[#456A50] rounded-2xl">
+                  <FileText size={22} />
+                </div>
+                <div>
+                  <h4 className="font-black text-lg text-[#1C2C22]">Review Clinical Document</h4>
+                  <p className="text-xs text-[#5A6B60] mt-0.5">
+                    Patient: <strong>{selectedPatient?.first_name} {selectedPatient?.last_name}</strong>
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setReviewingDocModal(null)} 
+                className="text-gray-400 hover:text-gray-600 p-1.5 rounded-xl hover:bg-gray-100 transition cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Document Details Strip */}
+            <div className="bg-[#FDFCF8] border border-[#EBE9E0] rounded-2xl p-4 space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold text-[#1C2C22] truncate">{reviewingDocModal.name}</span>
+                <span className="text-[10px] bg-white border border-[#EBE9E0] px-2 py-0.5 rounded font-black text-[#456A50]">
+                  {reviewingDocModal.type || 'Clinical Report'}
+                </span>
+              </div>
+              <p className="text-[10px] text-gray-500">
+                Uploaded: {reviewingDocModal.date || 'Recent'} • Size: {reviewingDocModal.size || 'Standard'}
+              </p>
+            </div>
+
+            <form onSubmit={handleSaveDocReview} className="space-y-4">
+              {/* Status Flow Selection */}
+              <div>
+                <label className="block text-[10px] font-black text-[#5A6B60] uppercase tracking-wider mb-2">
+                  Document Review Status
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setDocReviewStatus('AVAILABLE_FOR_REVIEW')}
+                    className={`p-3 rounded-2xl border text-left transition flex items-center justify-between cursor-pointer ${
+                      docReviewStatus === 'AVAILABLE_FOR_REVIEW'
+                        ? 'bg-amber-50 border-amber-300 text-amber-900 ring-2 ring-amber-400/30'
+                        : 'bg-[#FDFCF8] border-[#EBE9E0] text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    <div>
+                      <p className="text-xs font-bold">Available for Review</p>
+                      <p className="text-[10px] text-amber-700">Pending Evaluation</p>
+                    </div>
+                    {docReviewStatus === 'AVAILABLE_FOR_REVIEW' && <Clock size={16} className="text-amber-600 shrink-0" />}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setDocReviewStatus('REVIEWED')}
+                    className={`p-3 rounded-2xl border text-left transition flex items-center justify-between cursor-pointer ${
+                      docReviewStatus === 'REVIEWED'
+                        ? 'bg-emerald-50 border-emerald-300 text-emerald-900 ring-2 ring-emerald-400/30'
+                        : 'bg-[#FDFCF8] border-[#EBE9E0] text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    <div>
+                      <p className="text-xs font-bold">Reviewed</p>
+                      <p className="text-[10px] text-emerald-700">Verified by Nutritionist</p>
+                    </div>
+                    {docReviewStatus === 'REVIEWED' && <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Optional Review Note */}
+              <div>
+                <label className="block text-[10px] font-black text-[#5A6B60] uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                  <span>Nutritionist Findings & Dietary Note <span className="text-gray-400 font-normal lowercase">(optional)</span></span>
+                  <span className="text-emerald-700 font-bold text-[9px]">Visible to Patient</span>
+                </label>
+                <textarea
+                  rows="3"
+                  value={docReviewNotes}
+                  onChange={e => setDocReviewNotes(e.target.value)}
+                  placeholder="e.g., Blood glucose is within normal limits. Recommend maintaining current complex carbohydrate intake."
+                  className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-2xl p-3 text-xs outline-none focus:border-[#456A50] transition shadow-inner resize-none"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setReviewingDocModal(null)}
+                  className="w-1/3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3 rounded-2xl text-xs transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="w-2/3 bg-[#1C2C22] hover:bg-[#456A50] text-white font-bold py-3 rounded-2xl text-xs transition shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Save size={15} /> Save Document Review
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       <style>{`
 

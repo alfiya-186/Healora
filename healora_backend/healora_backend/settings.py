@@ -143,3 +143,9 @@ import os
 # Media files (Uploaded Lab Reports & Prescriptions)
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+# Razorpay Payment Gateway Configuration
+# Default to standard test keys or read from environment
+RAZORPAY_KEY_ID = os.environ.get('RAZORPAY_KEY_ID', 'rzp_test_5173HealoraKey')
+RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET', 'testSecretHealora2026')
+RAZORPAY_CURRENCY = 'INR'

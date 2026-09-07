@@ -11,109 +11,117 @@
  */
 
 export const KERALA_FOOD_IMAGES = {
-  // Breakfasts
-  puttu_kadala: '/foods/puttu_idli.jpg',
-  idiyappam_stew: '/foods/puttu_idli.jpg',
-  appam_egg: '/foods/dosa_chilla.jpg',
-  cheera_dosa: '/foods/dosa_chilla.jpg',
-  dosa_chilla: '/foods/dosa_chilla.jpg',
-  oats_kanji: '/foods/kanji_porridge.jpg',
-  rava_idli: '/foods/puttu_idli.jpg',
-  sprout_upma: '/foods/cherupayar_sundal.jpg',
+  // Breakfasts (Appam, Puttu, Dosa, Idli, Idiyappam, Kanji)
+  puttu_kadala: 'https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&w=800&q=80',
+  idiyappam_stew: 'https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&w=800&q=80',
+  appam_egg: 'https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&w=800&q=80',
+  cheera_dosa: 'https://images.unsplash.com/photo-1668236543090-82eba5ee5976?auto=format&fit=crop&w=800&q=80',
+  dosa_chilla: 'https://images.unsplash.com/photo-1668236543090-82eba5ee5976?auto=format&fit=crop&w=800&q=80',
+  oats_kanji: 'https://images.unsplash.com/photo-1517673132405-a56a62b18caf?auto=format&fit=crop&w=800&q=80',
+  rava_idli: 'https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&w=800&q=80',
+  sprout_upma: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80',
 
   // Beverages / Smoothies / Drinks (Glasses of authentic drinks)
-  sambharam: '/foods/sambharam_buttermilk.jpg',
-  amla_cooler: '/foods/amla_cooler.jpg',
-  abc_detox: '/foods/abc_juice.jpg',
-  elaneer_chia: '/foods/elaneer_coconut.jpg',
-  spearmint_tea: '/foods/herbal_tea.jpg',
-  golden_turmeric_tea: '/foods/turmeric_tea.jpg',
-  moringa_smoothie: '/foods/green_smoothie.jpg',
-  pavakka_detox: '/foods/green_smoothie.jpg',
+  sambharam: 'https://images.unsplash.com/photo-1556881286-fc6915169721?auto=format&fit=crop&w=800&q=80',
+  amla_cooler: 'https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?auto=format&fit=crop&w=800&q=80',
+  abc_detox: 'https://images.unsplash.com/photo-1553530666-ba11a7da3888?auto=format&fit=crop&w=800&q=80',
+  elaneer_chia: 'https://images.unsplash.com/photo-1525385133512-2f3bdd039054?auto=format&fit=crop&w=800&q=80',
+  spearmint_tea: 'https://images.unsplash.com/photo-1556679343-c7306c1976bc?auto=format&fit=crop&w=800&q=80',
+  golden_turmeric_tea: 'https://images.unsplash.com/photo-1615485290382-441e4d049cb5?auto=format&fit=crop&w=800&q=80',
+  moringa_smoothie: 'https://images.unsplash.com/photo-1610970881699-44a5587cabec?auto=format&fit=crop&w=800&q=80',
+  pavakka_detox: 'https://images.unsplash.com/photo-1610970881699-44a5587cabec?auto=format&fit=crop&w=800&q=80',
 
-  // Lunches
-  matta_fish_curry: '/foods/fish_curry.jpg',
-  matta_moru_thoran: '/foods/sambar_rice_thali.jpg',
-  millet_sambar_avial: '/foods/sambar_rice_thali.jpg',
-  mathi_pollichathu: '/foods/fish_pollichathu.jpg',
-  pepper_chicken_salad: '/foods/pepper_chicken.jpg',
-  soya_peas_chapati: '/foods/phulka_roti.jpg',
-  paneer_thoran_quinoa: '/foods/paneer_subzi.jpg',
-  quinoa_avial: '/foods/quinoa_avial.jpg',
+  // Lunches (Matta Rice, Fish Curry, Pollichathu, Sambar Thali, Moru Curry, Quinoa Avial, Pepper Chicken)
+  matta_fish_curry: 'https://images.unsplash.com/photo-1626777552726-4a6b54c97e46?auto=format&fit=crop&w=800&q=80',
+  matta_moru_thoran: 'https://images.unsplash.com/photo-1610057099435-0254cb6c5253?auto=format&fit=crop&w=800&q=80',
+  millet_sambar_avial: 'https://images.unsplash.com/photo-1610057099443-fde8c4d50f91?auto=format&fit=crop&w=800&q=80',
+  mathi_pollichathu: 'https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?auto=format&fit=crop&w=800&q=80',
+  pepper_chicken_salad: 'https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=800&q=80',
+  soya_peas_chapati: 'https://images.unsplash.com/photo-1565557623262-b51c2513a641?auto=format&fit=crop&w=800&q=80',
+  paneer_thoran_quinoa: 'https://images.unsplash.com/photo-1567188040759-fb8a883dc6d8?auto=format&fit=crop&w=800&q=80',
+  quinoa_avial: 'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=800&q=80',
 
-  // Snacks (Healthy bowls of sundal, makhana, fruits)
-  steamed_pazham: '/foods/steamed_pazham.jpg',
-  cherupayar_sundal: '/foods/cherupayar_sundal.jpg',
-  roasted_makhana: '/foods/makhana_seeds.jpg',
-  papaya_chia: '/foods/papaya_fruit.jpg',
-  nuts_greentea: '/foods/makhana_seeds.jpg',
+  // Snacks (Steamed Pazham, Cherupayar Sundal, Makhana, Papaya Fruit, Mixed Nuts)
+  steamed_pazham: 'https://images.unsplash.com/photo-1571771894821-ce9b6c11b08e?auto=format&fit=crop&w=800&q=80',
+  cherupayar_sundal: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80',
+  roasted_makhana: 'https://images.unsplash.com/photo-1599599810769-bcde5a160d32?auto=format&fit=crop&w=800&q=80',
+  papaya_chia: 'https://images.unsplash.com/photo-1517282009859-f000ec3b26fe?auto=format&fit=crop&w=800&q=80',
+  nuts_greentea: 'https://images.unsplash.com/photo-1508746829417-e6f548d8d6ed?auto=format&fit=crop&w=800&q=80',
 
-  // Dinners
-  wheat_dosa_stew: '/foods/dosa_chilla.jpg',
-  fish_greens_dinner: '/foods/fish_pollichathu.jpg',
-  matta_kanji_payar: '/foods/kanji_porridge.jpg',
-  methi_phulka_tofu: '/foods/phulka_roti.jpg',
-  grilled_chicken_soup: '/foods/soup_stew.jpg',
+  // Dinners (Phulka Roti with Paneer, Wheat Dosa, Matta Kanji, Fish Greens, Clear Soup)
+  wheat_dosa_stew: 'https://images.unsplash.com/photo-1668236543090-82eba5ee5976?auto=format&fit=crop&w=800&q=80',
+  fish_greens_dinner: 'https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?auto=format&fit=crop&w=800&q=80',
+  matta_kanji_payar: 'https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=800&q=80',
+  methi_phulka_tofu: 'https://images.unsplash.com/photo-1565557623262-b51c2513a641?auto=format&fit=crop&w=800&q=80',
+  grilled_chicken_soup: 'https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=800&q=80',
 };
 
 /**
- * Returns accurate food image URL based on Kerala dish name
+ * Returns accurate food image URL based on Kerala dish name and mealType
  */
 export const getKeralaMealImage = (mealName = '', mealType = 'breakfast') => {
   const n = String(mealName).toLowerCase();
+  const type = String(mealType).toLowerCase();
 
-  // Beverages & Smoothies
-  if (n.includes('sambharam') || n.includes('buttermilk') || n.includes('moru') || n.includes('chaas')) return KERALA_FOOD_IMAGES.sambharam;
-  if (n.includes('amla') || n.includes('cucumber') || n.includes('cooler') || n.includes('mint cooler')) return KERALA_FOOD_IMAGES.amla_cooler;
-  if (n.includes('abc') || n.includes('beetroot') || n.includes('apple beet') || n.includes('detox juice')) return KERALA_FOOD_IMAGES.abc_detox;
-  if (n.includes('elaneer') || n.includes('coconut') || n.includes('chia cooler')) return KERALA_FOOD_IMAGES.elaneer_chia;
-  if (n.includes('spearmint') || n.includes('cinnamon') || n.includes('herbal infusion') || n.includes('iced infusion')) return KERALA_FOOD_IMAGES.spearmint_tea;
-  if (n.includes('turmeric') || n.includes('golden') || n.includes('ginger') || n.includes('tea')) return KERALA_FOOD_IMAGES.golden_turmeric_tea;
-  if (n.includes('moringa') || n.includes('green glow') || n.includes('smoothie')) return KERALA_FOOD_IMAGES.moringa_smoothie;
-  if (n.includes('pavakka') || n.includes('bitter gourd')) return KERALA_FOOD_IMAGES.pavakka_detox;
+  // 1. BEVERAGES & DRINKS / SMOOTHIES
+  if (type === 'drink' || type === 'smoothie' || type === 'beverage') {
+    if (n.includes('sambharam') || n.includes('buttermilk') || n.includes('moru') || n.includes('chaas')) return KERALA_FOOD_IMAGES.sambharam;
+    if (n.includes('amla') || n.includes('cucumber') || n.includes('cooler') || n.includes('mint cooler')) return KERALA_FOOD_IMAGES.amla_cooler;
+    if (n.includes('abc') || n.includes('beetroot') || n.includes('apple beet') || n.includes('detox juice')) return KERALA_FOOD_IMAGES.abc_detox;
+    if (n.includes('elaneer') || n.includes('coconut') || n.includes('chia cooler')) return KERALA_FOOD_IMAGES.elaneer_chia;
+    if (n.includes('spearmint') || n.includes('cinnamon') || n.includes('herbal infusion') || n.includes('iced infusion')) return KERALA_FOOD_IMAGES.spearmint_tea;
+    if (n.includes('turmeric') || n.includes('golden') || n.includes('ginger') || n.includes('tea')) return KERALA_FOOD_IMAGES.golden_turmeric_tea;
+    if (n.includes('moringa') || n.includes('green glow') || n.includes('smoothie')) return KERALA_FOOD_IMAGES.moringa_smoothie;
+    if (n.includes('pavakka') || n.includes('bitter gourd')) return KERALA_FOOD_IMAGES.pavakka_detox;
+    return KERALA_FOOD_IMAGES.sambharam;
+  }
 
-  // Specific Breakfast Dishes
-  if (n.includes('chilla') || n.includes('cheela') || n.includes('methi moong') || n.includes('moong dal chilla')) return KERALA_FOOD_IMAGES.dosa_chilla;
-  if (n.includes('puttu') || n.includes('kadala')) return KERALA_FOOD_IMAGES.puttu_kadala;
-  if (n.includes('idiyappam') || (n.includes('stew') && mealType === 'breakfast')) return KERALA_FOOD_IMAGES.idiyappam_stew;
-  if (n.includes('appam') && (n.includes('egg') || n.includes('moringa'))) return KERALA_FOOD_IMAGES.appam_egg;
-  if (n.includes('dosa') || n.includes('cheera') || n.includes('spinach')) return KERALA_FOOD_IMAGES.cheera_dosa;
-  if (n.includes('kanji') || n.includes('porridge') || n.includes('oats')) return KERALA_FOOD_IMAGES.oats_kanji;
-  if (n.includes('idli')) return KERALA_FOOD_IMAGES.rava_idli;
-  if (n.includes('upma') || n.includes('sprout')) return KERALA_FOOD_IMAGES.sprout_upma;
+  // 2. BREAKFAST DISHES
+  if (type === 'breakfast') {
+    if (n.includes('appam')) return KERALA_FOOD_IMAGES.appam_egg;
+    if (n.includes('puttu') || n.includes('kadala')) return KERALA_FOOD_IMAGES.puttu_kadala;
+    if (n.includes('idiyappam') || n.includes('stew')) return KERALA_FOOD_IMAGES.idiyappam_stew;
+    if (n.includes('dosa') || n.includes('cheera') || n.includes('chilla') || n.includes('cheela')) return KERALA_FOOD_IMAGES.cheera_dosa;
+    if (n.includes('kanji') || n.includes('porridge') || n.includes('oats')) return KERALA_FOOD_IMAGES.oats_kanji;
+    if (n.includes('idli')) return KERALA_FOOD_IMAGES.rava_idli;
+    if (n.includes('upma') || n.includes('sprout')) return KERALA_FOOD_IMAGES.sprout_upma;
+    return KERALA_FOOD_IMAGES.appam_egg;
+  }
 
-  // Lunches
-  if (n.includes('kudampuli') || (n.includes('fish') && n.includes('curry')) || n.includes('meen')) return KERALA_FOOD_IMAGES.matta_fish_curry;
-  if (n.includes('pollichathu') || n.includes('mathi') || n.includes('ayala') || n.includes('salmon')) return KERALA_FOOD_IMAGES.mathi_pollichathu;
-  if (n.includes('moru curry') || n.includes('cabbage thoran')) return KERALA_FOOD_IMAGES.matta_moru_thoran;
-  if (n.includes('sambar') || n.includes('millet') || n.includes('avial bowl')) return KERALA_FOOD_IMAGES.millet_sambar_avial;
-  if (n.includes('quinoa') || n.includes('avial')) return KERALA_FOOD_IMAGES.quinoa_avial;
-  if (n.includes('chicken') || n.includes('pepper roast') || n.includes('salad')) return KERALA_FOOD_IMAGES.pepper_chicken_salad;
-  if (n.includes('soya') || n.includes('chapati') || n.includes('phulka')) return KERALA_FOOD_IMAGES.soya_peas_chapati;
-  if (n.includes('paneer') || n.includes('thoran')) return KERALA_FOOD_IMAGES.paneer_thoran_quinoa;
+  // 3. LUNCH DISHES
+  if (type === 'lunch') {
+    if (n.includes('kudampuli') || (n.includes('fish') && n.includes('curry')) || n.includes('meen')) return KERALA_FOOD_IMAGES.matta_fish_curry;
+    if (n.includes('pollichathu') || n.includes('mathi') || n.includes('ayala') || n.includes('salmon')) return KERALA_FOOD_IMAGES.mathi_pollichathu;
+    if (n.includes('moru curry') || n.includes('cabbage thoran')) return KERALA_FOOD_IMAGES.matta_moru_thoran;
+    if (n.includes('sambar') || n.includes('millet') || n.includes('thoran')) return KERALA_FOOD_IMAGES.millet_sambar_avial;
+    if (n.includes('quinoa') || n.includes('avial')) return KERALA_FOOD_IMAGES.quinoa_avial;
+    if (n.includes('chicken') || n.includes('pepper roast')) return KERALA_FOOD_IMAGES.pepper_chicken_salad;
+    if (n.includes('soya') || n.includes('chapati')) return KERALA_FOOD_IMAGES.soya_peas_chapati;
+    if (n.includes('paneer')) return KERALA_FOOD_IMAGES.paneer_thoran_quinoa;
+    return KERALA_FOOD_IMAGES.millet_sambar_avial;
+  }
 
-  // Snacks
-  if (n.includes('pazham') || n.includes('nendran') || n.includes('banana')) return KERALA_FOOD_IMAGES.steamed_pazham;
-  if (n.includes('cherupayar') || n.includes('sundal') || n.includes('green gram') || n.includes('boiled')) return KERALA_FOOD_IMAGES.cherupayar_sundal;
-  if (n.includes('makhana') || n.includes('curry leaves') || n.includes('fox nut')) return KERALA_FOOD_IMAGES.roasted_makhana;
-  if (n.includes('papaya') || n.includes('fruit')) return KERALA_FOOD_IMAGES.papaya_chia;
-  if (n.includes('walnut') || n.includes('green tea') || n.includes('seeds') || n.includes('nuts')) return KERALA_FOOD_IMAGES.nuts_greentea;
+  // 4. SNACK DISHES
+  if (type === 'snack') {
+    if (n.includes('pazham') || n.includes('nendran') || n.includes('banana')) return KERALA_FOOD_IMAGES.steamed_pazham;
+    if (n.includes('cherupayar') || n.includes('sundal') || n.includes('green gram') || n.includes('boiled')) return KERALA_FOOD_IMAGES.cherupayar_sundal;
+    if (n.includes('makhana') || n.includes('curry leaves') || n.includes('fox nut')) return KERALA_FOOD_IMAGES.roasted_makhana;
+    if (n.includes('papaya') || n.includes('fruit') || n.includes('pomegranate')) return KERALA_FOOD_IMAGES.papaya_chia;
+    if (n.includes('walnut') || n.includes('green tea') || n.includes('seeds') || n.includes('nuts')) return KERALA_FOOD_IMAGES.nuts_greentea;
+    return KERALA_FOOD_IMAGES.steamed_pazham;
+  }
 
-  // Dinners
-  if (n.includes('wheat dosa') || (n.includes('dosa') && mealType === 'dinner')) return KERALA_FOOD_IMAGES.wheat_dosa_stew;
-  if (n.includes('fish') && mealType === 'dinner') return KERALA_FOOD_IMAGES.fish_greens_dinner;
-  if (n.includes('kanji') || n.includes('payar')) return KERALA_FOOD_IMAGES.matta_kanji_payar;
-  if (n.includes('methi') || n.includes('phulka') || n.includes('tofu') || n.includes('bhurji') || n.includes('roti')) return KERALA_FOOD_IMAGES.methi_phulka_tofu;
-  if (n.includes('soup') || (n.includes('chicken') && mealType === 'dinner')) return KERALA_FOOD_IMAGES.grilled_chicken_soup;
+  // 5. DINNER DISHES
+  if (type === 'dinner') {
+    if (n.includes('phulka') || n.includes('methi') || n.includes('roti') || n.includes('tofu') || n.includes('bhurji')) return KERALA_FOOD_IMAGES.methi_phulka_tofu;
+    if (n.includes('dosa') || n.includes('stew')) return KERALA_FOOD_IMAGES.wheat_dosa_stew;
+    if (n.includes('kanji') || n.includes('payar')) return KERALA_FOOD_IMAGES.matta_kanji_payar;
+    if (n.includes('fish') || n.includes('pollichathu')) return KERALA_FOOD_IMAGES.fish_greens_dinner;
+    if (n.includes('soup') || n.includes('broth')) return KERALA_FOOD_IMAGES.grilled_chicken_soup;
+    return KERALA_FOOD_IMAGES.methi_phulka_tofu;
+  }
 
-  // Fallbacks by meal type
-  if (mealType === 'breakfast') return KERALA_FOOD_IMAGES.puttu_kadala;
-  if (mealType === 'drink') return KERALA_FOOD_IMAGES.sambharam;
-  if (mealType === 'lunch') return KERALA_FOOD_IMAGES.matta_fish_curry;
-  if (mealType === 'snack') return KERALA_FOOD_IMAGES.steamed_pazham;
-  if (mealType === 'dinner') return KERALA_FOOD_IMAGES.wheat_dosa_stew;
-
-  return KERALA_FOOD_IMAGES.matta_fish_curry;
+  return KERALA_FOOD_IMAGES.millet_sambar_avial;
 };
 
 /**
@@ -617,8 +625,67 @@ export const getKeralaPersonalizedOptions = (mealType, patientProfile, labReport
   }
 
   // Ensure every option has its verified accurate image attached
-  return pool.slice(0, 3).map(item => ({
+  return pool.slice(0, 4).map(item => ({
     ...item,
     img: getKeralaMealImage(item.name, mealType)
   }));
 };
+
+/**
+ * 🌟 DYNAMIC PATIENT-SPECIFIC 4-WEEK KERALA CARE PLAN GENERATOR 🌟
+ * Generates an intelligent, personalized 4-week timetable tailored to:
+ * - Specific Patient Health Goals / Program
+ * - Diagnostic Lab Reports
+ * - Diet Preferences & Allergies
+ * - Configured Meal Frequency (3, 4, 5, or 6 meals per day)
+ */
+export const generatePersonalizedKeralaWeeks = (patientProfile, labReports = [], mealCount = 5) => {
+  const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const weeks = { 1: {}, 2: {}, 3: {}, 4: {} };
+
+  // Define active slots based on configured meal count
+  let activeSlots = ['breakfast', 'drink', 'lunch', 'snack', 'dinner'];
+  if (mealCount === 3) {
+    activeSlots = ['breakfast', 'lunch', 'dinner'];
+  } else if (mealCount === 4) {
+    activeSlots = ['breakfast', 'lunch', 'snack', 'dinner'];
+  } else if (mealCount === 6) {
+    activeSlots = ['pre_breakfast', 'breakfast', 'drink', 'lunch', 'snack', 'dinner'];
+  }
+
+  // Pre-fetch personalized pools for each slot
+  const breakfastPool = getKeralaPersonalizedOptions('breakfast', patientProfile, labReports);
+  const drinkPool = getKeralaPersonalizedOptions('drink', patientProfile, labReports);
+  const lunchPool = getKeralaPersonalizedOptions('lunch', patientProfile, labReports);
+  const snackPool = getKeralaPersonalizedOptions('snack', patientProfile, labReports);
+  const dinnerPool = getKeralaPersonalizedOptions('dinner', patientProfile, labReports);
+
+  for (let w = 1; w <= 4; w++) {
+    for (let dIdx = 0; dIdx < daysOfWeek.length; dIdx++) {
+      const day = daysOfWeek[dIdx];
+      const dayObj = {};
+
+      activeSlots.forEach(slot => {
+        let pool = [];
+        if (slot === 'breakfast') pool = breakfastPool;
+        else if (slot === 'drink' || slot === 'pre_breakfast') pool = drinkPool;
+        else if (slot === 'lunch') pool = lunchPool;
+        else if (slot === 'snack') pool = snackPool;
+        else if (slot === 'dinner') pool = dinnerPool;
+
+        if (pool && pool.length > 0) {
+          const itemIdx = (w + dIdx) % pool.length;
+          const chosen = pool[itemIdx] || pool[0];
+          dayObj[slot] = `${chosen.name} (${chosen.cal})`;
+        } else {
+          dayObj[slot] = 'Nutritious Kerala Clinical Meal (250 kcal)';
+        }
+      });
+
+      weeks[w][day] = dayObj;
+    }
+  }
+
+  return weeks;
+};
+
