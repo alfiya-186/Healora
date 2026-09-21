@@ -267,7 +267,6 @@ const ClinicManagerDashboard = () => {
   const [showWalkinModal, setShowWalkinModal] = useState(false);
   const [showRescheduleModal, setShowRescheduleModal] = useState(false);
   const [showHolidayModal, setShowHolidayModal] = useState(false);
-  const [showMeetModal, setShowMeetModal] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [profilePic, setProfilePic] = useState(null);
 
@@ -276,8 +275,6 @@ const ClinicManagerDashboard = () => {
   const [walkinForm, setWalkinForm] = useState({ patient: '', nutritionist: '', date: '', time: '' });
   const [rescheduleForm, setRescheduleForm] = useState({ id: '', date: '', time: '', patientName: '', patientId: '', nutritionistId: '' });
   const [holidayForm, setHolidayForm] = useState({ date: '', holiday_type: 'CLINIC_HOLIDAY', reason: '', nutritionist: '' });
-  const [meetForm, setMeetForm] = useState({ id: '', patientId: '', patientName: '', nutritionistId: '', nutritionistName: '', date: '', time: '', meet_link: '' });
-  const [copiedLink, setCopiedLink] = useState(false);
 
 
 
@@ -346,11 +343,25 @@ const ClinicManagerDashboard = () => {
         setClinicHolidays(cachedHolidays);
       }
 
+      const cachedAppts = JSON.parse(localStorage.getItem('healora_all_appointments')) || [];
+      const cachedMap = new Map();
+      cachedAppts.forEach(c => cachedMap.set(String(c.id), c));
+
       let rawAppts = [];
       if (apptRes.ok) {
-        rawAppts = await apptRes.json();
+        const apiAppts = await apptRes.json();
+        rawAppts = (Array.isArray(apiAppts) ? apiAppts : []).map(a => {
+          const cached = cachedMap.get(String(a.id)) || {};
+          return {
+            ...a,
+            ...cached,
+            token_number: cached.token_number || a.token_number,
+            queue_status: cached.queue_status || a.queue_status || 'WAITING',
+            allocated_room: cached.allocated_room || a.allocated_room
+          };
+        });
       } else {
-        rawAppts = JSON.parse(localStorage.getItem('healora_all_appointments')) || [];
+        rawAppts = cachedAppts;
       }
 
       // Filter out dummy/orphaned patient 1 entries
@@ -655,119 +666,34 @@ const ClinicManagerDashboard = () => {
   };
 
 
-  const generateGoogleMeetLink = () => {
-    const chars = 'abcdefghijklmnopqrstuvwxyz';
-    const seg1 = Array.from({length: 3}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-    const seg2 = Array.from({length: 4}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-    const seg3 = Array.from({length: 3}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-    return `https://meet.google.com/${seg1}-${seg2}-${seg3}`;
-  };
-
-  const openMeetModal = (appt) => {
-    const patientObj = patients.find(p => String(p.id) === String(appt.patient));
-    const pName = patientObj ? `${patientObj.first_name} ${patientObj.last_name}` : `Patient #${appt.patient}`;
-    const nutObj = nutritionists.find(n => String(n.id) === String(appt.nutritionist));
-    const nName = nutObj ? `Dr. ${nutObj.first_name} ${nutObj.last_name}` : 'Assigned Doctor';
-    
-    const existingLink = appt.meet_link || generateGoogleMeetLink();
-    setMeetForm({
-      id: appt.id,
-      patientId: appt.patient,
-      patientName: pName,
-      nutritionistId: appt.nutritionist,
-      nutritionistName: nName,
-      date: appt.date,
-      time: appt.time,
-      meet_link: existingLink
-    });
-    setCopiedLink(false);
-    setShowMeetModal(true);
-  };
-
-  const handleSaveAndSendMeetLink = async (e) => {
-    e.preventDefault();
-    if (!meetForm.meet_link.trim()) {
-      alert("Please provide a valid Google Meet link.");
-      return;
-    }
-    setIsSaving(true);
-    try {
-      const link = meetForm.meet_link.trim();
-      const updatedAppts = appointments.map(a => 
-        String(a.id) === String(meetForm.id) ? { ...a, meet_link: link } : a
-      );
-      setAppointments(updatedAppts);
-      localStorage.setItem('healora_all_appointments', JSON.stringify(updatedAppts));
-
-      // Try patching backend API
-      try {
-        await secureFetch(`/api/appointments/${meetForm.id}/`, {
-          method: 'PATCH',
-          body: JSON.stringify({ meet_link: link })
-        });
-      } catch (err) {
-        console.warn("Backend update failed, persisted locally", err);
-      }
-
-      // 1. Send High-Priority In-App Notification to Patient
-      sendNotificationToUser(
-        meetForm.patientId,
-        "🎥 Telehealth Google Meet Link",
-        `Your online video consultation with ${meetForm.nutritionistName} on ${meetForm.date} at ${meetForm.time} is ready! Room Link: ${link}`
-      );
-
-      // 2. Send In-App Notification to Nutritionist
-      if (meetForm.nutritionistId) {
-        sendNotificationToUser(
-          meetForm.nutritionistId,
-          "🎥 Telehealth Consultation Link",
-          `Google Meet room generated for consultation with ${meetForm.patientName} on ${meetForm.date} at ${meetForm.time}: ${link}`
-        );
-      }
-
-      // 3. Post to system chat feed for the patient
-      const allChats = JSON.parse(localStorage.getItem('healora_chats')) || [];
-      allChats.push({
-        id: Date.now(),
-        patientId: String(meetForm.patientId),
-        patientName: meetForm.patientName,
-        senderRole: 'SYSTEM',
-        text: `🎥 Google Meet Consultation Room Scheduled: ${link} (${meetForm.date} at ${meetForm.time} with ${meetForm.nutritionistName}). Please join on time.`,
-        meetLink: link,
-        time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
-        read: false
-      });
-      localStorage.setItem('healora_chats', JSON.stringify(allChats));
-      setChats(allChats);
-
-      setShowMeetModal(false);
-      alert(`✅ Google Meet Link successfully assigned and dispatched to both Patient (${meetForm.patientName}) and ${meetForm.nutritionistName}!`);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
   const handleSendAppointmentReminder = (appt) => {
     const patientObj = patients.find(p => String(p.id) === String(appt.patient));
     const pName = patientObj ? `${patientObj.first_name} ${patientObj.last_name}` : `Patient #${appt.patient}`;
     const nObj = nutritionists.find(n => String(n.id) === String(appt.nutritionist));
     const nName = nObj ? `Dr. ${nObj.first_name} ${nObj.last_name}` : 'Assigned Doctor';
     
-    const meetMsg = appt.meet_link ? ` Google Meet link: ${appt.meet_link}` : '';
+    const isOnline = appt.mode === 'ONLINE';
+    const patientMsg = isOnline 
+      ? `Reminder: You have an In-App Video Consultation scheduled today at ${appt.time} with ${nName}. Please log in to your Healora portal and click 'Enter Video Consultation Room' when your session begins.`
+      : `Reminder: You have a scheduled In-Clinic consultation today at ${appt.time} with ${nName}. Please arrive at the clinic 10 minutes prior.`;
+
+    const nutritionistMsg = isOnline
+      ? `Reminder: You have an In-App Video Consultation scheduled today at ${appt.time} with patient ${pName}. Please launch your consultation room from your Healora Doctor Dashboard.`
+      : `Reminder: You have an In-Clinic consultation session today at ${appt.time} with patient ${pName}.`;
 
     // 1. Notify Patient
     sendNotificationToUser(
       appt.patient,
-      "🔔 Today's Consultation Reminder",
-      `Reminder: You have a scheduled ${appt.mode === 'ONLINE' ? 'Online' : 'In-Clinic'} consultation today at ${appt.time} with ${nName}.${meetMsg}`
+      isOnline ? "🎥 In-App Video Consultation Reminder" : "🔔 Today's Consultation Reminder",
+      patientMsg
     );
 
-    // 2. Notify Nutritionist
+    // 2. Notify Nutritionist / Doctor
     if (appt.nutritionist && appt.nutritionist !== 'AUTO') {
       sendNotificationToUser(
         appt.nutritionist,
-        "🔔 Today's Consultation Reminder",
-        `Reminder: You have a consultation session today at ${appt.time} with patient ${pName}.${meetMsg}`
+        isOnline ? "🎥 In-App Video Consultation Reminder" : "🔔 Today's Consultation Reminder",
+        nutritionistMsg
       );
     }
 
@@ -779,8 +705,9 @@ const ClinicManagerDashboard = () => {
       contactId: 'manager',
       senderRole: 'SYSTEM',
       chatPartner: 'manager',
-      text: `🔔 Consultation Reminder: Today at ${appt.time} with ${nName}.${appt.mode === 'ONLINE' && appt.meet_link ? ` Join Room: ${appt.meet_link}` : ''}`,
-      meetLink: appt.meet_link || null,
+      text: isOnline
+        ? `🔔 In-App Video Consultation Reminder: Today at ${appt.time} with ${nName}. Both patient and doctor can join directly inside Healora without external apps.`
+        : `🔔 Clinic Consultation Reminder: Today at ${appt.time} with ${nName} at Healora Consultation Chamber.`,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
     allChats.push(reminderMsg);
@@ -796,7 +723,7 @@ const ClinicManagerDashboard = () => {
     setAppointments(updatedAppts);
     localStorage.setItem('healora_all_appointments', JSON.stringify(updatedAppts));
 
-    alert(`✅ Reminder notification sent to both Patient (${pName}) and Doctor (${nName})!`);
+    alert(`✅ Video consultation reminder successfully sent to Patient (${pName}) and ${nName}!`);
   };
 
   const handleSendRemindersToAllToday = () => {
@@ -818,19 +745,27 @@ const ClinicManagerDashboard = () => {
       const pName = patientObj ? `${patientObj.first_name} ${patientObj.last_name}` : `Patient #${appt.patient}`;
       const nObj = nutritionists.find(n => String(n.id) === String(appt.nutritionist));
       const nName = nObj ? `Dr. ${nObj.first_name} ${nObj.last_name}` : 'Assigned Doctor';
-      const meetMsg = appt.meet_link ? ` Google Meet link: ${appt.meet_link}` : '';
+      
+      const isOnline = appt.mode === 'ONLINE';
+      const patientMsg = isOnline 
+        ? `Reminder: You have an In-App Video Consultation scheduled today at ${appt.time} with ${nName}. Please log in to your Healora portal and click 'Enter Video Consultation Room' when your session begins.`
+        : `Reminder: You have a scheduled In-Clinic consultation today at ${appt.time} with ${nName}. Please arrive at the clinic 10 minutes prior.`;
+
+      const nutritionistMsg = isOnline
+        ? `Reminder: You have an In-App Video Consultation scheduled today at ${appt.time} with patient ${pName}. Please launch your consultation room from your Healora Doctor Dashboard.`
+        : `Reminder: You have an In-Clinic consultation session today at ${appt.time} with patient ${pName}.`;
 
       sendNotificationToUser(
         appt.patient,
-        "🔔 Today's Consultation Reminder",
-        `Reminder: You have a scheduled ${appt.mode === 'ONLINE' ? 'Online' : 'In-Clinic'} consultation today at ${appt.time} with ${nName}.${meetMsg}`
+        isOnline ? "🎥 In-App Video Consultation Reminder" : "🔔 Today's Consultation Reminder",
+        patientMsg
       );
 
       if (appt.nutritionist && appt.nutritionist !== 'AUTO') {
         sendNotificationToUser(
           appt.nutritionist,
-          "🔔 Today's Consultation Reminder",
-          `Reminder: You have a consultation session today at ${appt.time} with patient ${pName}.${meetMsg}`
+          isOnline ? "🎥 In-App Video Consultation Reminder" : "🔔 Today's Consultation Reminder",
+          nutritionistMsg
         );
       }
     });
@@ -844,7 +779,7 @@ const ClinicManagerDashboard = () => {
     setAppointments(updatedAppts);
     localStorage.setItem('healora_all_appointments', JSON.stringify(updatedAppts));
 
-    alert(`✅ Reminders dispatched to all ${todayAppointments.length} patient(s) & nutritionist(s) scheduled for today!`);
+    alert(`✅ Consultation reminders dispatched to all ${todayAppointments.length} patient(s) & nutritionist(s) scheduled for today!`);
   };
 
   // --- 🎟️ LIVE QUEUE & ROOM ALLOCATION SYSTEM ---
@@ -858,7 +793,7 @@ const ClinicManagerDashboard = () => {
 
     return todays.map((appt, idx) => {
       const tokenNum = appt.token_number || `TK-${101 + idx}`;
-      const defaultRoom = appt.allocated_room || (appt.mode === 'ONLINE' ? 'Telehealth Video Suite (Google Meet HD)' : 'Doctor Consultation Chamber (In-Clinic)');
+      const defaultRoom = appt.allocated_room || (appt.mode === 'ONLINE' ? 'In-App Telehealth Video Suite' : 'Doctor Consultation Chamber (Ground Floor, Room 101)');
       const qStatus = appt.queue_status || 'WAITING';
 
       return {
@@ -870,19 +805,47 @@ const ClinicManagerDashboard = () => {
     });
   }, [appointments]);
 
+  // Ensure all today's queue appointments have their tokens & rooms permanently saved in cache
+  useEffect(() => {
+    if (!todayQueueAppointments || todayQueueAppointments.length === 0) return;
+    let hasChanges = false;
+    const cachedAppts = JSON.parse(localStorage.getItem('healora_all_appointments')) || [];
+    const updated = cachedAppts.map(a => {
+      const qItem = todayQueueAppointments.find(q => String(q.id) === String(a.id));
+      if (qItem && (!a.token_number || !a.allocated_room || !a.queue_status)) {
+        hasChanges = true;
+        return {
+          ...a,
+          token_number: a.token_number || qItem.token_number,
+          allocated_room: a.allocated_room || qItem.allocated_room,
+          queue_status: a.queue_status || qItem.queue_status || 'WAITING'
+        };
+      }
+      return a;
+    });
+    if (hasChanges) {
+      localStorage.setItem('healora_all_appointments', JSON.stringify(updated));
+      window.dispatchEvent(new Event('storage'));
+    }
+  }, [todayQueueAppointments]);
+
   const handleUpdateTokenQueue = (apptId, newStatus, newRoom = null) => {
+    const qItem = todayQueueAppointments.find(q => String(q.id) === String(apptId));
+    const defaultToken = (qItem && qItem.token_number) || 'TK-101';
+    const defaultRoom = (qItem && qItem.allocated_room) || 'Doctor Consultation Chamber (Ground Floor, Room 101)';
+
     const updatedAppts = appointments.map(a => {
       if (String(a.id) === String(apptId)) {
         const patientObj = patients.find(p => String(p.id) === String(a.patient));
         const pName = patientObj ? `${patientObj.first_name} ${patientObj.last_name}` : `Patient #${a.patient}`;
-        const roomName = newRoom || a.allocated_room || 'Room 101';
-        const tokenNum = a.token_number || 'TK-101';
+        const roomName = newRoom || a.allocated_room || defaultRoom;
+        const tokenNum = a.token_number || defaultToken;
 
         const updated = {
           ...a,
           token_number: tokenNum,
           queue_status: newStatus,
-          ...(newRoom ? { allocated_room: newRoom } : {}),
+          allocated_room: roomName,
           ...(newStatus === 'CALLED' ? { token_called_at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) } : {})
         };
 
@@ -908,9 +871,11 @@ const ClinicManagerDashboard = () => {
 
     setAppointments(updatedAppts);
     localStorage.setItem('healora_all_appointments', JSON.stringify(updatedAppts));
+    window.dispatchEvent(new Event('storage'));
   };
 
   const handleLogout = () => { localStorage.removeItem('access_token'); navigate('/', { replace: true }); };
+
 
 
 
@@ -1074,18 +1039,241 @@ const ClinicManagerDashboard = () => {
           <div className="bg-white rounded-3xl w-full max-w-2xl p-8 shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-[#EBE9E0] relative">
             <button onClick={() => {setShowAddPatient(false); setFormErrors({});}} className="absolute top-6 right-6 text-gray-400 hover:text-gray-800 bg-gray-50 rounded-full p-2 transition"><X size={20} /></button>
             <div className="flex items-center gap-4 mb-8 border-b border-[#EBE9E0] pb-6"><div className="bg-[#EAF0EC] p-4 rounded-2xl text-[#456A50] shadow-sm"><UserPlus size={32} /></div><div><h2 className="text-2xl font-black text-[#1C2C22]">Register Walk-in Patient</h2><p className="text-sm text-[#5A6B60] mt-1">Create a new patient account directly into the system database.</p></div></div>
-            <form onSubmit={handleRegisterPatient} className="space-y-6" autoComplete="off" noValidate>
+            <form onSubmit={handleRegisterPatient} className="space-y-5" autoComplete="off" noValidate>
               {formErrors.api && <div className="bg-red-50 text-red-600 p-3 rounded-xl text-xs font-bold border border-red-100">{formErrors.api}</div>}
-              <div className="grid grid-cols-2 gap-6">
-                <div><label className="block text-[11px] font-bold text-[#5A6B60] uppercase tracking-widest mb-2">First Name</label><div className="relative"><User size={18} className="absolute left-4 top-4 text-gray-400" /><input name="first_name" spellCheck="false" autoComplete="new-password" type="text" placeholder="First Name" value={patientForm.first_name} onChange={handlePatientFormChange} className={`w-full border ${formErrors.first_name ? 'border-red-500 bg-red-50 text-red-900' : 'border-[#EBE9E0] bg-[#FDFCF8]'} rounded-xl p-3.5 pl-12 text-sm outline-none focus:ring-2 focus:ring-[#456A50]/20 focus:border-[#456A50] transition shadow-sm`} /></div>{formErrors.first_name && <p className="text-red-500 text-xs mt-1.5 font-medium">{formErrors.first_name}</p>}</div>
-                <div><label className="block text-[11px] font-bold text-[#5A6B60] uppercase tracking-widest mb-2">Last Name</label><input name="last_name" spellCheck="false" autoComplete="new-password" type="text" placeholder="Last Name" value={patientForm.last_name} onChange={handlePatientFormChange} className={`w-full border ${formErrors.last_name ? 'border-red-500 bg-red-50 text-red-900' : 'border-[#EBE9E0] bg-[#FDFCF8]'} rounded-xl p-3.5 text-sm outline-none focus:ring-2 focus:ring-[#456A50]/20 focus:border-[#456A50] transition shadow-sm`} />{formErrors.last_name && <p className="text-red-500 text-xs mt-1.5 font-medium">{formErrors.last_name}</p>}</div>
+              
+              {/* Row 1: First Name & Last Name */}
+              <div className="grid grid-cols-2 gap-5">
+                <div>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <label className="block text-[11px] font-bold text-[#5A6B60] uppercase tracking-widest">First Name</label>
+                    {patientForm.first_name.length > 0 && (
+                      <span className={`text-[10px] font-bold ${patientForm.first_name.trim().length >= 2 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                        {patientForm.first_name.trim().length >= 2 ? '✓ Valid' : 'Min 2 letters'}
+                      </span>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <User size={18} className={`absolute left-4 top-3.5 ${
+                      patientForm.first_name.length === 0 ? 'text-gray-400' : patientForm.first_name.trim().length >= 2 ? 'text-emerald-700' : 'text-amber-700'
+                    }`} />
+                    <input 
+                      name="first_name" 
+                      spellCheck="false" 
+                      autoComplete="new-password" 
+                      type="text" 
+                      placeholder="First Name" 
+                      value={patientForm.first_name} 
+                      onChange={handlePatientFormChange} 
+                      className={`w-full border rounded-xl p-3 pl-12 text-sm outline-none transition shadow-sm ${
+                        patientForm.first_name.length === 0 
+                          ? 'border-[#EBE9E0] bg-[#FDFCF8] focus:border-[#456A50]' 
+                          : patientForm.first_name.trim().length >= 2 
+                            ? 'border-emerald-500 bg-emerald-50/10 focus:border-emerald-600' 
+                            : 'border-amber-400 bg-amber-50/10 focus:border-amber-500'
+                      }`} 
+                    />
+                  </div>
+                  {patientForm.first_name.length > 0 && patientForm.first_name.trim().length < 2 && (
+                    <p className="text-amber-700 text-xs mt-1 font-medium">⚠️ First name must be at least 2 letters.</p>
+                  )}
+                </div>
+
+                <div>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <label className="block text-[11px] font-bold text-[#5A6B60] uppercase tracking-widest">Last Name</label>
+                    {patientForm.last_name.length > 0 && (
+                      <span className={`text-[10px] font-bold ${patientForm.last_name.trim().length >= 1 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                        {patientForm.last_name.trim().length >= 1 ? '✓ Valid' : 'Required'}
+                      </span>
+                    )}
+                  </div>
+                  <input 
+                    name="last_name" 
+                    spellCheck="false" 
+                    autoComplete="new-password" 
+                    type="text" 
+                    placeholder="Last Name" 
+                    value={patientForm.last_name} 
+                    onChange={handlePatientFormChange} 
+                    className={`w-full border rounded-xl p-3 text-sm outline-none transition shadow-sm ${
+                      patientForm.last_name.length === 0 
+                        ? 'border-[#EBE9E0] bg-[#FDFCF8] focus:border-[#456A50]' 
+                        : patientForm.last_name.trim().length >= 1 
+                          ? 'border-emerald-500 bg-emerald-50/10 focus:border-emerald-600' 
+                          : 'border-amber-400 bg-amber-50/10 focus:border-amber-500'
+                    }`} 
+                  />
+                  {patientForm.last_name.length > 0 && patientForm.last_name.trim().length < 1 && (
+                    <p className="text-amber-700 text-xs mt-1 font-medium">⚠️ Last name is required.</p>
+                  )}
+                </div>
               </div>
-              <div className="grid grid-cols-2 gap-6">
-                <div><label className="block text-[11px] font-bold text-[#5A6B60] uppercase tracking-widest mb-2">Email Address</label><div className="relative"><Mail size={18} className="absolute left-4 top-4 text-gray-400" /><input name="email" spellCheck="false" autoComplete="new-password" type="email" placeholder="patient@example.com" value={patientForm.email} onChange={handlePatientFormChange} className={`w-full border ${formErrors.email ? 'border-red-500 bg-red-50 text-red-900' : 'border-[#EBE9E0] bg-[#FDFCF8]'} rounded-xl p-3.5 pl-12 text-sm outline-none focus:ring-2 focus:ring-[#456A50]/20 focus:border-[#456A50] transition shadow-sm`} /></div>{formErrors.email && <p className="text-red-500 text-xs mt-1.5 font-medium">{formErrors.email}</p>}</div>
-                <div><label className="block text-[11px] font-bold text-[#5A6B60] uppercase tracking-widest mb-2">Phone Number (10 Digits)</label><div className="relative"><Phone size={18} className="absolute left-4 top-4 text-gray-400" /><input name="phone" maxLength="10" spellCheck="false" autoComplete="new-password" type="text" placeholder="10-digit number" value={patientForm.phone} onChange={handlePatientFormChange} className={`w-full border ${formErrors.phone ? 'border-red-500 bg-red-50 text-red-900' : 'border-[#EBE9E0] bg-[#FDFCF8]'} rounded-xl p-3.5 pl-12 text-sm outline-none focus:ring-2 focus:ring-[#456A50]/20 focus:border-[#456A50] transition shadow-sm`} /></div>{formErrors.phone && <p className="text-red-500 text-xs mt-1.5 font-medium">{formErrors.phone}</p>}</div>
+
+              {/* Row 2: Email & Phone Number */}
+              <div className="grid grid-cols-2 gap-5">
+                <div>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <label className="block text-[11px] font-bold text-[#5A6B60] uppercase tracking-widest">Email Address</label>
+                    {patientForm.email.length > 0 && (
+                      <span className={`text-[10px] font-bold ${
+                        /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(patientForm.email.trim()) 
+                          ? 'text-emerald-700' 
+                          : !patientForm.email.includes('@') 
+                            ? 'text-red-600' 
+                            : 'text-amber-700'
+                      }`}>
+                        {/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(patientForm.email.trim()) 
+                          ? '✓ Valid' 
+                          : !patientForm.email.includes('@') 
+                            ? 'Missing @' 
+                            : 'Domain incomplete'}
+                      </span>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <Mail size={18} className={`absolute left-4 top-3.5 ${
+                      patientForm.email.length === 0 
+                        ? 'text-gray-400' 
+                        : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(patientForm.email.trim()) 
+                          ? 'text-emerald-700' 
+                          : !patientForm.email.includes('@') 
+                            ? 'text-red-600' 
+                            : 'text-amber-700'
+                    }`} />
+                    <input 
+                      name="email" 
+                      spellCheck="false" 
+                      autoComplete="new-password" 
+                      type="email" 
+                      placeholder="patient@example.com" 
+                      value={patientForm.email} 
+                      onChange={handlePatientFormChange} 
+                      className={`w-full border rounded-xl p-3 pl-12 text-sm outline-none transition shadow-sm ${
+                        patientForm.email.length === 0 
+                          ? 'border-[#EBE9E0] bg-[#FDFCF8] focus:border-[#456A50]' 
+                          : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(patientForm.email.trim()) 
+                            ? 'border-emerald-500 bg-emerald-50/10 focus:border-emerald-600' 
+                            : !patientForm.email.includes('@') 
+                              ? 'border-red-400 bg-red-50/20 focus:border-red-500' 
+                              : 'border-amber-400 bg-amber-50/20 focus:border-amber-500'
+                      }`} 
+                    />
+                  </div>
+                  {patientForm.email.length > 0 && !patientForm.email.includes('@') && (
+                    <p className="text-red-600 text-xs mt-1 font-semibold flex items-center gap-1">
+                      ⚠️ Must include an '@' (e.g. name@example.com)
+                    </p>
+                  )}
+                  {patientForm.email.length > 0 && patientForm.email.includes('@') && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(patientForm.email.trim()) && (
+                    <p className="text-amber-700 text-xs mt-1 font-semibold flex items-center gap-1">
+                      ⚠️ Include a valid domain (e.g. @gmail.com)
+                    </p>
+                  )}
+                  {patientForm.email.length > 0 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(patientForm.email.trim()) && (
+                    <p className="text-emerald-700 text-xs mt-1 font-semibold flex items-center gap-1">
+                      ✓ Valid email address format
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <label className="block text-[11px] font-bold text-[#5A6B60] uppercase tracking-widest">Phone Number (10 Digits)</label>
+                    {patientForm.phone.length > 0 && (
+                      <span className={`text-[10px] font-bold ${patientForm.phone.length === 10 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                        {patientForm.phone.length === 10 ? '✓ 10 Digits' : `${patientForm.phone.length}/10 digits`}
+                      </span>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <Phone size={18} className={`absolute left-4 top-3.5 ${
+                      patientForm.phone.length === 0 ? 'text-gray-400' : patientForm.phone.length === 10 ? 'text-emerald-700' : 'text-amber-700'
+                    }`} />
+                    <input 
+                      name="phone" 
+                      maxLength="10" 
+                      spellCheck="false" 
+                      autoComplete="new-password" 
+                      type="text" 
+                      placeholder="10-digit number" 
+                      value={patientForm.phone} 
+                      onChange={handlePatientFormChange} 
+                      className={`w-full border rounded-xl p-3 pl-12 text-sm outline-none transition shadow-sm ${
+                        patientForm.phone.length === 0 
+                          ? 'border-[#EBE9E0] bg-[#FDFCF8] focus:border-[#456A50]' 
+                          : patientForm.phone.length === 10 
+                            ? 'border-emerald-500 bg-emerald-50/10 focus:border-emerald-600' 
+                            : 'border-amber-400 bg-amber-50/20 focus:border-amber-500'
+                      }`} 
+                    />
+                  </div>
+                  {patientForm.phone.length > 0 && patientForm.phone.length < 10 && (
+                    <p className="text-amber-700 text-xs mt-1 font-semibold flex items-center gap-1">
+                      ⚠️ {10 - patientForm.phone.length} more digits needed (10 digits required)
+                    </p>
+                  )}
+                  {patientForm.phone.length === 10 && (
+                    <p className="text-emerald-700 text-xs mt-1 font-semibold flex items-center gap-1">
+                      ✓ 10-digit phone verified
+                    </p>
+                  )}
+                </div>
               </div>
-              <div><label className="block text-[11px] font-bold text-[#5A6B60] uppercase tracking-widest mb-2">Temporary Password</label><div className="relative"><Lock size={18} className="absolute left-4 top-4 text-gray-400" /><input name="password" spellCheck="false" autoComplete="new-password" type="password" placeholder="••••••••" value={patientForm.password} onChange={handlePatientFormChange} className={`w-full border ${formErrors.password ? 'border-red-500 bg-red-50 text-red-900' : 'border-[#EBE9E0] bg-[#FDFCF8]'} rounded-xl p-3.5 pl-12 text-sm outline-none focus:ring-2 focus:ring-[#456A50]/20 focus:border-[#456A50] transition shadow-sm`} /></div>{formErrors.password && <p className="text-red-500 text-xs mt-1.5 font-medium">{formErrors.password}</p>}</div>
-              <button type="submit" disabled={isSaving} className="w-full bg-[#1C2C22] text-white py-4 rounded-xl font-bold text-sm hover:bg-[#456A50] transition shadow-lg mt-4 disabled:opacity-70">{isSaving ? 'Registering...' : 'Register Patient & Create Account'}</button>
+
+              {/* Row 3: Temporary Password */}
+              <div>
+                <div className="flex justify-between items-center mb-1.5">
+                  <label className="block text-[11px] font-bold text-[#5A6B60] uppercase tracking-widest">Temporary Password</label>
+                  {patientForm.password.length > 0 && (
+                    <span className={`text-[10px] font-bold ${patientForm.password.length >= 8 ? 'text-emerald-700' : 'text-red-600'}`}>
+                      {patientForm.password.length >= 8 ? '✓ Strong' : `${patientForm.password.length}/8 chars`}
+                    </span>
+                  )}
+                </div>
+                <div className="relative">
+                  <Lock size={18} className={`absolute left-4 top-3.5 ${
+                    patientForm.password.length === 0 ? 'text-gray-400' : patientForm.password.length >= 8 ? 'text-emerald-700' : 'text-red-600'
+                  }`} />
+                  <input 
+                    name="password" 
+                    spellCheck="false" 
+                    autoComplete="new-password" 
+                    type="password" 
+                    placeholder="••••••••" 
+                    value={patientForm.password} 
+                    onChange={handlePatientFormChange} 
+                    className={`w-full border rounded-xl p-3 pl-12 text-sm outline-none transition shadow-sm ${
+                      patientForm.password.length === 0 
+                        ? 'border-[#EBE9E0] bg-[#FDFCF8] focus:border-[#456A50]' 
+                        : patientForm.password.length >= 8 
+                          ? 'border-emerald-500 bg-emerald-50/10 focus:border-emerald-600' 
+                          : 'border-red-400 bg-red-50/20 focus:border-red-500'
+                    }`} 
+                  />
+                </div>
+                {patientForm.password.length === 0 && (
+                  <p className="text-gray-500 text-xs mt-1">ⓘ Temporary password must be at least 8 characters.</p>
+                )}
+                {patientForm.password.length > 0 && patientForm.password.length < 8 && (
+                  <p className="text-red-600 text-xs mt-1 font-semibold flex items-center gap-1">
+                    ⚠️ {8 - patientForm.password.length} more characters needed (Min 8 characters)
+                  </p>
+                )}
+                {patientForm.password.length >= 8 && (
+                  <p className="text-emerald-700 text-xs mt-1 font-semibold flex items-center gap-1">
+                    ✓ Strong password format ({patientForm.password.length} characters)
+                  </p>
+                )}
+              </div>
+
+              <button 
+                type="submit" 
+                disabled={isSaving} 
+                className="w-full bg-[#1C2C22] text-white py-4 rounded-xl font-bold text-sm hover:bg-[#456A50] transition shadow-lg mt-2 disabled:opacity-70 cursor-pointer"
+              >
+                {isSaving ? 'Registering...' : 'Register Patient & Create Account'}
+              </button>
             </form>
           </div>
         </div>
@@ -1225,110 +1413,6 @@ const ClinicManagerDashboard = () => {
                 {isSaving ? 'Updating...' : 'Update & Notify Patient'}
               </button>
 
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* 🌟 TELEHEALTH GOOGLE MEET SCHEDULER MODAL 🌟 */}
-      {showMeetModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl w-full max-w-lg p-8 shadow-2xl relative border border-[#EBE9E0]">
-            <button onClick={() => setShowMeetModal(false)} className="absolute top-6 right-6 text-gray-400 hover:text-gray-800 bg-gray-100 rounded-full p-2 transition cursor-pointer"><X size={18} /></button>
-            
-            <div className="flex items-center gap-3 mb-6 border-b border-[#EBE9E0] pb-4">
-              <div className="p-3 bg-emerald-100 text-emerald-700 rounded-2xl">
-                <Video size={24} />
-              </div>
-              <div>
-                <h2 className="text-2xl font-black text-[#1C2C22]">Schedule Google Meet</h2>
-                <p className="text-xs text-[#5A6B60]">Assign video room & send link to patient and nutritionist.</p>
-              </div>
-            </div>
-
-            <form onSubmit={handleSaveAndSendMeetLink} className="space-y-5">
-              <div className="bg-[#FDFCF8] border border-[#EBE9E0] rounded-2xl p-4 space-y-2">
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-500 font-bold uppercase tracking-wider">Patient:</span>
-                  <span className="font-black text-[#1C2C22]">{meetForm.patientName}</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-500 font-bold uppercase tracking-wider">Nutritionist:</span>
-                  <span className="font-black text-[#456A50]">{meetForm.nutritionistName}</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-500 font-bold uppercase tracking-wider">Date & Time:</span>
-                  <span className="font-black text-gray-800">{meetForm.date} at {meetForm.time}</span>
-                </div>
-              </div>
-
-              <div>
-                <div className="flex justify-between items-center mb-2">
-                  <label className="block text-[11px] font-bold text-[#5A6B60] uppercase tracking-widest">Google Meet Link</label>
-                  <button 
-                    type="button" 
-                    onClick={() => {
-                      const newLink = generateGoogleMeetLink();
-                      setMeetForm(prev => ({ ...prev, meet_link: newLink }));
-                    }}
-                    className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-1 cursor-pointer bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 transition"
-                  >
-                    ⚡ Regenerate Link
-                  </button>
-                </div>
-                <div className="relative">
-                  <input 
-                    type="url" 
-                    required 
-                    value={meetForm.meet_link} 
-                    onChange={e => setMeetForm({...meetForm, meet_link: e.target.value})} 
-                    placeholder="https://meet.google.com/abc-defg-hij" 
-                    className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-3.5 pr-20 text-sm font-mono outline-none focus:ring-2 focus:ring-[#456A50]/20 focus:border-[#456A50] transition shadow-sm" 
-                  />
-                  <div className="absolute right-2 top-2 flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(meetForm.meet_link);
-                        setCopiedLink(true);
-                        setTimeout(() => setCopiedLink(false), 2000);
-                      }}
-                      title="Copy Link"
-                      className="p-2 text-gray-500 hover:text-[#456A50] bg-white rounded-lg border border-[#EBE9E0] shadow-xs cursor-pointer transition"
-                    >
-                      {copiedLink ? <Check size={14} className="text-green-600" /> : <Copy size={14} />}
-                    </button>
-                    {meetForm.meet_link && (
-                      <a
-                        href={meetForm.meet_link}
-                        target="_blank"
-                        rel="noreferrer"
-                        title="Test Room in New Tab"
-                        className="p-2 text-gray-500 hover:text-blue-600 bg-white rounded-lg border border-[#EBE9E0] shadow-xs cursor-pointer transition"
-                      >
-                        <ExternalLink size={14} />
-                      </a>
-                    )}
-                  </div>
-                </div>
-                <p className="text-[10px] text-gray-400 mt-1.5 font-medium">Managers can use the generated Google Meet room link or paste an existing link from Google Calendar.</p>
-              </div>
-
-              <div className="bg-emerald-50/70 border border-emerald-200 p-3.5 rounded-2xl text-xs text-emerald-900 font-medium">
-                <p className="font-black flex items-center gap-1.5 text-emerald-800 mb-0.5"><Video size={14}/> Automatic Multi-Channel Delivery</p>
-                Saving will instantly dispatch the Google Meet room link via in-app push alerts and internal chat to both the patient and the nutritionist.
-              </div>
-
-              <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => setShowMeetModal(false)} className="w-1/3 bg-gray-100 text-gray-700 py-3.5 rounded-xl font-bold text-sm hover:bg-gray-200 transition cursor-pointer">Cancel</button>
-                <button 
-                  type="submit" 
-                  disabled={isSaving}
-                  className="w-2/3 bg-[#456A50] text-white py-3.5 rounded-xl font-bold text-sm hover:bg-[#35533E] transition shadow-lg flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-                >
-                  {isSaving ? 'Sending...' : <><Send size={16} /> Send Meet Link</>}
-                </button>
-              </div>
             </form>
           </div>
         </div>
@@ -1510,31 +1594,10 @@ const ClinicManagerDashboard = () => {
                                              </span>
                                            );
                                          }
-                                         return a.meet_link ? (
-                                           <div className="flex items-center gap-2">
-                                             <a 
-                                               href={a.meet_link} 
-                                               target="_blank" 
-                                               rel="noreferrer" 
-                                               className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-xs"
-                                             >
-                                               <Video size={13} /> Join Meet <ExternalLink size={11} />
-                                             </a>
-                                             <button 
-                                               onClick={() => openMeetModal(a)} 
-                                               className="text-gray-400 hover:text-gray-700 p-1.5 rounded-lg hover:bg-gray-100 transition cursor-pointer"
-                                               title="Edit Meet Link"
-                                             >
-                                               <Edit3 size={13} />
-                                             </button>
-                                           </div>
-                                         ) : (
-                                           <button 
-                                             onClick={() => openMeetModal(a)} 
-                                             className="bg-[#456A50] text-white hover:bg-[#35533E] px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-sm animate-pulse cursor-pointer"
-                                           >
-                                             <Video size={13} /> Send Meet Link
-                                           </button>
+                                         return (
+                                           <span className="bg-purple-50 text-purple-700 border border-purple-200 px-2.5 py-1.5 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 shadow-2xs">
+                                             <Video size={13} className="text-purple-600" /> In-App Telehealth
+                                           </span>
                                          );
                                        })()
                                      ) : (
@@ -1545,10 +1608,11 @@ const ClinicManagerDashboard = () => {
                                   <td className="py-5 px-6 text-right">
                                     <button 
                                       onClick={() => handleSendAppointmentReminder(a)}
-                                      className="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-3 py-1.5 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
-                                      title="Send reminder to Patient and Nutritionist"
+                                      className={`${a.reminder_sent ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'} border px-3 py-1.5 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition shadow-2xs cursor-pointer`}
+                                      title="Send In-App Consultation Reminder to Patient and Doctor"
                                     >
-                                      <Bell size={13} /> Send Reminder
+                                      <Bell size={13} className={a.reminder_sent ? 'text-emerald-700' : 'text-emerald-600'} />
+                                      {a.reminder_sent ? 'Reminder Sent' : 'Send Reminder'}
                                     </button>
                                   </td>
                                 </tr>
@@ -1623,7 +1687,7 @@ const ClinicManagerDashboard = () => {
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
                       <div>
                         <h2 className="text-2xl font-black text-[#1C2C22]">Consultation Bookings</h2>
-                        <p className="text-sm text-[#5A6B60] mt-1">Track active bookings, attach telehealth Google Meet rooms, and manage rescheduling.</p>
+                        <p className="text-sm text-[#5A6B60] mt-1">Track active bookings, monitor in-app telehealth sessions, and manage rescheduling & reminders.</p>
                       </div>
                       
                       {/* Filter category pills */}
@@ -1692,24 +1756,10 @@ const ClinicManagerDashboard = () => {
                                         </span>
                                       );
                                     }
-                                    return a.meet_link ? (
-                                      <div className="flex items-center gap-1.5">
-                                        <a 
-                                          href={a.meet_link} 
-                                          target="_blank" 
-                                          rel="noreferrer" 
-                                          className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition shadow-xs"
-                                        >
-                                          <Video size={13} /> Meet Ready <ExternalLink size={11} />
-                                        </a>
-                                      </div>
-                                    ) : (
-                                      <button 
-                                        onClick={() => openMeetModal(a)} 
-                                        className="bg-[#456A50] text-white hover:bg-[#35533E] px-3 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition shadow-sm animate-pulse cursor-pointer"
-                                      >
-                                        <Video size={13} /> Schedule Meet
-                                      </button>
+                                    return (
+                                      <span className="bg-purple-50 text-purple-700 border border-purple-200 px-2.5 py-1.5 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 shadow-2xs">
+                                        <Video size={13} className="text-purple-600" /> In-App Telehealth
+                                      </span>
                                     );
                                   })()
                                 ) : (
@@ -1740,13 +1790,15 @@ const ClinicManagerDashboard = () => {
                                   <span className="text-[11px] text-gray-400 font-medium italic pr-2">Refunded</span>
                                 ) : (
                                   <>
-                                    {a.mode === 'ONLINE' && (
+                                    {a.mode === 'ONLINE' && a.status !== 'COMPLETED' && (
                                       <button 
-                                        onClick={() => openMeetModal(a)} 
-                                        className="bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200 px-3 py-2 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition cursor-pointer"
-                                        title="Manage Google Meet Link"
+                                        type="button"
+                                        onClick={() => handleSendAppointmentReminder(a)} 
+                                        className={`${a.reminder_sent ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border-emerald-200'} border px-3 py-2 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs`}
+                                        title="Send in-app video consultation reminder to patient and doctor"
                                       >
-                                        <Video size={14}/> {a.meet_link ? 'Meet Link' : 'Add Meet'}
+                                        <Bell size={13} className={a.reminder_sent ? 'text-emerald-700' : 'text-emerald-600'} />
+                                        {a.reminder_sent ? 'Reminder Sent' : 'Send Video Reminder'}
                                       </button>
                                     )}
                                     <button onClick={() => openReschedule(a)} className="bg-white text-orange-600 px-4 py-2 rounded-xl text-[11px] font-bold hover:bg-orange-50 flex items-center gap-1.5 transition shadow-sm border border-orange-200 cursor-pointer"><Clock size={14}/> Reschedule</button>

@@ -494,7 +494,7 @@ const AdminDashboard = () => {
                     <div><span className="eyebrow">USER RECORDS</span><h2>Account Directory</h2></div>
                     <div className="headActions">
                       <div className="search"><Search size={16} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search users..." /></div>
-                      {['nutritionists', 'managers'].includes(activeTab) && <button className="primary" onClick={() => { setRole(activeTab === "nutritionists" ? "NUTRITIONIST" : "MANAGER"); setError(""); setShowUser(true); }}><UserPlus size={16} /> Add Staff</button>}
+                      {['nutritionists', 'managers'].includes(activeTab) && <button className="primary" onClick={() => { setRole(activeTab === "nutritionists" ? "NUTRITIONIST" : "MANAGER"); setError(""); setForm({ first_name: '', last_name: '', email: '', password: '' }); setShowUser(true); }}><UserPlus size={16} /> Add Staff</button>}
                     </div>
                   </div>
                   <div className="tableWrap">
@@ -705,13 +705,32 @@ const AdminDashboard = () => {
           <div className="modal">
             <div className="modalTop"><div><span>USER MANAGEMENT</span><h2>Add {role === "NUTRITIONIST" ? "Nutritionist" : "Clinic Manager"}</h2></div><button onClick={() => setShowUser(false)}><X /></button></div>
             {error && <div className="error">{error}</div>}
-            <form onSubmit={createUser}>
+            <form onSubmit={createUser} autoComplete="off">
               <div className="formGrid">
-                <input required placeholder="First name" value={form.first_name} onChange={e => setForm({...form, first_name: e.target.value.replace(/[^A-Za-z\s]/g, '')})} />
-                <input required placeholder="Last name" value={form.last_name} onChange={e => setForm({...form, last_name: e.target.value.replace(/[^A-Za-z\s]/g, '')})} />
+                <input required placeholder="First name" value={form.first_name} onChange={e => setForm({...form, first_name: e.target.value.replace(/[^A-Za-z\s]/g, '')})} autoComplete="off" />
+                <input required placeholder="Last name" value={form.last_name} onChange={e => setForm({...form, last_name: e.target.value.replace(/[^A-Za-z\s]/g, '')})} autoComplete="off" />
               </div>
-              <input required type="email" placeholder="Official email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} />
-              <input required minLength="8" type="password" placeholder="Temporary password" value={form.password} onChange={e => setForm({...form, password: e.target.value})} />
+              <input 
+                required 
+                type="email" 
+                placeholder="Official email" 
+                value={form.email} 
+                onChange={e => setForm({...form, email: e.target.value})} 
+                autoComplete="new-password"
+                name="staff_new_email_input"
+                id="staff_new_email_input"
+              />
+              <input 
+                required 
+                minLength="8" 
+                type="password" 
+                placeholder="Temporary password" 
+                value={form.password} 
+                onChange={e => setForm({...form, password: e.target.value})} 
+                autoComplete="new-password"
+                name="staff_new_password_input"
+                id="staff_new_password_input"
+              />
               <button className="primary full" type="submit" disabled={saving}>{saving ? "Creating..." : "Create Account"}</button>
             </form>
           </div>

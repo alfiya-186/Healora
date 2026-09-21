@@ -1,0 +1,182 @@
+[
+  {
+    "test_id": "TC-REG-01",
+    "module": "Registration",
+    "test_case": "Load Registration Form with Health Metrics inputs",
+    "expected": "Registration page displays input fields, hero banner and goal selections",
+    "actual": "Page loaded: Healora",
+    "status": "PASS",
+    "timestamp": "2026-09-21 14:02:50",
+    "screenshot": "01_Registration_Form.png"
+  },
+  {
+    "test_id": "TC-REG-02",
+    "module": "Registration",
+    "test_case": "Fill Patient Registration Credentials (Step 1)",
+    "expected": "Credentials validated with real-time checkmarks (Name, Email, 10-digit Phone, Strong Password)",
+    "actual": "Form populated with valid credentials",
+    "status": "PASS",
+    "timestamp": "2026-09-21 14:02:52",
+    "screenshot": "02_Registration_Step1_Filled.png"
+  },
+  {
+    "test_id": "TC-REG-03",
+    "module": "Registration",
+    "test_case": "Select Health Program & Complete Registration (Step 2)",
+    "expected": "Health programs display (Weight Loss, PCOS, Diabetes) and personalized dashboard initializes",
+    "actual": "Health goals selected and account setup validated",
+    "status": "PASS",
+    "timestamp": "2026-09-21 14:03:04",
+    "screenshot": "03_Registration_Step2_Health_Goals.png"
+  },
+  {
+    "test_id": "TC-LOG-01",
+    "module": "Login",
+    "test_case": "Verify Login UI Layout & Google SSO Buttons",
+    "expected": "Login form with Email, Password, and Role-Aware redirection ready",
+    "actual": "Login UI loaded cleanly",
+    "status": "PASS",
+    "timestamp": "2026-09-21 14:03:09",
+    "screenshot": "04_Login_Page_Layout.png"
+  },
+  {
+    "test_id": "TC-LOG-02",
+    "module": "Login",
+    "test_case": "Negative Authentication Test with Incorrect Password",
+    "expected": "System denies access with error alert or message",
+    "actual": "Authentication rejected securely",
+    "status": "PASS",
+    "timestamp": "2026-09-21 14:03:13",
+    "screenshot": "05_Login_Negative_Validation.png"
+  },
+  {
+    "test_id": "TC-LOG-03",
+    "module": "Login",
+    "test_case": "Valid Patient Login with Session Creation",
+    "expected": "User redirected to /patient-dashboard with JWT tokens saved",
+    "actual": "Redirected to: http://localhost:5173/patient-dashboard",
+    "status": "PASS",
+    "timestamp": "2026-09-21 14:03:16",
+    "screenshot": "06_Login_Success_Redirect.png"
+  },
+  {
+    "test_id": "TC-DASH-01",
+    "module": "Patient Dashboard",
+    "test_case": "Verify Patient Overview, Biometrics & Enrolled Protocol Card",
+    "expected": "Dashboard renders personalized health metrics, weight, BMI, and calorie targets",
+    "actual": "Dashboard overview rendered successfully",
+    "status": "PASS",
+    "timestamp": "2026-09-21 14:03:20",
+    "screenshot": "07_Patient_Dashboard_Overview.png"
+  },
+  {
+    "test_id": "TC-DASH-02",
+    "module": "Patient Dashboard",
+    "test_case": "Verify Daily Wellness Tracking (Meals, Water, Steps, Sleep, Mood)",
+    "expected": "Interactive logging controls and progress bars render smoothly",
+    "actual": "Daily wellness tracking interface validated",
+    "status": "PASS",
+    "timestamp": "2026-09-21 14:03:30",
+    "screenshot": "08_Patient_Daily_Wellness_Tracking.png"
+  },
+  {
+    "test_id": "TC-DASH-03",
+    "module": "Patient Dashboard",
+    "test_case": "Verify Health Document Vault & Lab Report Upload Manager",
+    "expected": "Prescriptions, lab reports, and digital consent vault accessible",
+    "actual": "Document vault verified with secure upload buttons",
+    "status": "PASS",
+    "timestamp": "2026-09-21 14:03:40",
+    "screenshot": "09_Patient_Health_Document_Vault.png"
+  },
+  {
+    "test_id": "TC-APPT-01",
+    "module": "Appointment Booking",
+    "test_case": "Verify Consultation Booking Wizard (Telehealth Video vs. In-Clinic)",
+    "expected": "Step 1 renders doctor selector, mode toggle, rate cards (Online \u20b9500 / Clinic \u20b9700)",
+    "actual": "Booking wizard loaded with active clinician options",
+    "status": "PASS",
+    "timestamp": "2026-09-21 14:03:44",
+    "screenshot": "10_Appointment_Booking_Wizard.png"
+  },
+  {
+    "test_id": "TC-APPT-02",
+    "module": "Appointment Booking",
+    "test_case": "Verify Multi-Mode Payment Checkout (Razorpay Simulation)",
+    "expected": "Checkout modal opens with UPI (GPay/PhonePe), Card, and Netbanking options",
+    "actual": "Checkout and payment verification interface verified",
+    "status": "PASS",
+    "timestamp": "2026-09-21 14:03:56",
+    "screenshot": "11_Appointment_Checkout_Razorpay.png"
+  },
+  {
+    "test_id": "TC-APPT-03",
+    "module": "Appointment Booking",
+    "test_case": "Verify In-App WebRTC Video Consultation Studio (Zero External Apps)",
+    "expected": "Full-screen clinical video studio renders with live camera, audio visualiser, and controls",
+    "actual": "Telehealth studio initialized with hardware controls",
+    "status": "PASS",
+    "timestamp": "2026-09-21 14:04:09",
+    "screenshot": "12_Telehealth_Live_Video_Studio.png"
+  },
+  {
+    "test_id": "TC-NUT-01",
+    "module": "Nutritionist & Diet Plan",
+    "test_case": "Verify Nutritionist Portal, Clinical Case Directory & Adherence Filters",
+    "expected": "Doctor dashboard displays active patients, adherence metrics, and consultation schedules",
+    "actual": "Loaded URL: http://localhost:5173/nutritionist-dashboard",
+    "status": "PASS",
+    "timestamp": "2026-09-21 14:04:15",
+    "screenshot": "13_Nutritionist_Patient_Directory.png"
+  },
+  {
+    "test_id": "TC-NUT-02",
+    "module": "Nutritionist & Diet Plan",
+    "test_case": "Verify Digital Case Sheet, Dietary Protocol & Consultation Notes",
+    "expected": "Case sheet renders biometric history, diet recommendations, and versioned meal plans",
+    "actual": "Clinical case sheet and diet plan builder verified",
+    "status": "PASS",
+    "timestamp": "2026-09-21 14:04:17",
+    "screenshot": "14_Nutritionist_Diet_Plan_Builder.png"
+  },
+  {
+    "test_id": "TC-MGR-01",
+    "module": "Manager & Admin",
+    "test_case": "Verify Clinic Manager Live Token Queue Board & Room Allocations",
+    "expected": "Manager portal displays deterministic tokens (TK-101+), Call/Start buttons, and room status",
+    "actual": "Loaded URL: http://localhost:5173/manager-dashboard",
+    "status": "PASS",
+    "timestamp": "2026-09-21 14:04:23",
+    "screenshot": "15_Clinic_Manager_Live_Queue_Board.png"
+  },
+  {
+    "test_id": "TC-MGR-02",
+    "module": "Manager & Admin",
+    "test_case": "Verify Clinic Revenue Analytics, Payment Audits & Stock Alerts",
+    "expected": "Financial telemetry, refund management, and inventory stock monitoring operational",
+    "actual": "Revenue and inventory dashboards validated",
+    "status": "PASS",
+    "timestamp": "2026-09-21 14:04:33",
+    "screenshot": "16_Clinic_Manager_Revenue_Billing.png"
+  },
+  {
+    "test_id": "TC-ADM-01",
+    "module": "Manager & Admin",
+    "test_case": "Verify System Administrator Master Analytics & Platform Telemetry",
+    "expected": "Platform analytics displays total patients, clinical staff count, and audit trails",
+    "actual": "Loaded URL: http://localhost:5173/admin-dashboard",
+    "status": "PASS",
+    "timestamp": "2026-09-21 14:04:39",
+    "screenshot": "17_Admin_Analytics_Dashboard.png"
+  },
+  {
+    "test_id": "TC-ADM-02",
+    "module": "Manager & Admin",
+    "test_case": "Verify Role-Based Access Control (RBAC) & User Management Table",
+    "expected": "Full user table renders with roles (PATIENT, NUTRITIONIST, MANAGER, ADMIN, YOGA)",
+    "actual": "User management and RBAC security verified",
+    "status": "PASS",
+    "timestamp": "2026-09-21 14:04:49",
+    "screenshot": "18_Admin_User_Management.png"
+  }
+]

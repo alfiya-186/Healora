@@ -10,6 +10,8 @@
  *     Phase 2: Weeks 3 & 4 (Unlocked following Follow-up Consultation Evaluation)
  */
 
+import { evaluateMealConflicts } from './clinicalSafetyRules.js';
+
 export const KERALA_FOOD_IMAGES = {
   // Breakfasts (Appam, Puttu, Dosa, Idli, Idiyappam, Kanji)
   puttu_kadala: 'https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&w=800&q=80',
@@ -624,11 +626,171 @@ export const getKeralaPersonalizedOptions = (mealType, patientProfile, labReport
     }
   }
 
-  // Ensure every option has its verified accurate image attached
-  return pool.slice(0, 4).map(item => ({
+  // 🌟 STRICT CLINICAL SAFETY & ETHICAL DIETARY FILTERING 🌟
+  // Automatically eliminate any candidate recipe that conflicts with patient's allergies or diet preferences
+  let safePool = pool.filter(item => {
+    const conflicts = evaluateMealConflicts(item.name, {
+      food_allergies: patientProfile.food_allergies,
+      food_preferences: patientProfile.food_preferences
+    });
+    return !conflicts.allergenConflict && !conflicts.dietPreferenceConflict;
+  });
+
+  // If patient is Diabetic, eliminate any high-sugar, high-GI recipes
+  if (hasDiabetes) {
+    safePool = safePool.filter(item => {
+      const lower = item.name.toLowerCase();
+      return !lower.includes('banana & peanut') && !lower.includes('mango') && !lower.includes('honey') && !lower.includes('sugar');
+    });
+  }
+
+  // If safe options are fewer than 2, supplement from guaranteed allergen-free, vegan & diabetic-safe Kerala recipes
+  if (safePool.length < 2) {
+    const fallbacks = (CLINICAL_KERALA_UNIVERSAL_RECIPES[mealType] || []).filter(item => {
+      const conflicts = evaluateMealConflicts(item.name, {
+        food_allergies: patientProfile.food_allergies,
+        food_preferences: patientProfile.food_preferences
+      });
+      return !conflicts.allergenConflict && !conflicts.dietPreferenceConflict;
+    });
+
+    for (const fb of fallbacks) {
+      if (!safePool.some(p => p.name === fb.name)) {
+        safePool.push(fb);
+      }
+      if (safePool.length >= 2) break;
+    }
+  }
+
+  // Ensure exactly 2 highly-personalized options have their verified accurate image attached
+  return safePool.slice(0, 2).map(item => ({
     ...item,
     img: getKeralaMealImage(item.name, mealType)
   }));
+};
+
+/**
+ * 🌿 GUARANTEED SAFE, ALLERGEN-FREE, VEGAN & DIABETIC-SAFE KERALA CLINICAL RECIPES
+ * Used to supplement tailored options ensuring every patient has pristine, conflict-free choices.
+ */
+export const CLINICAL_KERALA_UNIVERSAL_RECIPES = {
+  pre_breakfast: [
+    {
+      name: 'Warm Jeera & Methi Seed Detox Water with Lemon',
+      cal: '15 kcal',
+      desc: 'Clinically supports insulin sensitivity, gut digestion, and early metabolic activation.'
+    }
+  ],
+  breakfast: [
+    {
+      name: 'Fenugreek (Methi) Infused Ragi Dosa with Vegetable Stew',
+      cal: '210 kcal',
+      desc: 'Soluble-fiber rich ragi & fenugreek aiding glycemic stability, 100% plant-based & allergen-free.'
+    },
+    {
+      name: 'Steamed Oats & Ragi Puttu with Spiced Kadala Curry',
+      cal: '230 kcal',
+      desc: 'Beta-glucan complex carbs with slow-digesting black chickpeas, vegan & gluten-safe.'
+    },
+    {
+      name: 'Steamed Moringa & Kerala Red Rice Idli with Tomato Chammanthi',
+      cal: '190 kcal',
+      desc: 'Fermented digestible probiotic idlis with antioxidant moringa leaves.'
+    },
+    {
+      name: 'Sprouted Cherupayar (Mung) Thoran with Grated Coconut',
+      cal: '180 kcal',
+      desc: 'High protein sprouted legumes rich in live enzymes, zero oil & zero sugar.'
+    }
+  ],
+  drink: [
+    {
+      name: 'Amla (Indian Gooseberry) & Cucumber Mint Detox Cooler',
+      cal: '40 kcal',
+      desc: 'Vitamin C rich pancreatic stimulant and cellular hydrator, 100% dairy-free.'
+    },
+    {
+      name: 'Tender Coconut Water (Elaneer) with Soaked Chia & Lime',
+      cal: '65 kcal',
+      desc: 'Natural potassium & electrolyte replenishment with omega-3 chia seeds.'
+    },
+    {
+      name: 'Warm Jeera & Methi Seed Detox Water with Lemon',
+      cal: '15 kcal',
+      desc: 'Clinically supports insulin sensitivity and postprandial digestive clearance.'
+    },
+    {
+      name: 'Spearmint & Cinnamon Herbal Iced Infusion',
+      cal: '20 kcal',
+      desc: 'Hormonal balancing infusion with cinnamaldehyde for insulin receptor activation.'
+    }
+  ],
+  lunch: [
+    {
+      name: 'Foxtail Millet with Kerala Sambar & Snake Gourd Thoran',
+      cal: '320 kcal',
+      desc: 'Ultra low-glycemic ancient millet with fiber-rich snake gourd and lentils.'
+    },
+    {
+      name: 'Kerala Red Matta Rice (3/4 Cup) with Dal Tadka & Cabbage Thoran',
+      cal: '330 kcal',
+      desc: 'Unpolished iron-rich red rice with brassica fiber, 100% plant-based.'
+    },
+    {
+      name: 'Quinoa & 7-Vegetable Kerala Avial Bowl with Mint Chammanthi',
+      cal: '340 kcal',
+      desc: 'Traditional Kerala avial prepared with steamed vegetables, coconut & complete amino acids.'
+    },
+    {
+      name: 'Steamed Red Matta Rice Kanji with Sprouted Payar Thoran',
+      cal: '290 kcal',
+      desc: 'Comforting, easily assimilated complex carbohydrate lunch with slow burning legumes.'
+    }
+  ],
+  snack: [
+    {
+      name: 'Sundal (Steamed Spiced Chickpeas with Mustard & Curry Leaves)',
+      cal: '120 kcal',
+      desc: 'Zero-oil savory Kerala evening legume snack with high dietary fiber.'
+    },
+    {
+      name: 'Sprouted Green Gram & Cucumber Salad with Lemon Dressing',
+      cal: '110 kcal',
+      desc: 'Crunchy, enzyme-dense living sprout salad with crushed black pepper.'
+    },
+    {
+      name: 'Roasted Makhana (Fox Nuts) with Turmeric & Himalayan Salt',
+      cal: '95 kcal',
+      desc: 'Low-calorie, mineral-dense crunchy snack supporting kidney function.'
+    },
+    {
+      name: 'Steamed Ragi Kozhukatta with Cardamom & Grated Coconut',
+      cal: '130 kcal',
+      desc: 'Steamed whole finger millet dumplings, high calcium & zero refined flour.'
+    }
+  ],
+  dinner: [
+    {
+      name: 'Steamed Ragi Dosa (2 pcs) with Kerala Vegetable Kurma',
+      cal: '240 kcal',
+      desc: 'Light evening meal preventing nocturnal hypoglycemia and insulin surges.'
+    },
+    {
+      name: 'Light Moong Dal & Kerala Matta Rice Kanji with Payar Thoran',
+      cal: '250 kcal',
+      desc: 'Gentle on gut digestion, supports restorative sleep and circadian alignment.'
+    },
+    {
+      name: 'Steamed Brown Rice Idiyappam with Coconut Vegetable Stew',
+      cal: '230 kcal',
+      desc: 'Aromatic whole-grain string hoppers with antioxidant rich coconut stew.'
+    },
+    {
+      name: 'Methi (Fenugreek) Phulka with Yellow Moong Dal & Cucumber Salad',
+      cal: '260 kcal',
+      desc: 'Diabetic and cardiac protective dinner rich in fenugreek galactomannan fiber.'
+    }
+  ]
 };
 
 /**
@@ -687,5 +849,27 @@ export const generatePersonalizedKeralaWeeks = (patientProfile, labReports = [],
   }
 
   return weeks;
+};
+
+/**
+  * Returns a guaranteed safe, compliant, fully-formed meal object for any clinical slot.
+  */
+export const getSafeUniversalMeal = (slotKey) => {
+  const list = CLINICAL_KERALA_UNIVERSAL_RECIPES[slotKey] || [];
+  if (list.length > 0 && list[0]) {
+    const item = list[0];
+    return {
+      name: item.name,
+      cal: item.cal || '250 kcal',
+      desc: item.desc || 'Nutrient-dense personalized Kerala clinical recipe formulated for your metabolic health goals.',
+      str: `${item.name} (${item.cal || '250 kcal'})`
+    };
+  }
+  return {
+    name: 'Nutritious Kerala Clinical Meal',
+    cal: '250 kcal',
+    desc: 'Nutrient-dense personalized Kerala clinical recipe formulated for your metabolic health goals.',
+    str: 'Nutritious Kerala Clinical Meal (250 kcal)'
+  };
 };
 

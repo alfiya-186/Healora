@@ -6,7 +6,7 @@ import {
   HeartPulse, Sparkles, Apple, Flame, Stethoscope, Droplets
 } from 'lucide-react';
 
-const GOAL_PROGRAMS = [
+const DEFAULT_GOAL_PROGRAMS = [
   {
     id: 'weight-loss',
     name: 'Weight Loss',
@@ -57,16 +57,44 @@ const GOAL_PROGRAMS = [
   }
 ];
 
+const loadActivePrograms = () => {
+  let list = [...DEFAULT_GOAL_PROGRAMS];
+  try {
+    const stored = JSON.parse(localStorage.getItem('healora_programs_v2')) || JSON.parse(localStorage.getItem('healora_programs'));
+    if (stored && Array.isArray(stored) && stored.length > 0) {
+      const active = stored.filter(p => p.status !== 'Inactive');
+      active.forEach(p => {
+        const slug = (p.name || '').toLowerCase().replace(/\s+/g, '-');
+        const exists = list.some(item => item.id === slug || item.name.toLowerCase() === (p.name || '').toLowerCase());
+        if (!exists) {
+          list.push({
+            id: slug,
+            name: p.name,
+            tagline: p.description || 'Clinical Precision Nutrition & Care',
+            icon: '🩺',
+            badgeColor: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+            description: p.description || 'Specialized clinical nutrition protocol.'
+          });
+        }
+      });
+    }
+  } catch (e) {}
+  return list;
+};
+
 const SignUpPage = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
+  const [goalPrograms, setGoalPrograms] = useState(loadActivePrograms);
+
   // Determine if user came from a specific Goal Card on the Landing Page
   const paramGoal = searchParams.get('program') || searchParams.get('goal');
   
-  const matchedGoal = GOAL_PROGRAMS.find(g => 
+  const matchedGoal = goalPrograms.find(g => 
     g.id === paramGoal || 
-    g.name.toLowerCase() === (paramGoal || '').toLowerCase().replace(/-/g, ' ')
+    g.name.toLowerCase() === (paramGoal || '').toLowerCase().replace(/-/g, ' ') ||
+    (paramGoal && (paramGoal.toLowerCase() === g.id || paramGoal.toLowerCase() === g.name.toLowerCase()))
   );
 
   const isPreselectedFromCard = Boolean(matchedGoal);
@@ -83,7 +111,11 @@ const SignUpPage = () => {
   const [showPassword, setShowPassword] = useState(false);
 
   // --- STEP 2: HEALTH PROFILE & GOAL ---
-  const [selectedGoal, setSelectedGoal] = useState(matchedGoal ? matchedGoal.name : 'Weight Loss');
+  const [selectedGoal, setSelectedGoal] = useState(() => {
+    if (matchedGoal) return matchedGoal.name;
+    if (paramGoal) return paramGoal;
+    return 'Weight Loss';
+  });
   const [age, setAge] = useState('24');
   const [gender, setGender] = useState('Female');
   const [heightCm, setHeightCm] = useState('165');
@@ -97,10 +129,17 @@ const SignUpPage = () => {
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
+    const updated = loadActivePrograms();
+    setGoalPrograms(updated);
+  }, []);
+
+  useEffect(() => {
     if (matchedGoal) {
       setSelectedGoal(matchedGoal.name);
+    } else if (paramGoal) {
+      setSelectedGoal(paramGoal);
     }
-  }, [matchedGoal]);
+  }, [matchedGoal, paramGoal]);
 
   // Validate Step 1 before continuing
   const handleNextStep = (e) => {
@@ -372,7 +411,14 @@ const SignUpPage = () => {
               {/* Row 1: First Name & Last Name */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-[#1C2C22] mb-1.5">First Name</label>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <label className="block text-xs font-bold text-[#1C2C22]">First Name</label>
+                    {firstName.length > 0 && (
+                      <span className={`text-[10px] font-bold ${firstName.trim().length >= 2 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                        {firstName.trim().length >= 2 ? '✓ Valid' : 'Min 2 letters'}
+                      </span>
+                    )}
+                  </div>
                   <input 
                     type="text" 
                     required 
@@ -382,11 +428,27 @@ const SignUpPage = () => {
                     }} 
                     placeholder="Jane" 
                     autoComplete="off" 
-                    className="w-full bg-white border border-[#EBE9E0] rounded-xl py-2.5 px-4 outline-none focus:border-[#456A50] text-sm shadow-sm" 
+                    className={`w-full bg-white border rounded-xl py-2.5 px-4 outline-none text-sm shadow-sm transition ${
+                      firstName.length === 0 
+                        ? 'border-[#EBE9E0] focus:border-[#456A50]' 
+                        : firstName.trim().length >= 2 
+                          ? 'border-emerald-500 bg-emerald-50/10 focus:border-emerald-600' 
+                          : 'border-amber-400 bg-amber-50/10 focus:border-amber-500'
+                    }`} 
                   />
+                  {firstName.length > 0 && firstName.trim().length < 2 && (
+                    <p className="text-[11px] text-amber-700 mt-1 font-medium">⚠️ First name must be at least 2 letters.</p>
+                  )}
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-[#1C2C22] mb-1.5">Last Name</label>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <label className="block text-xs font-bold text-[#1C2C22]">Last Name</label>
+                    {lastName.length > 0 && (
+                      <span className={`text-[10px] font-bold ${lastName.trim().length >= 1 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                        {lastName.trim().length >= 1 ? '✓ Valid' : 'Required'}
+                      </span>
+                    )}
+                  </div>
                   <input 
                     type="text" 
                     required 
@@ -396,17 +458,51 @@ const SignUpPage = () => {
                     }} 
                     placeholder="Doe" 
                     autoComplete="off" 
-                    className="w-full bg-white border border-[#EBE9E0] rounded-xl py-2.5 px-4 outline-none focus:border-[#456A50] text-sm shadow-sm" 
+                    className={`w-full bg-white border rounded-xl py-2.5 px-4 outline-none text-sm shadow-sm transition ${
+                      lastName.length === 0 
+                        ? 'border-[#EBE9E0] focus:border-[#456A50]' 
+                        : lastName.trim().length >= 1 
+                          ? 'border-emerald-500 bg-emerald-50/10 focus:border-emerald-600' 
+                          : 'border-amber-400 bg-amber-50/10 focus:border-amber-500'
+                    }`} 
                   />
+                  {lastName.length > 0 && lastName.trim().length < 1 && (
+                    <p className="text-[11px] text-amber-700 mt-1 font-medium">⚠️ Last name cannot be empty.</p>
+                  )}
                 </div>
               </div>
 
               {/* Row 2: Email & Phone Number */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-[#1C2C22] mb-1.5">Email Address</label>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <label className="block text-xs font-bold text-[#1C2C22]">Email Address</label>
+                    {email.length > 0 && (
+                      <span className={`text-[10px] font-bold ${
+                        /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) 
+                          ? 'text-emerald-700' 
+                          : !email.includes('@') 
+                            ? 'text-red-600' 
+                            : 'text-amber-700'
+                      }`}>
+                        {/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) 
+                          ? '✓ Valid' 
+                          : !email.includes('@') 
+                            ? 'Missing @' 
+                            : 'Domain incomplete'}
+                      </span>
+                    )}
+                  </div>
                   <div className="relative">
-                    <Mail className="absolute left-3.5 top-3 text-[#5A6B60]" size={16} />
+                    <Mail className={`absolute left-3.5 top-3 ${
+                      email.length === 0 
+                        ? 'text-[#5A6B60]' 
+                        : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) 
+                          ? 'text-emerald-700' 
+                          : !email.includes('@') 
+                            ? 'text-red-600' 
+                            : 'text-amber-700'
+                    }`} size={16} />
                     <input 
                       type="email" 
                       required 
@@ -414,14 +510,48 @@ const SignUpPage = () => {
                       onChange={(e) => setEmail(e.target.value)} 
                       placeholder="jane@example.com" 
                       autoComplete="off" 
-                      className="w-full bg-white border border-[#EBE9E0] rounded-xl py-2.5 pl-10 pr-3.5 outline-none focus:border-[#456A50] text-sm shadow-sm" 
+                      className={`w-full bg-white border rounded-xl py-2.5 pl-10 pr-3.5 outline-none text-sm shadow-sm transition ${
+                        email.length === 0 
+                          ? 'border-[#EBE9E0] focus:border-[#456A50]' 
+                          : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) 
+                            ? 'border-emerald-500 bg-emerald-50/10 focus:border-emerald-600 text-[#1C2C22]' 
+                            : !email.includes('@') 
+                              ? 'border-red-400 bg-red-50/20 focus:border-red-500 text-red-900' 
+                              : 'border-amber-400 bg-amber-50/20 focus:border-amber-500 text-amber-900'
+                      }`} 
                     />
                   </div>
+                  {/* Live Inline Email Feedback */}
+                  {email.length > 0 && !email.includes('@') && (
+                    <p className="text-[11px] text-red-600 mt-1 font-semibold flex items-center gap-1 animate-in fade-in">
+                      ⚠️ Must include an '@' (e.g. name@example.com)
+                    </p>
+                  )}
+                  {email.length > 0 && email.includes('@') && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && (
+                    <p className="text-[11px] text-amber-700 mt-1 font-semibold flex items-center gap-1 animate-in fade-in">
+                      ⚠️ Include domain (e.g. @gmail.com)
+                    </p>
+                  )}
+                  {email.length > 0 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && (
+                    <p className="text-[11px] text-emerald-700 mt-1 font-semibold flex items-center gap-1 animate-in fade-in">
+                      ✓ Valid email address
+                    </p>
+                  )}
                 </div>
+
                 <div>
-                  <label className="block text-xs font-bold text-[#1C2C22] mb-1.5">Phone Number</label>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <label className="block text-xs font-bold text-[#1C2C22]">Phone Number</label>
+                    {phone.length > 0 && (
+                      <span className={`text-[10px] font-bold ${phone.length === 10 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                        {phone.length === 10 ? '✓ 10 Digits' : `${phone.length}/10 digits`}
+                      </span>
+                    )}
+                  </div>
                   <div className="relative">
-                    <Phone className="absolute left-3.5 top-3 text-[#5A6B60]" size={16} />
+                    <Phone className={`absolute left-3.5 top-3 ${
+                      phone.length === 0 ? 'text-[#5A6B60]' : phone.length === 10 ? 'text-emerald-700' : 'text-amber-700'
+                    }`} size={16} />
                     <input 
                       type="tel" 
                       required 
@@ -432,17 +562,43 @@ const SignUpPage = () => {
                       }} 
                       placeholder="10 Digits" 
                       autoComplete="off" 
-                      className="w-full bg-white border border-[#EBE9E0] rounded-xl py-2.5 pl-10 pr-3.5 outline-none focus:border-[#456A50] text-sm shadow-sm" 
+                      className={`w-full bg-white border rounded-xl py-2.5 pl-10 pr-3.5 outline-none text-sm shadow-sm transition ${
+                        phone.length === 0 
+                          ? 'border-[#EBE9E0] focus:border-[#456A50]' 
+                          : phone.length === 10 
+                            ? 'border-emerald-500 bg-emerald-50/10 focus:border-emerald-600' 
+                            : 'border-amber-400 bg-amber-50/20 focus:border-amber-500'
+                      }`} 
                     />
                   </div>
+                  {/* Live Inline Phone Feedback */}
+                  {phone.length > 0 && phone.length < 10 && (
+                    <p className="text-[11px] text-amber-700 mt-1 font-semibold flex items-center gap-1 animate-in fade-in">
+                      ⚠️ {10 - phone.length} more digits needed (10 digits required)
+                    </p>
+                  )}
+                  {phone.length === 10 && (
+                    <p className="text-[11px] text-emerald-700 mt-1 font-semibold flex items-center gap-1 animate-in fade-in">
+                      ✓ 10-digit number verified
+                    </p>
+                  )}
                 </div>
               </div>
 
               {/* Row 3: Password */}
               <div>
-                <label className="block text-xs font-bold text-[#1C2C22] mb-1.5">Password</label>
+                <div className="flex justify-between items-center mb-1.5">
+                  <label className="block text-xs font-bold text-[#1C2C22]">Password</label>
+                  {password.length > 0 && (
+                    <span className={`text-[10px] font-bold ${password.length >= 8 ? 'text-emerald-700' : 'text-red-600'}`}>
+                      {password.length >= 8 ? '✓ Strong' : `${password.length}/8 chars`}
+                    </span>
+                  )}
+                </div>
                 <div className="relative">
-                  <Lock className="absolute left-3.5 top-3 text-[#5A6B60]" size={16} />
+                  <Lock className={`absolute left-3.5 top-3 ${
+                    password.length === 0 ? 'text-[#5A6B60]' : password.length >= 8 ? 'text-emerald-700' : 'text-red-600'
+                  }`} size={16} />
                   <input 
                     type={showPassword ? "text" : "password"} 
                     required 
@@ -450,13 +606,32 @@ const SignUpPage = () => {
                     onChange={(e) => setPassword(e.target.value)} 
                     placeholder="••••••••" 
                     autoComplete="new-password" 
-                    className="w-full bg-white border border-[#EBE9E0] rounded-xl py-2.5 pl-10 pr-10 outline-none focus:border-[#456A50] text-sm shadow-sm" 
+                    className={`w-full bg-white border rounded-xl py-2.5 pl-10 pr-10 outline-none text-sm shadow-sm transition ${
+                      password.length === 0 
+                        ? 'border-[#EBE9E0] focus:border-[#456A50]' 
+                        : password.length >= 8 
+                          ? 'border-emerald-500 bg-emerald-50/10 focus:border-emerald-600' 
+                          : 'border-red-400 bg-red-50/20 focus:border-red-500'
+                    }`} 
                   />
                   <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3.5 top-3 text-[#5A6B60] cursor-pointer">
                     {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
                 </div>
-                <p className="text-[11px] text-[#5A6B60] mt-1">ⓘ Must be at least 8 characters.</p>
+                {/* Live Inline Password Feedback */}
+                {password.length === 0 && (
+                  <p className="text-[11px] text-[#5A6B60] mt-1 font-medium">ⓘ Must be at least 8 characters.</p>
+                )}
+                {password.length > 0 && password.length < 8 && (
+                  <p className="text-[11px] text-red-600 mt-1 font-semibold flex items-center gap-1 animate-in fade-in">
+                    ⚠️ {8 - password.length} more characters needed (Min 8 characters)
+                  </p>
+                )}
+                {password.length >= 8 && (
+                  <p className="text-[11px] text-emerald-700 mt-1 font-semibold flex items-center gap-1 animate-in fade-in">
+                    ✓ Strong password format ({password.length} characters)
+                  </p>
+                )}
               </div>
 
               <button 
@@ -482,7 +657,7 @@ const SignUpPage = () => {
                   Select Your Clinical Health Program
                 </label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-                  {GOAL_PROGRAMS.map((goal) => {
+                  {goalPrograms.map((goal) => {
                     const isSelected = selectedGoal === goal.name;
                     return (
                       <button

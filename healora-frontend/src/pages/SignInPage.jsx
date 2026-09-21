@@ -21,7 +21,39 @@ const SignInPage = () => {
   const [showForgotModal, setShowForgotModal] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotLoading, setForgotLoading] = useState(false);
-  const [forgotSuccess, setForgotSuccess] = useState(false);
+  // 🌟 QUICK 1-CLICK DEMO LOGIN HANDLER 🌟
+  const quickRoleLogin = async (demoEmail, demoPassword) => {
+    setEmail(demoEmail);
+    setPassword(demoPassword);
+    setErrorMsg('');
+    setIsLoading(true);
+
+    try {
+      const response = await fetch('/api/login/', {
+        method: 'POST',
+        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: demoEmail.toLowerCase().trim(), password: demoPassword }),
+      });
+      const data = await response.json().catch(() => null);
+      if (response.ok && data) {
+        localStorage.setItem('access_token', data.access);
+        localStorage.setItem('user_role', data.role);
+        localStorage.setItem('user_name', data.first_name || 'User');
+        localStorage.setItem('user_id', data.id); 
+        
+        if (data.role === 'ADMIN') navigate('/admin-dashboard', { replace: true });
+        else if (data.role === 'MANAGER') navigate('/manager-dashboard', { replace: true });
+        else if (data.role === 'NUTRITIONIST') navigate('/nutritionist-dashboard', { replace: true });
+        else navigate('/patient-dashboard', { replace: true });
+      } else {
+        setErrorMsg('Authentication failed for selected demo role.');
+      }
+    } catch (e) {
+      setErrorMsg('Cannot connect to Django API backend.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -161,6 +193,66 @@ const SignInPage = () => {
             <p className="text-[#5A6B60] text-sm mt-1">Sign in to your clinical portal.</p>
           </div>
           
+          {/* 🌟 1-CLICK QUICK ROLE LOGIN CAROUSEL / BUTTONS 🌟 */}
+          <div className="bg-[#F4F7F5] border border-[#DCE4DE] p-3 rounded-2xl shadow-2xs">
+            <p className="text-[10px] font-black uppercase text-[#456A50] tracking-wider mb-2 text-center flex items-center justify-center gap-1.5">
+              <span>⚡</span> Quick 1-Click Demo Portals
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => quickRoleLogin('sarah@gmail.com', 'Sarah@123')}
+                disabled={isLoading || isGoogleLoading}
+                className="bg-white hover:bg-emerald-50 border border-[#D5DDD7] hover:border-emerald-500 p-2 rounded-xl text-[11px] font-bold text-[#1C2C22] flex items-center gap-1.5 transition shadow-2xs cursor-pointer text-left"
+              >
+                <span className="text-base">🩺</span>
+                <div className="truncate">
+                  <span className="block font-bold text-[#1C2C22] leading-tight">Dr. Sarah</span>
+                  <span className="text-[9px] text-[#5A6B60] font-normal">Nutritionist</span>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => quickRoleLogin('amna@gmail.com', 'Amna@123')}
+                disabled={isLoading || isGoogleLoading}
+                className="bg-white hover:bg-emerald-50 border border-[#D5DDD7] hover:border-emerald-500 p-2 rounded-xl text-[11px] font-bold text-[#1C2C22] flex items-center gap-1.5 transition shadow-2xs cursor-pointer text-left"
+              >
+                <span className="text-base">👤</span>
+                <div className="truncate">
+                  <span className="block font-bold text-[#1C2C22] leading-tight">Amna</span>
+                  <span className="text-[9px] text-[#5A6B60] font-normal">Patient</span>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => quickRoleLogin('aliz@gmail.com', 'Aliz@123')}
+                disabled={isLoading || isGoogleLoading}
+                className="bg-white hover:bg-emerald-50 border border-[#D5DDD7] hover:border-emerald-500 p-2 rounded-xl text-[11px] font-bold text-[#1C2C22] flex items-center gap-1.5 transition shadow-2xs cursor-pointer text-left"
+              >
+                <span className="text-base">🏥</span>
+                <div className="truncate">
+                  <span className="block font-bold text-[#1C2C22] leading-tight">Aliz</span>
+                  <span className="text-[9px] text-[#5A6B60] font-normal">Clinic Manager</span>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => quickRoleLogin('admin@gmail.com', 'Admin@123')}
+                disabled={isLoading || isGoogleLoading}
+                className="bg-white hover:bg-emerald-50 border border-[#D5DDD7] hover:border-emerald-500 p-2 rounded-xl text-[11px] font-bold text-[#1C2C22] flex items-center gap-1.5 transition shadow-2xs cursor-pointer text-left"
+              >
+                <span className="text-base">⚙️</span>
+                <div className="truncate">
+                  <span className="block font-bold text-[#1C2C22] leading-tight">System</span>
+                  <span className="text-[9px] text-[#5A6B60] font-normal">Administrator</span>
+                </div>
+              </button>
+            </div>
+          </div>
+
           {errorMsg && (
             <div className="p-3 bg-red-50 text-red-800 text-xs font-semibold rounded-xl border border-red-200">
               {errorMsg}
@@ -169,11 +261,67 @@ const SignInPage = () => {
           
           <form onSubmit={handleLogin} className="space-y-4" autoComplete="off">
             <div>
-              <label className="block text-xs font-semibold mb-1 text-[#1C2C22]">Email Address</label>
-              <div className="relative">
-                <Mail className="absolute left-4 top-3 text-[#5A6B60]" size={16} />
-                <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-white border border-[#EBE9E0] rounded-xl py-2.5 pl-11 pr-4 outline-none focus:border-[#456A50] text-sm shadow-sm" placeholder="name@example.com" autoComplete="off" />
+              <div className="flex justify-between items-center mb-1">
+                <label className="block text-xs font-semibold text-[#1C2C22]">Email Address</label>
+                {email.length > 0 && (
+                  <span className={`text-[10px] font-bold ${
+                    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) 
+                      ? 'text-emerald-700' 
+                      : !email.includes('@') 
+                        ? 'text-red-600' 
+                        : 'text-amber-700'
+                  }`}>
+                    {/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) 
+                      ? '✓ Valid' 
+                      : !email.includes('@') 
+                        ? 'Missing @' 
+                        : 'Domain incomplete'}
+                  </span>
+                )}
               </div>
+              <div className="relative">
+                <Mail className={`absolute left-4 top-3 ${
+                  email.length === 0 
+                    ? 'text-[#5A6B60]' 
+                    : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) 
+                      ? 'text-emerald-700' 
+                      : !email.includes('@') 
+                        ? 'text-red-600' 
+                        : 'text-amber-700'
+                }`} size={16} />
+                <input 
+                  type="email" 
+                  required 
+                  value={email} 
+                  onChange={(e) => setEmail(e.target.value)} 
+                  className={`w-full bg-white border rounded-xl py-2.5 pl-11 pr-4 outline-none text-sm shadow-sm transition ${
+                    email.length === 0 
+                      ? 'border-[#EBE9E0] focus:border-[#456A50]' 
+                      : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) 
+                        ? 'border-emerald-500 bg-emerald-50/10 focus:border-emerald-600 text-[#1C2C22]' 
+                        : !email.includes('@') 
+                          ? 'border-red-400 bg-red-50/20 focus:border-red-500 text-red-900' 
+                          : 'border-amber-400 bg-amber-50/20 focus:border-amber-500 text-amber-900'
+                  }`} 
+                  placeholder="name@example.com" 
+                  autoComplete="new-password" 
+                />
+              </div>
+              {email.length > 0 && !email.includes('@') && (
+                <p className="text-[11px] text-red-600 mt-1 font-semibold flex items-center gap-1 animate-in fade-in">
+                  ⚠️ Must include an '@' (e.g. name@example.com)
+                </p>
+              )}
+              {email.length > 0 && email.includes('@') && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && (
+                <p className="text-[11px] text-amber-700 mt-1 font-semibold flex items-center gap-1 animate-in fade-in">
+                  ⚠️ Include a complete domain (e.g. @gmail.com)
+                </p>
+              )}
+              {email.length > 0 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && (
+                <p className="text-[11px] text-emerald-700 mt-1 font-semibold flex items-center gap-1 animate-in fade-in">
+                  ✓ Valid email address
+                </p>
+              )}
             </div>
             
             <div>
@@ -182,18 +330,44 @@ const SignInPage = () => {
                 <button 
                   type="button" 
                   onClick={() => { setForgotEmail(email); setForgotSuccess(false); setShowForgotModal(true); }}
-                  className="text-xs font-semibold text-[#456A50] hover:underline"
+                  className="text-xs font-semibold text-[#456A50] hover:underline cursor-pointer"
                 >
                   Forgot password?
                 </button>
               </div>
               <div className="relative">
-                <Lock className="absolute left-4 top-3 text-[#5A6B60]" size={16} />
-                <input type={showPassword ? "text" : "password"} required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white border border-[#EBE9E0] rounded-xl py-2.5 pl-11 pr-11 outline-none focus:border-[#456A50] text-sm shadow-sm" placeholder="••••••••" autoComplete="new-password" />
-                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-3 text-[#5A6B60]">
+                <Lock className={`absolute left-4 top-3 ${
+                  password.length === 0 ? 'text-[#5A6B60]' : password.length >= 8 ? 'text-emerald-700' : 'text-amber-700'
+                }`} size={16} />
+                <input 
+                  type={showPassword ? "text" : "password"} 
+                  required 
+                  value={password} 
+                  onChange={(e) => setPassword(e.target.value)} 
+                  className={`w-full bg-white border rounded-xl py-2.5 pl-11 pr-11 outline-none text-sm shadow-sm transition ${
+                    password.length === 0 
+                      ? 'border-[#EBE9E0] focus:border-[#456A50]' 
+                      : password.length >= 8 
+                        ? 'border-emerald-500 bg-emerald-50/10 focus:border-emerald-600' 
+                        : 'border-amber-400 bg-amber-50/20 focus:border-amber-500'
+                  }`} 
+                  placeholder="••••••••" 
+                  autoComplete="new-password" 
+                />
+                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-3 text-[#5A6B60] cursor-pointer">
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
+              {password.length > 0 && password.length < 8 && (
+                <p className="text-[11px] text-amber-700 mt-1 font-semibold flex items-center gap-1 animate-in fade-in">
+                  ⚠️ Password must be at least 8 characters
+                </p>
+              )}
+              {password.length >= 8 && (
+                <p className="text-[11px] text-emerald-700 mt-1 font-semibold flex items-center gap-1 animate-in fade-in">
+                  ✓ Password format valid
+                </p>
+              )}
             </div>
             
             <button type="submit" disabled={isLoading || isGoogleLoading} className="w-full bg-[#456A50] text-white font-bold py-3.5 px-6 rounded-xl shadow-lg shadow-[#456A50]/20 hover:bg-[#35533E] text-sm transition mt-2 disabled:opacity-70">

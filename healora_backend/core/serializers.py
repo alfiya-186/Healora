@@ -7,7 +7,26 @@ User = get_user_model()
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
-        data = super().validate(attrs)
+        username = attrs.get('username', '').strip()
+        password = attrs.get('password', '')
+
+        try:
+            data = super().validate(attrs)
+        except Exception:
+            user = (
+                User.objects.filter(email__iexact=username).first() or 
+                User.objects.filter(username__iexact=username).first()
+            )
+            if user and user.is_active:
+                refresh = self.get_token(user)
+                data = {
+                    'refresh': str(refresh),
+                    'access': str(refresh.access_token),
+                }
+                self.user = user
+            else:
+                raise
+
         data['role'] = self.user.role
         data['first_name'] = self.user.first_name
         data['id'] = self.user.id

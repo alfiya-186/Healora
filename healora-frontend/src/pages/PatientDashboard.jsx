@@ -12,7 +12,9 @@ import {
 
 import BookingCalendarPicker, { getHolidayOrOffReason } from '../components/BookingCalendarPicker.jsx';
 import TimeSlotPicker, { normalizeTimeTo24H, normalizeTimeToLabel } from '../components/TimeSlotPicker.jsx';
-import { getKeralaPersonalizedOptions, getKeralaMealImage, KERALA_FOOD_IMAGES } from '../utils/keralaNutritionEngine.js';
+import { getKeralaPersonalizedOptions, getKeralaMealImage, KERALA_FOOD_IMAGES, CLINICAL_KERALA_UNIVERSAL_RECIPES, getSafeUniversalMeal } from '../utils/keralaNutritionEngine.js';
+import TelehealthVideoRoom from '../components/TelehealthVideoRoom.jsx';
+import { evaluateClinicalSafety, checkMealAllergenConflict, evaluateMealConflicts } from '../utils/clinicalSafetyRules.js';
 
 export const calculateMetabolicProfile = (profile = {}, gender = 'Female') => {
   const weight = parseFloat(profile.weight_kg) || 60;
@@ -82,53 +84,54 @@ export const calculateMetabolicProfile = (profile = {}, gender = 'Female') => {
   };
 };
 
-export const calculateMetabolicHealthScore = (wellnessLogs = [], weightRecords = [], quickWater = 0) => {
+export const calculateMetabolicHealthScore = (wellnessLogs = [], weightRecords = [], quickWater = 0, hasPublishedDietPlan = false) => {
   // Pillar 1: Meal Adherence (Max 30 pts)
-  let mealPts = 22; // baseline
-  if (wellnessLogs && wellnessLogs.length > 0) {
+  // STRICT RULE: If the patient has NOT received a meal plan from the doctor or has no logs, meal score is 0!
+  let mealPts = 0;
+  if (hasPublishedDietPlan && wellnessLogs && wellnessLogs.length > 0) {
     const compliantCount = wellnessLogs.filter(l => {
       const hasB = !!(l.breakfast_completed || l.completed_slots?.breakfast);
       const hasL = !!(l.lunch_completed || l.completed_slots?.lunch);
       const hasD = !!(l.dinner_completed || l.completed_slots?.dinner);
       return (hasB || hasL || hasD) && !l.ate_other_food;
     }).length;
-    mealPts = Math.min(30, Math.max(10, Math.round((compliantCount / Math.max(1, Math.min(7, wellnessLogs.length))) * 30)));
+    mealPts = Math.min(30, Math.round((compliantCount / Math.max(1, Math.min(7, wellnessLogs.length))) * 30));
   }
 
   // Pillar 2: Daily Hydration Target (Max 20 pts)
-  let waterPts = 15;
+  let waterPts = 0;
   const recentLogs = wellnessLogs ? wellnessLogs.slice(0, 7) : [];
   if (recentLogs.length > 0 || quickWater > 0) {
     const avgGlasses = ((recentLogs.reduce((acc, l) => acc + (parseFloat(l.water_glasses) || 0), 0) + quickWater) / Math.max(1, recentLogs.length + (quickWater > 0 ? 1 : 0)));
-    waterPts = Math.min(20, Math.max(5, Math.round((avgGlasses / 8) * 20)));
+    waterPts = Math.min(20, Math.round((avgGlasses / 8) * 20));
   }
 
   // Pillar 3: Restorative Sleep (Max 20 pts)
-  let sleepPts = 16;
+  let sleepPts = 0;
   if (recentLogs.length > 0) {
     const avgSleep = recentLogs.reduce((acc, l) => acc + (parseFloat(l.sleep_hours) || 0), 0) / recentLogs.length;
     if (avgSleep >= 7 && avgSleep <= 8.5) sleepPts = 20;
     else if (avgSleep >= 6) sleepPts = 15;
-    else sleepPts = 10;
+    else if (avgSleep > 0) sleepPts = 10;
   }
 
   // Pillar 4: Physical Activity & Movement (Max 15 pts)
-  let actPts = 12;
+  let actPts = 0;
   if (recentLogs.length > 0) {
     const activeCount = recentLogs.filter(l => l.physical_activity && l.physical_activity !== 'None' && l.physical_activity !== 'No workout').length;
-    actPts = Math.min(15, Math.max(5, Math.round((activeCount / Math.max(1, recentLogs.length)) * 15)));
+    actPts = Math.min(15, Math.round((activeCount / Math.max(1, recentLogs.length)) * 15));
   }
 
   // Pillar 5: Biometric Weigh-in Consistency (Max 15 pts)
   const bioCount = Array.isArray(weightRecords) ? weightRecords.length : 0;
-  let bioPts = Math.min(15, Math.max(6, bioCount * 5));
+  let bioPts = Math.min(15, bioCount * 5);
 
-  const totalScore = Math.min(100, Math.max(30, mealPts + waterPts + sleepPts + actPts + bioPts));
+  const totalScore = Math.min(100, mealPts + waterPts + sleepPts + actPts + bioPts);
 
-  let statusLabel = 'Optimal Metabolic Stability';
-  let statusColor = 'text-emerald-700 bg-emerald-50 border-emerald-300';
-  let statusBadge = '🟢 Optimal Stability';
-  let clinicalInsight = 'Metabolic markers indicate steady glycemic regulation and cellular energy consistency.';
+  let statusLabel = 'Awaiting Initial Clinical Logs';
+  let statusColor = 'text-gray-700 bg-gray-50 border-gray-300';
+  let statusBadge = '⚪ Pending Logs';
+  let clinicalInsight = 'Please log your daily meals, hydration, sleep, and physical activity to generate your live clinical metabolic rating.';
 
   if (totalScore >= 85) {
     statusLabel = 'Elite Metabolic Balance';
@@ -145,11 +148,11 @@ export const calculateMetabolicHealthScore = (wellnessLogs = [], weightRecords =
     statusColor = 'text-amber-800 bg-amber-50 border-amber-300';
     statusBadge = '🟡 Improving';
     clinicalInsight = 'Metabolic adaptation in progress. Aim for tighter dinner timing and 8 full glasses of water.';
-  } else {
+  } else if (totalScore > 0) {
     statusLabel = 'Metabolic Attention Required';
     statusColor = 'text-red-800 bg-red-50 border-red-300';
     statusBadge = '🔴 Attention Needed';
-    clinicalInsight = 'Plan deviations detected. Please prioritize log check-ins and schedule your consultation.';
+    clinicalInsight = 'Plan deviations detected or incomplete logs. Please prioritize log check-ins and schedule your consultation.';
   }
 
   return {
@@ -324,8 +327,8 @@ export const printClinicTokenSlip = (appt, patientInfo = {}) => {
   const dateStr = appt.date || new Date().toISOString().split('T')[0];
   const timeStr = appt.time || '10:00 AM';
   const modeStr = (appt.mode || 'IN-CLINIC').toUpperCase();
-  const roomStr = 'Doctor Consultation Chamber (Main Block, Ground Floor)';
-  const doctorStr = 'Dr. Sarah Jenkins (Lead Clinical Nutritionist & Physician)';
+  const roomStr = appt.allocated_room || 'Doctor Consultation Chamber (Ground Floor, Room 101)';
+  const doctorStr = appt.doctor_name || 'Dr. Sarah Jenkins (Lead Clinical Nutritionist & Physician)';
 
   const printWindow = window.open('', '_blank', 'width=620,height=800');
   if (!printWindow) {
@@ -545,6 +548,47 @@ export const DEFAULT_MEAL_TIMINGS = {
   dinner: '08:00 PM'
 };
 
+export const parseTimeToMinutes = (timeStr) => {
+  if (!timeStr) return 0;
+  const str = String(timeStr).trim().toUpperCase();
+  const match = str.match(/(\d+):(\d+)\s*(AM|PM)?/i);
+  if (!match) return 0;
+  let hours = parseInt(match[1], 10);
+  const minutes = parseInt(match[2], 10);
+  const modifier = match[3];
+
+  if (modifier === 'PM' && hours < 12) hours += 12;
+  if (modifier === 'AM' && hours === 12) hours = 0;
+  return hours * 60 + minutes;
+};
+
+export const SLOT_METADATA = {
+  pre_breakfast: {
+    label: 'Pre-Breakfast Tonic',
+    advice: 'Drink warm on an empty stomach to kickstart metabolic lipid burning and gut health.'
+  },
+  breakfast: {
+    label: 'Breakfast',
+    advice: 'High protein and complex fiber to stabilize morning glucose levels.'
+  },
+  drink: {
+    label: 'Drink / Mid-Morning',
+    advice: 'Rich in natural probiotics and electrolytes for sustained daytime focus.'
+  },
+  lunch: {
+    label: 'Lunch',
+    advice: 'Main balanced meal with Omega-3 and low glycemic complex carbs. Chew mindfully.'
+  },
+  snack: {
+    label: 'Evening Snack',
+    advice: 'Satiating afternoon fuel to prevent late evening cravings.'
+  },
+  dinner: {
+    label: 'Dinner',
+    advice: 'Light, easy-to-digest Kerala dinner. Finish at least 2 hours before bedtime.'
+  }
+};
+
 const FALLBACK_IMAGES = {
   breakfast: 'https://images.unsplash.com/photo-1533089860892-a7c6f0a88666?auto=format&fit=crop&w=800&q=80',
   lunch: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80',
@@ -646,11 +690,28 @@ const PatientDashboard = () => {
   
   const [isProfileEditing, setIsProfileEditing] = useState(false); 
   const [wellnessLogs, setWellnessLogs] = useState([]);
-  const [dietPlans, setDietPlans] = useState([]);
+  const [dietPlans, setDietPlans] = useState(() => {
+    try {
+      const carePlans = JSON.parse(localStorage.getItem('healora_care_plans') || '{}');
+      const carePlanForMe = carePlans[userId];
+      const cached = JSON.parse(localStorage.getItem(`healora_patient_dietplan_${userId}`) || localStorage.getItem(`healora_diet_plan_${userId}`) || 'null') || carePlanForMe;
+      if (cached && (cached.status === 'PUBLISHED' || cached.status === 'Published')) {
+        const structured = cached.plan_data && typeof cached.plan_data === 'object' ? cached.plan_data : {};
+        return [{ ...structured, ...cached, weeks: structured.weeks || cached.weeks || {} }];
+      }
+    } catch (e) {}
+    return [];
+  });
   const [appointments, setAppointments] = useState([]);
   const [nutritionists, setNutritionists] = useState([]);
   const [evaluations, setEvaluations] = useState([]);
   const [patientApptFilter, setPatientApptFilter] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'CANCELLED'
+  const [currentTimeTick, setCurrentTimeTick] = useState(Date.now());
+
+  useEffect(() => {
+    const tickInterval = setInterval(() => setCurrentTimeTick(Date.now()), 10000);
+    return () => clearInterval(tickInterval);
+  }, []);
 
   // --- 🏆 WELLNESS CHALLENGES & MILESTONE BADGES (SYSTEM AUTOMATED & LOCKED) ---
   const [claimedChallenges, setClaimedChallenges] = useState(() => {
@@ -767,9 +828,14 @@ const PatientDashboard = () => {
 
   const metabolicProfile = useMemo(() => calculateMetabolicProfile(profile), [profile]);
   
+  const hasPublishedDietPlan = useMemo(() => {
+    const publishedPlan = dietPlans.length > 0 ? dietPlans[0] : (JSON.parse(localStorage.getItem(`healora_patient_dietplan_${userId}`)) || null);
+    return Boolean(publishedPlan && (publishedPlan.status === 'PUBLISHED' || publishedPlan.status === 'Published') && publishedPlan.weeks && Object.keys(publishedPlan.weeks).length > 0);
+  }, [dietPlans, userId]);
+
   const metabolicHealthScore = useMemo(() => {
-    return calculateMetabolicHealthScore(wellnessLogs, patientWeightRecords, quickWaterTracker);
-  }, [wellnessLogs, patientWeightRecords, quickWaterTracker]);
+    return calculateMetabolicHealthScore(wellnessLogs, patientWeightRecords, quickWaterTracker, hasPublishedDietPlan);
+  }, [wellnessLogs, patientWeightRecords, quickWaterTracker, hasPublishedDietPlan]);
 
   const getMealTimingForSlot = (slotKey) => {
     const publishedPlan = dietPlans.length > 0 ? dietPlans[0] : (JSON.parse(localStorage.getItem(`healora_patient_dietplan_${userId}`)) || null);
@@ -785,80 +851,216 @@ const PatientDashboard = () => {
   const [selectedMeal, setSelectedMeal] = useState(null);
   const [showPhase2LockedModal, setShowPhase2LockedModal] = useState(false);
 
-  // Real-time active meal recommendation
+  // 🌟 REAL-TIME CLOCK FOR MEAL WINDOW TRANSITIONS (POLLS EVERY 15s) 🌟
+  const [currentClock, setCurrentClock] = useState(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentClock(new Date());
+    }, 15000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const todayDayName = daysOfWeek[currentClock.getDay()] || 'Friday';
+
+  // Exact calendar date matching getProtocolDate
+  const getProtocolDateObj = (week = 1, day = 'Monday') => {
+    const dayIndex = daysOfWeek.indexOf(day);
+    const date = new Date();
+    date.setHours(0, 0, 0, 0);
+    date.setDate(date.getDate() + ((week - 1) * 7) + (dayIndex >= 0 ? dayIndex - date.getDay() : 0));
+    return date;
+  };
+
+  const isPhase1Completed = useMemo(() => {
+    const publishedPlan = dietPlans.length > 0 ? dietPlans[0] : (JSON.parse(localStorage.getItem(`healora_patient_dietplan_${userId}`)) || null);
+    if (!publishedPlan?.start_date) return false;
+    try {
+      const start = new Date(publishedPlan.start_date + 'T00:00:00');
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      start.setHours(0, 0, 0, 0);
+      const diffDays = Math.floor((today - start) / (1000 * 60 * 60 * 24));
+      return diffDays >= 14;
+    } catch {
+      return false;
+    }
+  }, [dietPlans, userId]);
+
+  // Check if a specific meal slot's window has passed (past time)
+  // LIVE & ACCURATE:
+  // - Future dates (e.g. tomorrow Sep 12 Saturday, or upcoming days/weeks) are NEVER closed.
+  // - Past dates (yesterday, earlier days) are closed.
+  // - Today (Friday Sep 11): only closed if the meal's scheduled time has passed on the live clock.
+  const isMealTimeOver = (week, day, mealType, timingStr) => {
+    const targetDate = getProtocolDateObj(week, day);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // 1. Strictly before today: Window is closed
+    if (targetDate.getTime() < today.getTime()) {
+      return true;
+    }
+
+    // 2. Strictly after today (e.g. tomorrow Sep 12 Saturday): NEVER closed! Always open and clickable!
+    if (targetDate.getTime() > today.getTime()) {
+      return false;
+    }
+
+    // 3. Exactly today: compare with current clock
+    const mealMinutes = parseTimeToMinutes(timingStr);
+    const now = currentClock || new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+    return currentMinutes > mealMinutes;
+  };
+
+  // Real-time active meal recommendation (STRICT: changes dynamically based on real-time clock & published plan)
   const activeCurrentMealRecommendation = useMemo(() => {
-    const now = new Date();
-    const hour = now.getHours();
+    const publishedPlan = dietPlans.length > 0 ? dietPlans[0] : (JSON.parse(localStorage.getItem(`healora_patient_dietplan_${userId}`)) || null);
+    
+    // 🌟 STRICT REQUIREMENT: Only display if nutritionist has explicitly published a meal plan for this patient 🌟
+    const isPlanPublished = publishedPlan && 
+      (publishedPlan.status === 'PUBLISHED' || publishedPlan.status === 'Published') && 
+      publishedPlan.weeks && 
+      Object.keys(publishedPlan.weeks).length > 0;
+
+    if (!isPlanPublished) {
+      return null;
+    }
+
+    const now = currentClock || new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
     const daysArr = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const dayName = daysArr[now.getDay()] || 'Monday';
     
-    const publishedPlan = dietPlans.length > 0 ? dietPlans[0] : (JSON.parse(localStorage.getItem(`healora_patient_dietplan_${userId}`)) || null);
     const currentDayPlan = (publishedPlan?.weeks?.[selectedWeek || 1]?.[dayName]) || (publishedPlan?.weeks?.['1']?.[dayName]) || {};
 
-    let slotKey = 'lunch';
-    let slotLabel = '☀️ Lunch';
-    let defaultName = 'Kerala Red Matta Rice with Moru Curry & Thoran';
-    let advice = 'Chew mindfully, maintain portion size, and follow with warm cumin water.';
+    const orderedSlotKeys = ['pre_breakfast', 'breakfast', 'drink', 'lunch', 'snack', 'dinner'];
+    const activeMealsForToday = [];
 
-    if (hour < 8) {
-      slotKey = currentDayPlan.pre_breakfast ? 'pre_breakfast' : 'breakfast';
-      slotLabel = slotKey === 'pre_breakfast' ? '🌿 Pre-Breakfast Tonic' : '🌅 Breakfast';
-      defaultName = slotKey === 'pre_breakfast' ? 'Warm Jeera & Methi Seed Detox Water' : 'Kerala Steamed Idiyappam with Kadala Curry';
-      advice = 'Drink warm on an empty stomach to kickstart metabolic lipid burning and gut health.';
-    } else if (hour >= 8 && hour < 11) {
-      slotKey = 'breakfast';
-      slotLabel = '🌅 Breakfast';
-      defaultName = 'Kerala Appam with Vegetable Stew & Boiled Egg';
-      advice = 'High protein and complex fiber to stabilize morning glucose levels.';
-    } else if (hour >= 11 && hour < 13) {
-      slotKey = 'drink';
-      slotLabel = '🥤 Drink / Mid-Morning';
-      defaultName = 'Kerala Spiced Buttermilk (Sambharam) with Curry Leaves';
-      advice = 'Rich in natural probiotics and electrolytes for sustained daytime focus.';
-    } else if (hour >= 13 && hour < 16) {
-      slotKey = 'lunch';
-      slotLabel = '☀️ Lunch';
-      defaultName = 'Kerala Red Matta Rice with Fish Curry & Cabbage Thoran';
-      advice = 'Main balanced meal with Omega-3 and low glycemic complex carbs.';
-    } else if (hour >= 16 && hour < 19) {
-      slotKey = 'snack';
-      slotLabel = '🍎 Evening Snack';
-      defaultName = 'Boiled Kerala Nendran Banana or Sprouted Green Gram Sundal';
-      advice = 'Satiating afternoon fuel to prevent late evening cravings.';
-    } else {
-      slotKey = 'dinner';
-      slotLabel = '🌙 Dinner';
-      defaultName = 'Kerala Ragi Dosa with Tomato Chutney & Vegetable Soup';
-      advice = 'Light, easy-to-digest Kerala dinner. Finish at least 2 hours before bedtime.';
+    orderedSlotKeys.forEach(slotKey => {
+      let rawMeal = currentDayPlan[slotKey];
+      if (!rawMeal) return;
+      
+      let mealName = '';
+      let cal = '250 kcal';
+      if (typeof rawMeal === 'object' && rawMeal.name) {
+        mealName = rawMeal.name;
+        cal = rawMeal.cal || '250 kcal';
+      } else if (typeof rawMeal === 'string') {
+        mealName = rawMeal;
+        const calMatch = rawMeal.match(/\((\d+\s*kcal)\)/i);
+        if (calMatch) {
+          cal = calMatch[1];
+          mealName = rawMeal.replace(/\s*\(\d+\s*kcal\)/i, '').trim();
+        }
+      }
+
+      // Strict Clinical Sanitization: Filter out allergens and non-compliant diet choices
+      if (mealName && mealName.trim()) {
+        const conflict = evaluateMealConflicts(mealName, {
+          food_allergies: profile?.food_allergies,
+          food_preferences: profile?.food_preferences
+        });
+        if (conflict.hasAnyConflict) {
+          const safe = getSafeUniversalMeal(slotKey);
+          mealName = safe.name;
+          cal = safe.cal;
+        }
+      }
+
+      if (mealName && mealName.trim()) {
+        const timeStr = publishedPlan?.meal_timings?.[slotKey] || DEFAULT_MEAL_TIMINGS[slotKey] || '12:00 PM';
+        const timeMin = parseTimeToMinutes(timeStr);
+        const meta = SLOT_METADATA[slotKey] || { label: slotKey, advice: 'Balanced nutritious intake.' };
+        activeMealsForToday.push({
+          slotKey,
+          slotLabel: meta.label,
+          advice: meta.advice,
+          name: mealName.trim(),
+          cal,
+          time: timeStr,
+          timeMin,
+          img: getKeralaMealImage(mealName.trim(), slotKey)
+        });
+      }
+    });
+
+    if (activeMealsForToday.length === 0) return null;
+
+    // Sort active meals by their prescribed time
+    activeMealsForToday.sort((a, b) => a.timeMin - b.timeMin);
+
+    // Calculate cutoff midpoints between consecutive meals to select the current active meal window
+    let chosenMeal = activeMealsForToday[0];
+
+    for (let i = 0; i < activeMealsForToday.length; i++) {
+      const curr = activeMealsForToday[i];
+      const next = activeMealsForToday[i + 1];
+
+      if (next) {
+        const midpoint = (curr.timeMin + next.timeMin) / 2;
+        if (currentMinutes < midpoint) {
+          chosenMeal = curr;
+          break;
+        }
+      } else {
+        // Last meal of the day (e.g. Dinner)
+        chosenMeal = curr;
+      }
     }
-
-    const prescribedTime = publishedPlan?.meal_timings?.[slotKey] || DEFAULT_MEAL_TIMINGS[slotKey] || '12:00 PM';
-    const mealStr = currentDayPlan[slotKey] || defaultName;
-    const calMatch = mealStr.match(/\((\d+\s*kcal)\)/i);
-    const cal = calMatch ? calMatch[1] : '280 kcal';
-    const name = mealStr.replace(/\(\d+\s*kcal\)/i, '').trim() || defaultName;
 
     const todayIso = now.toISOString().split('T')[0];
     const todayLog = (wellnessLogs || []).find(l => l.date && String(l.date).startsWith(todayIso));
     let isLogged = false;
     if (todayLog) {
-      if (todayLog.completed_slots && todayLog.completed_slots[slotKey]) isLogged = true;
-      else if (slotKey === 'breakfast' && todayLog.breakfast_completed) isLogged = true;
-      else if (slotKey === 'lunch' && todayLog.lunch_completed) isLogged = true;
-      else if (slotKey === 'dinner' && todayLog.dinner_completed) isLogged = true;
+      if (todayLog.completed_slots && todayLog.completed_slots[chosenMeal.slotKey]) isLogged = true;
+      else if (chosenMeal.slotKey === 'breakfast' && todayLog.breakfast_completed) isLogged = true;
+      else if (chosenMeal.slotKey === 'lunch' && todayLog.lunch_completed) isLogged = true;
+      else if (chosenMeal.slotKey === 'dinner' && todayLog.dinner_completed) isLogged = true;
     }
 
     return {
-      slotKey,
-      slotLabel,
-      name,
-      cal,
-      time: prescribedTime,
-      advice,
-      isLogged,
-      img: getKeralaMealImage(name, slotKey)
+      ...chosenMeal,
+      isLogged
     };
-  }, [dietPlans, selectedWeek, wellnessLogs, userId]);
+  }, [dietPlans, selectedWeek, wellnessLogs, userId, currentClock]);
+
+  const [logForm, setLogForm] = useState({ 
+    completed_slots: { pre_breakfast: false, breakfast: false, drink: false, lunch: false, snack: false, dinner: false },
+    breakfast_completed: false, lunch_completed: false, dinner_completed: false, 
+    ate_other_food: false, other_food_details: '', sleep_hours: '', mood: 'Calm & Balanced', 
+    water_glasses: 0, weight_kg: '', physical_activity: '', supplements_taken: false 
+  });
+  const [isSaving, setIsSaving] = useState(false);
+
+  // 🌟 AUTOMATIC TWO-WAY SYNC: Keep logForm synced with today's logged meals in wellnessLogs 🌟
+  useEffect(() => {
+    const todayIso = new Date().toISOString().split('T')[0];
+    const todayLog = (wellnessLogs || []).find(l => l.date && String(l.date).startsWith(todayIso));
+    if (todayLog) {
+      setLogForm(prev => ({
+        ...prev,
+        completed_slots: {
+          ...(prev.completed_slots || {}),
+          ...(todayLog.completed_slots || {}),
+          ...(todayLog.breakfast_completed ? { breakfast: true } : {}),
+          ...(todayLog.lunch_completed ? { lunch: true } : {}),
+          ...(todayLog.dinner_completed ? { dinner: true } : {})
+        },
+        breakfast_completed: !!todayLog.breakfast_completed || !!todayLog.completed_slots?.breakfast,
+        lunch_completed: !!todayLog.lunch_completed || !!todayLog.completed_slots?.lunch,
+        dinner_completed: !!todayLog.dinner_completed || !!todayLog.completed_slots?.dinner,
+        water_glasses: todayLog.water_glasses !== undefined ? todayLog.water_glasses : prev.water_glasses,
+        sleep_hours: todayLog.sleep_hours || prev.sleep_hours,
+        mood: todayLog.mood || prev.mood,
+        weight_kg: todayLog.weight_kg || prev.weight_kg,
+        physical_activity: todayLog.physical_activity || prev.physical_activity,
+        ate_other_food: !!todayLog.ate_other_food,
+        other_food_details: todayLog.other_food_details || prev.other_food_details
+      }));
+    }
+  }, [wellnessLogs]);
 
   const handleQuickMarkActiveMealCompleted = () => {
     if (!activeCurrentMealRecommendation) return;
@@ -899,18 +1101,33 @@ const PatientDashboard = () => {
       existingLogs.unshift(updatedLog);
     }
 
+    // 1. Update wellnessLogs and localStorage
     setWellnessLogs(existingLogs);
     localStorage.setItem(`healora_wellness_${userId}`, JSON.stringify(existingLogs));
-    alert(`✅ Marked "${activeCurrentMealRecommendation.name}" (${activeCurrentMealRecommendation.slotLabel}) as eaten! Your Metabolic Health Adherence score has been updated.`);
-  };
 
-  const [logForm, setLogForm] = useState({ 
-    completed_slots: { pre_breakfast: false, breakfast: false, drink: false, lunch: false, snack: false, dinner: false },
-    breakfast_completed: false, lunch_completed: false, dinner_completed: false, 
-    ate_other_food: false, other_food_details: '', sleep_hours: '', mood: 'Calm & Balanced', 
-    water_glasses: 0, weight_kg: '', physical_activity: '', supplements_taken: false 
-  });
-  const [isSaving, setIsSaving] = useState(false);
+    // 2. 🌟 Sync immediately into logForm so Wellness Tracking form reflects it instantly as marked 🌟
+    setLogForm(prev => ({
+      ...prev,
+      completed_slots: {
+        ...(prev.completed_slots || {}),
+        [slotKey]: true
+      },
+      breakfast_completed: slotKey === 'breakfast' ? true : prev.breakfast_completed,
+      lunch_completed: slotKey === 'lunch' ? true : prev.lunch_completed,
+      dinner_completed: slotKey === 'dinner' ? true : prev.dinner_completed
+    }));
+
+    // 3. Save to backend if available
+    try {
+      fetch(`/api/patient/${userId}/wellness/`, {
+        method: 'POST',
+        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...updatedLog, patient: userId })
+      });
+    } catch (err) {}
+
+    alert(`✅ Marked "${activeCurrentMealRecommendation.name}" (${activeCurrentMealRecommendation.slotLabel}) as eaten! Automatically logged in your Wellness Tracker.`);
+  };
 
   // --- PASSWORD CHANGE STATE ---
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -918,7 +1135,12 @@ const PatientDashboard = () => {
 
   // --- APPOINTMENT & PAYMENT ---
   const [showApptModal, setShowApptModal] = useState(false);
-  const [bookingStep, setBookingStep] = useState(1); 
+  const [activeVideoCallAppt, setActiveVideoCallAppt] = useState(null);
+  const [bookingStep, setBookingStep] = useState(1);
+
+  const handleStartVideoConsultation = (appt) => {
+    setActiveVideoCallAppt(appt);
+  }; 
   const [apptForm, setApptForm] = useState({ nutritionist: '', date: '', time: '', mode: 'ONLINE' });
   const [paymentForm, setPaymentForm] = useState({ cardName: '', cardNumber: '', expiry: '', cvv: '' });
   const [paymentErrors, setPaymentErrors] = useState({});
@@ -927,11 +1149,68 @@ const PatientDashboard = () => {
   const [isRazorpayProcessing, setIsRazorpayProcessing] = useState(false);
   const [showRazorpayModal, setShowRazorpayModal] = useState(false);
   const [razorpayMethod, setRazorpayMethod] = useState('upi'); // 'upi' | 'card' | 'netbanking' | 'wallet'
-  const [razorpayUpiApp, setRazorpayUpiApp] = useState('gpay'); // 'gpay' | 'phonepe' | 'paytm' | 'qr' | 'id'
+  const [razorpayUpiApp, setRazorpayUpiApp] = useState('gpay'); // 'gpay' | 'phonepe' | 'paytm' | 'custom'
   const [customUpiId, setCustomUpiId] = useState('');
+  const [razorpayCardForm, setRazorpayCardForm] = useState({
+    number: '4532 8901 2345 6789',
+    expiry: '12/28',
+    cvv: '888',
+    name: userName || 'Patient'
+  });
+  const [razorpayLiveError, setRazorpayLiveError] = useState('');
   const [selectedBank, setSelectedBank] = useState('HDFC Bank');
   const [selectedWallet, setSelectedWallet] = useState('Paytm Wallet');
   const [razorpayOrderId, setRazorpayOrderId] = useState('');
+
+  // 🌟 LIVE VALIDATION ENGINE FOR RAZORPAY UPI & CARDS 🌟
+  const isCustomUpiValid = useMemo(() => {
+    if (!customUpiId.trim()) return false;
+    const upiRegex = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/;
+    return upiRegex.test(customUpiId.trim());
+  }, [customUpiId]);
+
+  const upiBankLabel = useMemo(() => {
+    if (!customUpiId.includes('@')) return '';
+    const handle = customUpiId.split('@')[1]?.toLowerCase();
+    if (!handle) return '';
+    if (handle.includes('sbi') || handle.includes('oksbi')) return 'State Bank of India';
+    if (handle.includes('hdfc') || handle.includes('okhdfcbank')) return 'HDFC Bank';
+    if (handle.includes('icici') || handle.includes('okicici')) return 'ICICI Bank';
+    if (handle.includes('axis') || handle.includes('okaxis')) return 'Axis Bank';
+    if (handle.includes('paytm')) return 'Paytm Payments Bank';
+    if (handle.includes('ybl') || handle.includes('ibl')) return 'Yes Bank / PhonePe';
+    if (handle.includes('apl')) return 'Amazon Pay / Axis';
+    if (handle.includes('kotak')) return 'Kotak Mahindra Bank';
+    return 'UPI Verified Provider';
+  }, [customUpiId]);
+
+  const cardBrand = useMemo(() => {
+    const raw = (razorpayCardForm.number || '').replace(/\s/g, '');
+    if (raw.startsWith('4')) return 'VISA';
+    if (/^(5[1-5]|2[2-7])/.test(raw)) return 'MASTERCARD';
+    if (/^(60|65|81|82)/.test(raw)) return 'RUPAY';
+    if (/^(34|37)/.test(raw)) return 'AMEX';
+    return 'CARD';
+  }, [razorpayCardForm.number]);
+
+  const isCardNumberValid = useMemo(() => {
+    const clean = (razorpayCardForm.number || '').replace(/\s/g, '');
+    return clean.length === 16 && /^\d+$/.test(clean);
+  }, [razorpayCardForm.number]);
+
+  const isCardExpiryValid = useMemo(() => {
+    if (!/^(0[1-9]|1[0-2])\/\d{2}$/.test(razorpayCardForm.expiry || '')) return false;
+    const [mm, yy] = (razorpayCardForm.expiry || '').split('/').map(Number);
+    const now = new Date();
+    const curYear = now.getFullYear() % 100;
+    const curMonth = now.getMonth() + 1;
+    if (yy < curYear || (yy === curYear && mm < curMonth)) return false;
+    return true;
+  }, [razorpayCardForm.expiry]);
+
+  const isCardCvvValid = useMemo(() => {
+    return /^\d{3,4}$/.test(razorpayCardForm.cvv || '');
+  }, [razorpayCardForm.cvv]);
 
   // --- CANCELLATION & 100% REFUND CASH BACK STATE ---
   const [cancellingAppt, setCancellingAppt] = useState(null);
@@ -959,6 +1238,10 @@ const PatientDashboard = () => {
 
   // --- VAULT & IMAGES ---
   const [profilePic, setProfilePic] = useState(null);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showSidebarProfileMenu, setShowSidebarProfileMenu] = useState(false);
+  const profileMenuRef = useRef(null);
+  const sidebarProfileMenuRef = useRef(null);
   const [labReports, setLabReports] = useState([]);
   const [uploadStatus, setUploadStatus] = useState('');
   const [docType, setDocType] = useState('Laboratory Report'); 
@@ -1008,28 +1291,114 @@ const PatientDashboard = () => {
     alert(`✅ Weigh-in (${entry.weight_kg} kg on ${entry.date}) logged successfully!`);
   };
 
-  // --- 🔔 TODAY'S CONSULTATION REMINDER (ACTIVE UP TO SCHEDULED TIME) 🔔 ---
+  // --- 🔔 TODAY'S CONSULTATION REMINDER & LIVE QUEUE TOKEN PASS 🔔 ---
   const todayConsultationReminders = useMemo(() => {
     const now = new Date();
     const isoToday = now.toISOString().split('T')[0];
     const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
-    return appointments.filter(appt => {
-      if (!appt || appt.status === 'CANCELLED' || appt.status === 'COMPLETED') return false;
-      const isToday = appt.date === isoToday || appt.date === localToday;
-      if (!isToday) return false;
+    const cachedAll = JSON.parse(localStorage.getItem('healora_all_appointments')) || [];
+    const cachedMap = new Map();
+    cachedAll.forEach(c => { if (c && c.id) cachedMap.set(String(c.id), c); });
 
-      // Check if current time is before or within scheduled consultation time (e.g. up to 60 mins after appointment starts)
-      if (appt.time) {
-        const timeParts = appt.time.split(':').map(Number);
-        const apptEndTime = new Date();
-        apptEndTime.setHours(timeParts[0] || 0, (timeParts[1] || 0) + 60, 0, 0);
-        if (now > apptEndTime) return false; // Scheduled time window has passed
+    // Order today's clinic appointments deterministically across all patients
+    const todaysAll = cachedAll.filter(a => (a.date === isoToday || a.date === localToday) && a.status !== 'CANCELLED');
+    todaysAll.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+
+    return appointments
+      .filter(appt => {
+        if (!appt || appt.status === 'CANCELLED' || appt.status === 'COMPLETED') return false;
+        const isToday = appt.date === isoToday || appt.date === localToday;
+        if (!isToday) return false;
+
+        const cached = cachedMap.get(String(appt.id)) || {};
+        const qStatus = appt.queue_status || cached.queue_status;
+        if (qStatus === 'COMPLETED') return false;
+
+        // Check if scheduled appointment time is over
+        if (appt.time) {
+          let clean = appt.time.trim().toUpperCase();
+          const isPM = clean.includes('PM');
+          const isAM = clean.includes('AM');
+          clean = clean.replace(/(AM|PM)/g, '').trim();
+          const parts = clean.split(':').map(Number);
+          let h = parts[0] || 0;
+          const m = parts[1] || 0;
+          if (isPM && h < 12) h += 12;
+          if (isAM && h === 12) h = 0;
+
+          const apptTime = new Date();
+          apptTime.setHours(h, m, 0, 0);
+
+          // If scheduled consultation time has passed
+          if (now > apptTime) {
+            // For online video consultations, do not show reminder if time is over
+            if (appt.mode === 'ONLINE') {
+              return false;
+            }
+            // For in-clinic consultations, only show if actively CALLED or IN_CONSULTATION
+            if (qStatus !== 'CALLED' && qStatus !== 'IN_CONSULTATION') {
+              return false;
+            }
+          }
+        }
+
+        return true;
+      })
+      .map(appt => {
+        const cached = cachedMap.get(String(appt.id)) || {};
+        const queueIdx = todaysAll.findIndex(a => String(a.id) === String(appt.id));
+        const fallbackToken = queueIdx >= 0 ? `TK-${101 + queueIdx}` : `TK-101`;
+
+        const tokenNum = appt.token_number || cached.token_number || fallbackToken;
+        const queueStatus = appt.queue_status || cached.queue_status || 'WAITING';
+        const defaultRoom = appt.mode === 'ONLINE' ? 'In-App Telehealth Video Suite' : 'Doctor Consultation Chamber (Ground Floor, Room 101)';
+        const allocatedRoom = appt.allocated_room || cached.allocated_room || defaultRoom;
+
+        return {
+          ...appt,
+          ...cached,
+          token_number: tokenNum,
+          queue_status: queueStatus,
+          allocated_room: allocatedRoom
+        };
+      });
+  }, [appointments, currentTimeTick]);
+
+  // Clinic chime sound effect when patient token is called by manager
+  const prevCalledTokensRef = useRef(new Set());
+  useEffect(() => {
+    todayConsultationReminders.forEach(appt => {
+      if (appt.queue_status === 'CALLED') {
+        const key = `${appt.id}_CALLED`;
+        if (!prevCalledTokensRef.current.has(key)) {
+          prevCalledTokensRef.current.add(key);
+          try {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (AudioCtx) {
+              const ctx = new AudioCtx();
+              const notes = [523.25, 659.25, 783.99, 1046.50]; // Hospital announcement chime (C5, E5, G5, C6)
+              notes.forEach((freq, idx) => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.18);
+                gain.gain.setValueAtTime(0.25, ctx.currentTime + idx * 0.18);
+                gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + idx * 0.18 + 0.4);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(ctx.currentTime + idx * 0.18);
+                osc.stop(ctx.currentTime + idx * 0.18 + 0.45);
+              });
+            }
+          } catch (e) {
+            console.warn("Clinic announcement chime error", e);
+          }
+        }
       }
-
-      return true;
     });
-  }, [appointments]);
+  }, [todayConsultationReminders]);
+
 
   // 🌟 REAL-TIME POLLING FOR AUTHENTIC NUTRITIONIST EVALUATIONS 🌟
   useEffect(() => {
@@ -1077,6 +1446,20 @@ const PatientDashboard = () => {
     }
   }, [activeTab, chats, chatPartner]);
 
+  // Click outside listener for profile avatar popover menus
+  useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target)) {
+        setShowProfileMenu(false);
+      }
+      if (sidebarProfileMenuRef.current && !sidebarProfileMenuRef.current.contains(e.target)) {
+        setShowSidebarProfileMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
+
   // 🌟 PERIODIC LIVE SYNC FOR APPOINTMENTS, GOOGLE MEET LINKS, AND CHATS 🌟
   useEffect(() => {
     const syncLiveAppointmentsAndChats = async () => {
@@ -1096,6 +1479,9 @@ const PatientDashboard = () => {
             apptMap.set(String(l.id), {
               ...existing,
               ...l,
+              token_number: l.token_number || existing.token_number,
+              queue_status: l.queue_status || existing.queue_status || 'WAITING',
+              allocated_room: l.allocated_room || existing.allocated_room,
               meet_link: l.meet_link || existing.meet_link || null,
               date: l.status === 'RESCHEDULED' ? l.date : (existing.date || l.date),
               time: l.status === 'RESCHEDULED' ? l.time : (existing.time || l.time),
@@ -1121,11 +1507,72 @@ const PatientDashboard = () => {
       // 3. Sync notifications
       const notifs = JSON.parse(localStorage.getItem(`healora_notifications_${userId}`)) || [];
       setNotifications(notifs);
+
+      // 4. Sync published diet plan live from Nutritionist dashboard changes
+      try {
+        const carePlansObj = JSON.parse(localStorage.getItem('healora_care_plans') || '{}');
+        const carePlanForMe = carePlansObj[userId];
+        const cachedDiet = JSON.parse(localStorage.getItem(`healora_patient_dietplan_${userId}`) || localStorage.getItem(`healora_diet_plan_${userId}`) || 'null') || carePlanForMe;
+        if (cachedDiet && (cachedDiet.status === 'PUBLISHED' || cachedDiet.status === 'Published') && cachedDiet.weeks) {
+          const structured = cachedDiet.plan_data && typeof cachedDiet.plan_data === 'object' ? cachedDiet.plan_data : {};
+          const fullPlan = { ...structured, ...cachedDiet, weeks: structured.weeks || cachedDiet.weeks || {} };
+          setDietPlans(prev => {
+            const currentPlan = prev[0];
+            if (!currentPlan || (fullPlan.published_at && fullPlan.published_at !== currentPlan.published_at) || JSON.stringify(fullPlan.weeks) !== JSON.stringify(currentPlan.weeks)) {
+              return [fullPlan];
+            }
+            return prev;
+          });
+        }
+      } catch (e) {}
     };
 
     syncLiveAppointmentsAndChats();
     const syncInterval = setInterval(syncLiveAppointmentsAndChats, 1500);
     return () => clearInterval(syncInterval);
+  }, [userId]);
+
+  // Reactive listener for storage updates across tabs (instant publish sync)
+  useEffect(() => {
+    const handleStorageUpdate = (e) => {
+      if (!e || !e.key || e.key.includes('diet') || e.key.includes('care_plans') || e.key.includes('appointment')) {
+        const carePlans = JSON.parse(localStorage.getItem('healora_care_plans') || '{}');
+        const carePlanForMe = carePlans[userId];
+        const cached = JSON.parse(localStorage.getItem(`healora_patient_dietplan_${userId}`) || localStorage.getItem(`healora_diet_plan_${userId}`) || 'null') || carePlanForMe;
+        if (cached && (cached.status === 'PUBLISHED' || cached.status === 'Published')) {
+          const structured = cached.plan_data && typeof cached.plan_data === 'object' ? cached.plan_data : {};
+          setDietPlans([{ ...structured, ...cached, weeks: structured.weeks || cached.weeks || {} }]);
+        }
+
+        // Instant local sync for appointments
+        const localAppts = JSON.parse(localStorage.getItem('healora_all_appointments')) || [];
+        const myLocalAppts = localAppts.filter(a => a && String(a.patient) === String(userId));
+        if (myLocalAppts.length > 0) {
+          setAppointments(prev => {
+            const map = new Map(prev.map(p => [String(p.id), p]));
+            myLocalAppts.forEach(l => {
+              const ex = map.get(String(l.id)) || {};
+              map.set(String(l.id), {
+                ...ex,
+                ...l,
+                token_number: l.token_number || ex.token_number,
+                queue_status: l.queue_status || ex.queue_status,
+                allocated_room: l.allocated_room || ex.allocated_room
+              });
+            });
+            return Array.from(map.values()).sort((a,b) => (b.id || 0) - (a.id || 0));
+          });
+        }
+      }
+    };
+    window.addEventListener('storage', handleStorageUpdate);
+    window.addEventListener('focus', handleStorageUpdate);
+    document.addEventListener('visibilitychange', handleStorageUpdate);
+    return () => {
+      window.removeEventListener('storage', handleStorageUpdate);
+      window.removeEventListener('focus', handleStorageUpdate);
+      document.removeEventListener('visibilitychange', handleStorageUpdate);
+    };
   }, [userId]);
 
   const fetchData = async () => {
@@ -1169,16 +1616,31 @@ const PatientDashboard = () => {
         const dData = await dietRes.json();
         const apiPlans = (Array.isArray(dData) ? dData : [dData]).map(normalizePlan).filter(Boolean);
         const publishedPlans = apiPlans.filter(p => p.status === 'PUBLISHED' || p.status === 'Published');
-        if (publishedPlans.length > 0) {
+        
+        const carePlansObj = JSON.parse(localStorage.getItem('healora_care_plans') || '{}');
+        const carePlanForMe = carePlansObj[userId];
+        const cached = JSON.parse(localStorage.getItem(`healora_patient_dietplan_${userId}`) || 'null') || carePlanForMe;
+        
+        if (cached && (cached.status === 'PUBLISHED' || cached.status === 'Published') && cached.weeks) {
+          const cachedNorm = normalizePlan(cached);
+          const cachedTime = new Date(cachedNorm.published_at || 0).getTime();
+          const apiTime = publishedPlans[0] ? new Date(publishedPlans[0].published_at || 0).getTime() : 0;
+          if (cachedTime >= apiTime) {
+            setDietPlans([cachedNorm]);
+          } else {
+            setDietPlans(publishedPlans);
+            localStorage.setItem(`healora_patient_dietplan_${userId}`, JSON.stringify(publishedPlans[0]));
+          }
+        } else if (publishedPlans.length > 0) {
           setDietPlans(publishedPlans);
           localStorage.setItem(`healora_patient_dietplan_${userId}`, JSON.stringify(publishedPlans[0]));
         } else {
           setDietPlans([]);
-          localStorage.removeItem(`healora_patient_dietplan_${userId}`);
-          localStorage.removeItem(`healora_diet_plan_${userId}`);
         }
       } else {
-        const cached = JSON.parse(localStorage.getItem(`healora_patient_dietplan_${userId}`) || 'null');
+        const carePlansObj = JSON.parse(localStorage.getItem('healora_care_plans') || '{}');
+        const carePlanForMe = carePlansObj[userId];
+        const cached = JSON.parse(localStorage.getItem(`healora_patient_dietplan_${userId}`) || 'null') || carePlanForMe;
         if (cached && (cached.status === 'PUBLISHED' || cached.status === 'Published')) {
           setDietPlans([normalizePlan(cached)]);
         } else {
@@ -1204,6 +1666,9 @@ const PatientDashboard = () => {
           apptMap.set(String(l.id), {
             ...existing,
             ...l,
+            token_number: l.token_number || existing.token_number,
+            queue_status: l.queue_status || existing.queue_status || 'WAITING',
+            allocated_room: l.allocated_room || existing.allocated_room,
             meet_link: l.meet_link || existing.meet_link || null,
             date: l.status === 'RESCHEDULED' ? l.date : (existing.date || l.date),
             time: l.status === 'RESCHEDULED' ? l.time : (existing.time || l.time),
@@ -1519,12 +1984,13 @@ const PatientDashboard = () => {
       }
     }
 
-    if (!mealName) {
+    if (!mealName || !mealName.trim()) {
       const defaultOptions = getKeralaPersonalizedOptions(mealType, profile, labReports);
-      const fallback = defaultOptions[0] || { name: 'Nutritious Kerala Meal', cal: '250 kcal', desc: 'Balanced clinical diet' };
+      const safe = getSafeUniversalMeal(mealType);
+      const fallback = defaultOptions[0] || safe;
       mealName = fallback.name;
-      cal = fallback.cal;
-      desc = fallback.desc;
+      cal = fallback.cal || safe.cal;
+      desc = fallback.desc || safe.desc;
     }
 
     return {
@@ -1765,6 +2231,35 @@ const PatientDashboard = () => {
   };
 
   const handleExecuteRazorpayPayment = async () => {
+    setRazorpayLiveError('');
+
+    // 🌟 LIVE VALIDATION GUARDS BEFORE EXECUTING PAYMENT 🌟
+    if (razorpayMethod === 'upi') {
+      if (razorpayUpiApp === 'custom') {
+        if (!customUpiId.trim()) {
+          setRazorpayLiveError('Please enter a valid UPI ID (e.g., username@oksbi).');
+          return;
+        }
+        if (!isCustomUpiValid) {
+          setRazorpayLiveError('Invalid UPI ID format. Valid format example: yourname@oksbi or mobile@paytm.');
+          return;
+        }
+      }
+    } else if (razorpayMethod === 'card') {
+      if (!isCardNumberValid) {
+        setRazorpayLiveError('Please enter a complete 16-digit card number.');
+        return;
+      }
+      if (!isCardExpiryValid) {
+        setRazorpayLiveError('Invalid or expired card date (MM/YY).');
+        return;
+      }
+      if (!isCardCvvValid) {
+        setRazorpayLiveError('Please enter a valid 3-digit CVV security code.');
+        return;
+      }
+    }
+
     setIsRazorpayProcessing(true);
     const paymentId = `pay_rzp_${Date.now().toString().slice(-8)}`;
     const signature = `sig_rzp_${Date.now()}`;
@@ -1878,9 +2373,36 @@ const PatientDashboard = () => {
       if (file.size > 2000000) { alert("Please select an image smaller than 2MB."); return; } 
       const reader = new FileReader();
       reader.onloadend = async () => {
-        try { localStorage.setItem(`profilePic_${userId}`, reader.result); setProfilePic(reader.result); const formData = new FormData(); formData.append('profile_image', file); await fetch(`/api/profile/update/${userId}/`, { method: 'PATCH', body: formData }); } catch(err) {} 
+        try { 
+          localStorage.setItem(`profilePic_${userId}`, reader.result); 
+          setProfilePic(reader.result); 
+          const formData = new FormData(); 
+          formData.append('profile_image', file); 
+          await fetch(`/api/profile/update/${userId}/`, { method: 'PATCH', body: formData }); 
+        } catch(err) {} 
       };
       reader.readAsDataURL(file);
+    }
+  };
+
+  const handleRemoveProfilePic = async (e) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    if (!window.confirm("Are you sure you want to remove your profile picture?")) return;
+    try {
+      localStorage.removeItem(`profilePic_${userId}`);
+      localStorage.removeItem('profilePic');
+      setProfilePic(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      
+      const formData = new FormData();
+      formData.append('profile_image', '');
+      await fetch(`/api/profile/update/${userId}/`, { method: 'PATCH', body: formData }).catch(() => {});
+      alert("✅ Profile picture removed successfully!");
+    } catch (err) {
+      setProfilePic(null);
     }
   };
 
@@ -1989,14 +2511,13 @@ const PatientDashboard = () => {
 
     try { await fetch(`/api/patient/${userId}/wellness/`, { method: 'POST', headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify({ ...logForm, patient: userId }), }); } catch (err) { }
     
-    alert("✅ Daily wellness log saved securely and sent to your Nutritionist!"); 
-    setLogForm({ 
-      completed_slots: {},
-      breakfast_completed: false, lunch_completed: false, dinner_completed: false, 
-      ate_other_food: false, other_food_details: '', sleep_hours: '', mood: 'Calm & Balanced', 
-      water_glasses: 0, weight_kg: '', physical_activity: '', supplements_taken: false 
-    });
-    setQuickWaterTracker(0);
+    setLogForm(prev => ({ 
+      ...prev,
+      completed_slots: filteredCompletedSlots,
+      breakfast_completed: !!filteredCompletedSlots.breakfast,
+      lunch_completed: !!filteredCompletedSlots.lunch,
+      dinner_completed: !!filteredCompletedSlots.dinner
+    }));
   };
 
   const handleSecureLogout = () => { localStorage.removeItem('access_token'); localStorage.removeItem('user_role'); navigate('/', { replace: true }); };
@@ -2182,42 +2703,177 @@ const PatientDashboard = () => {
                 </div>
 
                 <form onSubmit={handleBookAppointment} className="space-y-4" autoComplete="off" noValidate>
+                  {/* Cardholder Name */}
                   <div>
                     <div className="flex justify-between items-end mb-1">
                       <label className="block text-[11px] font-bold text-[#5A6B60] uppercase tracking-widest">Cardholder Name</label>
-                      {paymentErrors.cardName && <span className="text-[9px] font-bold text-red-500">{paymentErrors.cardName}</span>}
+                      {paymentForm.cardName.length > 0 && (
+                        <span className={`text-[10px] font-bold ${paymentForm.cardName.trim().length >= 3 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                          {paymentForm.cardName.trim().length >= 3 ? '✓ Valid' : 'Min 3 letters'}
+                        </span>
+                      )}
                     </div>
-                    <input type="text" spellCheck="false" autoComplete="new-password" value={paymentForm.cardName} onChange={(e) => handlePaymentChange('cardName', e.target.value)} placeholder="John Doe" className={`w-full border ${paymentErrors.cardName ? 'border-red-400 bg-red-50 text-red-900' : 'border-[#EBE9E0] bg-white'} rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-[#456A50]/20 focus:border-[#456A50] transition shadow-xs`} required/>
+                    <input 
+                      type="text" 
+                      spellCheck="false" 
+                      autoComplete="new-password" 
+                      value={paymentForm.cardName} 
+                      onChange={(e) => handlePaymentChange('cardName', e.target.value)} 
+                      placeholder="John Doe" 
+                      className={`w-full border rounded-xl p-3 text-xs outline-none transition shadow-xs ${
+                        paymentForm.cardName.length === 0 
+                          ? 'border-[#EBE9E0] bg-white focus:border-[#456A50]' 
+                          : paymentForm.cardName.trim().length >= 3 
+                            ? 'border-emerald-500 bg-emerald-50/10 focus:border-emerald-600' 
+                            : 'border-amber-400 bg-amber-50/10 focus:border-amber-500'
+                      }`} 
+                      required
+                    />
+                    {paymentForm.cardName.length > 0 && paymentForm.cardName.trim().length < 3 && (
+                      <p className="text-[11px] text-amber-700 mt-1 font-medium">⚠️ Name must be at least 3 letters.</p>
+                    )}
                   </div>
 
+                  {/* Card Number */}
                   <div>
                     <div className="flex justify-between items-end mb-1">
                       <label className="block text-[11px] font-bold text-[#5A6B60] uppercase tracking-widest">Card Number</label>
-                      {paymentErrors.cardNumber && <span className="text-[9px] font-bold text-red-500">{paymentErrors.cardNumber}</span>}
+                      {paymentForm.cardNumber.length > 0 && (
+                        <span className={`text-[10px] font-bold ${paymentForm.cardNumber.length === 16 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                          {paymentForm.cardNumber.length === 16 ? '✓ 16 Digits' : `${paymentForm.cardNumber.length}/16 digits`}
+                        </span>
+                      )}
                     </div>
                     <div className="relative">
-                      <input type="text" maxLength="16" spellCheck="false" autoComplete="new-password" value={paymentForm.cardNumber} onChange={(e) => handlePaymentChange('cardNumber', e.target.value)} placeholder="16 Digit Number" className={`w-full border ${paymentErrors.cardNumber ? 'border-red-400 bg-red-50 text-red-900' : 'border-[#EBE9E0] bg-white'} rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-[#456A50]/20 focus:border-[#456A50] pl-10 transition shadow-xs`} required/>
-                      <CreditCard size={16} className={`absolute left-3.5 top-3.5 ${paymentErrors.cardNumber ? 'text-red-400' : 'text-gray-400'}`} />
+                      <input 
+                        type="text" 
+                        maxLength="16" 
+                        spellCheck="false" 
+                        autoComplete="new-password" 
+                        value={paymentForm.cardNumber} 
+                        onChange={(e) => handlePaymentChange('cardNumber', e.target.value)} 
+                        placeholder="16 Digit Number" 
+                        className={`w-full border rounded-xl p-3 pl-10 text-xs outline-none transition shadow-xs ${
+                          paymentForm.cardNumber.length === 0 
+                            ? 'border-[#EBE9E0] bg-white focus:border-[#456A50]' 
+                            : paymentForm.cardNumber.length === 16 
+                              ? 'border-emerald-500 bg-emerald-50/10 focus:border-emerald-600' 
+                              : 'border-amber-400 bg-amber-50/10 focus:border-amber-500'
+                        }`} 
+                        required
+                      />
+                      <CreditCard size={16} className={`absolute left-3.5 top-3.5 ${
+                        paymentForm.cardNumber.length === 0 ? 'text-gray-400' : paymentForm.cardNumber.length === 16 ? 'text-emerald-700' : 'text-amber-700'
+                      }`} />
                     </div>
+                    {paymentForm.cardNumber.length > 0 && paymentForm.cardNumber.length < 16 && (
+                      <p className="text-[11px] text-amber-700 mt-1 font-medium">
+                        ⚠️ {16 - paymentForm.cardNumber.length} more digits needed (16 digits required)
+                      </p>
+                    )}
+                    {paymentForm.cardNumber.length === 16 && (
+                      <p className="text-[11px] text-emerald-700 mt-1 font-medium">✓ 16-digit card verified</p>
+                    )}
                   </div>
 
+                  {/* Expiry & CVV */}
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <div className="flex justify-between items-end mb-1">
-                        <label className="block text-[11px] font-bold text-[#5A6B60] uppercase tracking-widest">Expiry</label>
-                        {paymentErrors.expiry && <span className="text-[9px] font-bold text-red-500">{paymentErrors.expiry}</span>}
-                      </div>
-                      <input type="text" maxLength="5" spellCheck="false" autoComplete="new-password" value={paymentForm.expiry} onChange={(e) => handlePaymentChange('expiry', e.target.value)} placeholder="MM/YY" className={`w-full border ${paymentErrors.expiry ? 'border-red-400 bg-red-50 text-red-900' : 'border-[#EBE9E0] bg-white'} rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-[#456A50]/20 focus:border-[#456A50] transition shadow-xs`} required/>
+                      {(() => {
+                        let isExpiryValid = false;
+                        let expiryMsg = null;
+                        if (paymentForm.expiry.length === 5) {
+                          const [mm, yy] = paymentForm.expiry.split('/');
+                          const now = new Date();
+                          const currentYear = now.getFullYear() % 100;
+                          const currentMonth = now.getMonth() + 1;
+                          const monthNum = parseInt(mm, 10);
+                          const yearNum = parseInt(yy, 10);
+                          if (monthNum < 1 || monthNum > 12) {
+                            expiryMsg = 'Invalid month (01-12)';
+                          } else if (yearNum < currentYear || (yearNum === currentYear && monthNum < currentMonth)) {
+                            expiryMsg = 'Card expired';
+                          } else {
+                            isExpiryValid = true;
+                          }
+                        }
+                        return (
+                          <div>
+                            <div className="flex justify-between items-end mb-1">
+                              <label className="block text-[11px] font-bold text-[#5A6B60] uppercase tracking-widest">Expiry</label>
+                              {paymentForm.expiry.length > 0 && (
+                                <span className={`text-[10px] font-bold ${isExpiryValid ? 'text-emerald-700' : 'text-amber-700'}`}>
+                                  {isExpiryValid ? '✓ Valid' : expiryMsg || `${paymentForm.expiry.length}/5`}
+                                </span>
+                              )}
+                            </div>
+                            <input 
+                              type="text" 
+                              maxLength="5" 
+                              spellCheck="false" 
+                              autoComplete="new-password" 
+                              value={paymentForm.expiry} 
+                              onChange={(e) => handlePaymentChange('expiry', e.target.value)} 
+                              placeholder="MM/YY" 
+                              className={`w-full border rounded-xl p-3 text-xs outline-none transition shadow-xs ${
+                                paymentForm.expiry.length === 0 
+                                  ? 'border-[#EBE9E0] bg-white focus:border-[#456A50]' 
+                                  : isExpiryValid 
+                                    ? 'border-emerald-500 bg-emerald-50/10 focus:border-emerald-600' 
+                                    : 'border-amber-400 bg-amber-50/10 focus:border-amber-500'
+                              }`} 
+                              required
+                            />
+                            {paymentForm.expiry.length > 0 && !isExpiryValid && (
+                              <p className="text-[11px] text-amber-700 mt-1 font-medium">
+                                ⚠️ {expiryMsg || 'Format: MM/YY (e.g. 12/28)'}
+                              </p>
+                            )}
+                            {isExpiryValid && (
+                              <p className="text-[11px] text-emerald-700 mt-1 font-medium">✓ Expiry valid</p>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
+
                     <div>
                       <div className="flex justify-between items-end mb-1">
                         <label className="block text-[11px] font-bold text-[#5A6B60] uppercase tracking-widest">CVV</label>
-                        {paymentErrors.cvv && <span className="text-[9px] font-bold text-red-500">{paymentErrors.cvv}</span>}
+                        {paymentForm.cvv.length > 0 && (
+                          <span className={`text-[10px] font-bold ${paymentForm.cvv.length === 3 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                            {paymentForm.cvv.length === 3 ? '✓ 3 Digits' : `${paymentForm.cvv.length}/3`}
+                          </span>
+                        )}
                       </div>
                       <div className="relative">
-                        <input type="password" maxLength="3" spellCheck="false" autoComplete="new-password" value={paymentForm.cvv} onChange={(e) => handlePaymentChange('cvv', e.target.value)} placeholder="•••" className={`w-full border ${paymentErrors.cvv ? 'border-red-400 bg-red-50 text-red-900' : 'border-[#EBE9E0] bg-white'} rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-[#456A50]/20 focus:border-[#456A50] pl-10 transition shadow-xs`} required/>
-                        <Lock size={15} className={`absolute left-3.5 top-3.5 ${paymentErrors.cvv ? 'text-red-400' : 'text-gray-400'}`} />
+                        <input 
+                          type="password" 
+                          maxLength="3" 
+                          spellCheck="false" 
+                          autoComplete="new-password" 
+                          value={paymentForm.cvv} 
+                          onChange={(e) => handlePaymentChange('cvv', e.target.value)} 
+                          placeholder="•••" 
+                          className={`w-full border rounded-xl p-3 pl-10 text-xs outline-none transition shadow-xs ${
+                            paymentForm.cvv.length === 0 
+                              ? 'border-[#EBE9E0] bg-white focus:border-[#456A50]' 
+                              : paymentForm.cvv.length === 3 
+                                ? 'border-emerald-500 bg-emerald-50/10 focus:border-emerald-600' 
+                                : 'border-amber-400 bg-amber-50/10 focus:border-amber-500'
+                          }`} 
+                          required
+                        />
+                        <Lock size={15} className={`absolute left-3.5 top-3.5 ${
+                          paymentForm.cvv.length === 0 ? 'text-gray-400' : paymentForm.cvv.length === 3 ? 'text-emerald-700' : 'text-amber-700'
+                        }`} />
                       </div>
+                      {paymentForm.cvv.length > 0 && paymentForm.cvv.length < 3 && (
+                        <p className="text-[11px] text-amber-700 mt-1 font-medium">⚠️ 3 digits required</p>
+                      )}
+                      {paymentForm.cvv.length === 3 && (
+                        <p className="text-[11px] text-emerald-700 mt-1 font-medium">✓ CVV verified</p>
+                      )}
                     </div>
                   </div>
 
@@ -2323,7 +2979,7 @@ const PatientDashboard = () => {
                         {/* 1. Google Pay */}
                         <button
                           type="button"
-                          onClick={() => setRazorpayUpiApp('gpay')}
+                          onClick={() => { setRazorpayUpiApp('gpay'); setCustomUpiId(''); setRazorpayLiveError(''); }}
                           className={`p-3.5 rounded-2xl border text-center transition cursor-pointer flex flex-col items-center justify-between gap-2 group ${razorpayUpiApp === 'gpay' ? 'border-[#4285F4] bg-blue-50/60 shadow-md ring-2 ring-[#4285F4]/30' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}
                         >
                           <div className="w-10 h-10 rounded-full bg-white shadow-xs border border-gray-100 flex items-center justify-center p-1.5 group-hover:scale-105 transition-transform">
@@ -2340,7 +2996,7 @@ const PatientDashboard = () => {
                         {/* 2. PhonePe */}
                         <button
                           type="button"
-                          onClick={() => setRazorpayUpiApp('phonepe')}
+                          onClick={() => { setRazorpayUpiApp('phonepe'); setCustomUpiId(''); setRazorpayLiveError(''); }}
                           className={`p-3.5 rounded-2xl border text-center transition cursor-pointer flex flex-col items-center justify-between gap-2 group ${razorpayUpiApp === 'phonepe' ? 'border-[#5F259F] bg-purple-50/60 shadow-md ring-2 ring-[#5F259F]/30' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}
                         >
                           <div className="w-10 h-10 rounded-full bg-[#5F259F] shadow-xs flex items-center justify-center p-1.5 group-hover:scale-105 transition-transform text-white font-black text-lg">
@@ -2356,7 +3012,7 @@ const PatientDashboard = () => {
                         {/* 3. Paytm UPI */}
                         <button
                           type="button"
-                          onClick={() => setRazorpayUpiApp('paytm')}
+                          onClick={() => { setRazorpayUpiApp('paytm'); setCustomUpiId(''); setRazorpayLiveError(''); }}
                           className={`p-3.5 rounded-2xl border text-center transition cursor-pointer flex flex-col items-center justify-between gap-2 group ${razorpayUpiApp === 'paytm' ? 'border-[#002E6E] bg-blue-50/60 shadow-md ring-2 ring-[#002E6E]/30' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}
                         >
                           <div className="w-10 h-10 rounded-full bg-[#002E6E] shadow-xs flex items-center justify-center p-1.5 group-hover:scale-105 transition-transform">
@@ -2369,21 +3025,99 @@ const PatientDashboard = () => {
                         </button>
                       </div>
 
-                      {/* Custom VPA Input */}
+                      {/* Custom VPA Input with Live Validation */}
                       <div className="pt-2">
-                        <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1.5">Or Enter Any UPI ID / VPA</label>
+                        <div className="flex justify-between items-center mb-1.5">
+                          <label className="block text-[11px] font-bold text-gray-600 uppercase tracking-wider">
+                            Or Enter Any UPI ID / VPA
+                          </label>
+                          {customUpiId.trim() && isCustomUpiValid && (
+                            <span className="text-[10px] font-black text-emerald-700 bg-emerald-50 border border-emerald-300 px-2 py-0.5 rounded-full flex items-center gap-1">
+                              <CheckCircle2 size={11} className="text-emerald-600" /> Live Validated
+                            </span>
+                          )}
+                        </div>
                         <div className="relative">
                           <input
                             type="text"
                             value={customUpiId}
-                            onChange={(e) => { setCustomUpiId(e.target.value); setRazorpayUpiApp('custom'); }}
-                            placeholder="e.g. yourname@okhdfcbank"
-                            className="w-full border border-gray-300 rounded-xl p-3 pr-20 text-xs outline-none focus:border-[#0c2340] focus:ring-1 focus:ring-[#0c2340] shadow-inner bg-white font-medium"
+                            onChange={(e) => {
+                              const val = e.target.value.trim().toLowerCase();
+                              setCustomUpiId(val);
+                              setRazorpayUpiApp('custom');
+                              setRazorpayLiveError('');
+                            }}
+                            placeholder="e.g. yourname@oksbi"
+                            className={`w-full border rounded-xl p-3 pr-28 text-xs outline-none transition font-medium ${
+                              !customUpiId.trim()
+                                ? 'border-gray-300 bg-white focus:border-[#0c2340] focus:ring-1 focus:ring-[#0c2340]'
+                                : isCustomUpiValid
+                                ? 'border-emerald-500 bg-emerald-50/20 text-emerald-950 ring-2 ring-emerald-500/20 font-bold'
+                                : 'border-amber-400 bg-amber-50/20 text-amber-950 ring-2 ring-amber-400/20'
+                            }`}
                           />
-                          <span className="absolute right-3 top-3 text-[10px] font-black text-gray-400 bg-gray-100 px-2 py-0.5 rounded uppercase">
-                            @upi
+                          <span className={`absolute right-2.5 top-2.5 text-[10px] font-black px-2.5 py-1 rounded-md uppercase transition flex items-center gap-1 ${
+                            isCustomUpiValid 
+                              ? 'text-emerald-800 bg-emerald-100 border border-emerald-300 shadow-2xs' 
+                              : 'text-gray-500 bg-gray-100'
+                          }`}>
+                            {isCustomUpiValid ? (
+                              <>
+                                <CheckCircle2 size={12} className="text-emerald-600" /> @UPI OK
+                              </>
+                            ) : (
+                              '@upi'
+                            )}
                           </span>
                         </div>
+
+                        {/* 🌟 LIVE VALIDATION FEEDBACK CARD 🌟 */}
+                        {customUpiId.trim() && isCustomUpiValid && (
+                          <div className="mt-2.5 p-3 bg-emerald-50/90 border border-emerald-300 rounded-xl flex items-center justify-between text-xs animate-in fade-in slide-in-from-top-1 shadow-2xs">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center font-black text-xs shrink-0 shadow-xs">
+                                ✓
+                              </div>
+                              <div>
+                                <p className="font-black text-emerald-950">
+                                  Verified UPI ID: <span className="font-mono text-emerald-800">{customUpiId}</span>
+                                </p>
+                                <p className="text-[10px] text-emerald-700 font-semibold mt-0.5">
+                                  {upiBankLabel} • Bank Server Linked & Verified Live
+                                </p>
+                              </div>
+                            </div>
+                            <span className="text-[9px] font-black uppercase bg-emerald-600 text-white px-2 py-0.5 rounded shadow-2xs shrink-0">
+                              Active
+                            </span>
+                          </div>
+                        )}
+
+                        {customUpiId.trim() && !isCustomUpiValid && (
+                          <div className="mt-2 p-2.5 bg-amber-50 border border-amber-300 rounded-xl flex items-center gap-2 text-xs text-amber-900 animate-in fade-in">
+                            <AlertCircle size={15} className="text-amber-600 shrink-0" />
+                            <p className="text-[11px] font-medium leading-tight">
+                              Incomplete or invalid format. Please enter full ID (e.g. <span className="font-mono font-bold">username@oksbi</span>, <span className="font-mono font-bold">9876543210@paytm</span>, <span className="font-mono font-bold">name@okhdfcbank</span>).
+                            </p>
+                          </div>
+                        )}
+
+                        {!customUpiId.trim() && razorpayUpiApp !== 'custom' && (
+                          <div className="mt-2.5 p-2.5 bg-blue-50/80 border border-blue-200 rounded-xl flex items-center justify-between text-xs text-[#0c2340] animate-in fade-in">
+                            <div className="flex items-center gap-2">
+                              <Zap size={14} className="text-blue-600 shrink-0" />
+                              <div>
+                                <p className="font-bold">
+                                  {razorpayUpiApp === 'gpay' ? 'Google Pay' : razorpayUpiApp === 'phonepe' ? 'PhonePe' : 'Paytm UPI'} Selected
+                                </p>
+                                <p className="text-[10px] text-gray-500">Fast 1-click mobile authorization ready</p>
+                              </div>
+                            </div>
+                            <span className="text-[9px] font-black uppercase bg-blue-100 text-blue-800 border border-blue-300 px-2 py-0.5 rounded">
+                              App Ready
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -2394,40 +3128,84 @@ const PatientDashboard = () => {
                       <div className="flex justify-between items-center">
                         <h4 className="font-black text-sm text-[#1C2C22]">Credit / Debit Card</h4>
                         <div className="flex items-center gap-1.5">
-                          <span className="px-2 py-0.5 bg-blue-900 text-white rounded text-[9px] font-black italic">VISA</span>
-                          <span className="px-2 py-0.5 bg-red-600 text-white rounded text-[9px] font-black">MC</span>
-                          <span className="px-2 py-0.5 bg-emerald-800 text-white rounded text-[9px] font-black">RuPay</span>
+                          <span className={`px-2 py-0.5 rounded text-[9px] font-black transition ${cardBrand === 'VISA' ? 'bg-blue-900 text-white ring-2 ring-blue-400' : 'bg-gray-100 text-gray-600'}`}>VISA</span>
+                          <span className={`px-2 py-0.5 rounded text-[9px] font-black transition ${cardBrand === 'MASTERCARD' ? 'bg-red-600 text-white ring-2 ring-red-400' : 'bg-gray-100 text-gray-600'}`}>MC</span>
+                          <span className={`px-2 py-0.5 rounded text-[9px] font-black transition ${cardBrand === 'RUPAY' ? 'bg-emerald-800 text-white ring-2 ring-emerald-400' : 'bg-gray-100 text-gray-600'}`}>RuPay</span>
                         </div>
                       </div>
+
                       <div>
-                        <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Card Number</label>
+                        <div className="flex justify-between items-center mb-1">
+                          <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider">Card Number</label>
+                          {isCardNumberValid && (
+                            <span className="text-[10px] font-black text-emerald-700 bg-emerald-50 border border-emerald-300 px-2 py-0.2 rounded-full flex items-center gap-1">
+                              <CheckCircle2 size={10} className="text-emerald-600" /> {cardBrand} Verified
+                            </span>
+                          )}
+                        </div>
                         <input
                           type="text"
-                          maxLength={16}
-                          defaultValue="4532890123456789"
-                          placeholder="Card Number"
-                          className="w-full border border-gray-300 rounded-xl p-2.5 text-xs outline-none focus:border-[#0c2340] font-mono"
+                          maxLength={19}
+                          value={razorpayCardForm.number}
+                          onChange={(e) => {
+                            const digits = e.target.value.replace(/\D/g, '').slice(0, 16);
+                            const formatted = digits.replace(/(\d{4})(?=\d)/g, '$1 ');
+                            setRazorpayCardForm(prev => ({ ...prev, number: formatted }));
+                            setRazorpayLiveError('');
+                          }}
+                          placeholder="4532 8901 2345 6789"
+                          className={`w-full border rounded-xl p-2.5 text-xs outline-none font-mono transition ${
+                            isCardNumberValid 
+                              ? 'border-emerald-500 bg-emerald-50/20 text-emerald-950 ring-1 ring-emerald-500/30' 
+                              : 'border-gray-300 focus:border-[#0c2340]'
+                          }`}
                         />
                       </div>
+
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Expiry</label>
+                          <div className="flex justify-between items-center mb-1">
+                            <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider">Expiry</label>
+                            {isCardExpiryValid && <CheckCircle2 size={11} className="text-emerald-600" />}
+                          </div>
                           <input
                             type="text"
                             maxLength={5}
-                            defaultValue="12/28"
+                            value={razorpayCardForm.expiry}
+                            onChange={(e) => {
+                              let v = e.target.value.replace(/\D/g, '').slice(0, 4);
+                              if (v.length > 2) v = `${v.slice(0, 2)}/${v.slice(2, 4)}`;
+                              setRazorpayCardForm(prev => ({ ...prev, expiry: v }));
+                              setRazorpayLiveError('');
+                            }}
                             placeholder="MM/YY"
-                            className="w-full border border-gray-300 rounded-xl p-2.5 text-xs outline-none focus:border-[#0c2340] font-mono"
+                            className={`w-full border rounded-xl p-2.5 text-xs outline-none font-mono transition ${
+                              isCardExpiryValid 
+                                ? 'border-emerald-500 bg-emerald-50/20 text-emerald-950 ring-1 ring-emerald-500/30' 
+                                : 'border-gray-300 focus:border-[#0c2340]'
+                            }`}
                           />
                         </div>
                         <div>
-                          <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">CVV</label>
+                          <div className="flex justify-between items-center mb-1">
+                            <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider">CVV</label>
+                            {isCardCvvValid && <CheckCircle2 size={11} className="text-emerald-600" />}
+                          </div>
                           <input
                             type="password"
-                            maxLength={3}
-                            defaultValue="888"
+                            maxLength={4}
+                            value={razorpayCardForm.cvv}
+                            onChange={(e) => {
+                              const v = e.target.value.replace(/\D/g, '').slice(0, 4);
+                              setRazorpayCardForm(prev => ({ ...prev, cvv: v }));
+                              setRazorpayLiveError('');
+                            }}
                             placeholder="CVV"
-                            className="w-full border border-gray-300 rounded-xl p-2.5 text-xs outline-none focus:border-[#0c2340] font-mono"
+                            className={`w-full border rounded-xl p-2.5 text-xs outline-none font-mono transition ${
+                              isCardCvvValid 
+                                ? 'border-emerald-500 bg-emerald-50/20 text-emerald-950 ring-1 ring-emerald-500/30' 
+                                : 'border-gray-300 focus:border-[#0c2340]'
+                            }`}
                           />
                         </div>
                       </div>
@@ -2437,7 +3215,10 @@ const PatientDashboard = () => {
                   {/* --- NETBANKING VIEW --- */}
                   {razorpayMethod === 'netbanking' && (
                     <div className="space-y-3 animate-in fade-in">
-                      <h4 className="font-black text-sm text-[#1C2C22]">Select Popular Bank</h4>
+                      <div className="flex justify-between items-center">
+                        <h4 className="font-black text-sm text-[#1C2C22]">Select Popular Bank</h4>
+                        <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">Direct Server Link</span>
+                      </div>
                       <div className="grid grid-cols-2 gap-2.5">
                         {[
                           { name: 'HDFC Bank', color: 'bg-blue-900 text-white', icon: '🏛️' },
@@ -2449,13 +3230,20 @@ const PatientDashboard = () => {
                           <button
                             key={bank.name}
                             type="button"
-                            onClick={() => setSelectedBank(bank.name)}
+                            onClick={() => { setSelectedBank(bank.name); setRazorpayLiveError(''); }}
                             className={`p-3 rounded-xl border text-left text-xs font-bold transition cursor-pointer flex items-center gap-2.5 ${selectedBank === bank.name ? 'border-[#0c2340] bg-blue-50/60 text-[#0c2340] shadow-sm ring-1 ring-[#0c2340]' : 'border-gray-200 text-gray-700 hover:bg-gray-50'}`}
                           >
                             <span className="text-base">{bank.icon}</span>
                             <span>{bank.name}</span>
                           </button>
                         ))}
+                      </div>
+
+                      <div className="p-2.5 bg-emerald-50/80 border border-emerald-200 rounded-xl flex items-center justify-between text-xs text-[#0c2340]">
+                        <p className="font-bold flex items-center gap-1.5 text-emerald-950">
+                          <CheckCircle2 size={13} className="text-emerald-600" /> {selectedBank} Selected
+                        </p>
+                        <span className="text-[9px] font-black uppercase bg-emerald-600 text-white px-2 py-0.5 rounded">Server Active</span>
                       </div>
                     </div>
                   )}
@@ -2469,7 +3257,7 @@ const PatientDashboard = () => {
                           <button
                             key={wallet}
                             type="button"
-                            onClick={() => setSelectedWallet(wallet)}
+                            onClick={() => { setSelectedWallet(wallet); setRazorpayLiveError(''); }}
                             className={`w-full p-3 rounded-xl border text-left text-xs font-bold transition cursor-pointer flex justify-between items-center ${selectedWallet === wallet ? 'border-[#0c2340] bg-blue-50/50 text-[#0c2340]' : 'border-gray-200 text-gray-700 hover:bg-gray-50'}`}
                           >
                             <span>👛 {wallet}</span>
@@ -2477,12 +3265,27 @@ const PatientDashboard = () => {
                           </button>
                         ))}
                       </div>
+
+                      <div className="p-2.5 bg-emerald-50/80 border border-emerald-200 rounded-xl flex items-center justify-between text-xs text-[#0c2340]">
+                        <p className="font-bold flex items-center gap-1.5 text-emerald-950">
+                          <CheckCircle2 size={13} className="text-emerald-600" /> {selectedWallet} Linked
+                        </p>
+                        <span className="text-[9px] font-black uppercase bg-emerald-600 text-white px-2 py-0.5 rounded">Instant Balance</span>
+                      </div>
                     </div>
                   )}
                 </div>
 
                 {/* Bottom Action Section */}
                 <div className="pt-4 border-t border-gray-200 mt-4">
+                  {/* Error Alert Box */}
+                  {razorpayLiveError && (
+                    <div className="mb-3 p-3 bg-red-50 text-red-900 border border-red-300 rounded-xl text-xs font-bold flex items-center gap-2 animate-in fade-in">
+                      <AlertCircle size={16} className="text-red-600 shrink-0" />
+                      <span>{razorpayLiveError}</span>
+                    </div>
+                  )}
+
                   <button
                     type="button"
                     disabled={isRazorpayProcessing}
@@ -2699,8 +3502,49 @@ const PatientDashboard = () => {
         </nav>
         <div className="p-6 border-t border-[#EBE9E0] bg-[#FDFCF8]/50">
           <div className="flex items-center gap-3 mb-5 px-1">
-            <div className="w-11 h-11 rounded-full border-2 border-white shadow-sm overflow-hidden shrink-0 bg-gray-100 flex items-center justify-center">
-              {profilePic ? <img src={profilePic} className="w-full h-full object-cover" alt="User"/> : <UserCircle size={28} className="text-gray-400" />}
+            {/* 🌟 SIDEBAR AVATAR WITH CLICK-TRIGGERED ACTION MENU 🌟 */}
+            <div className="relative" ref={sidebarProfileMenuRef}>
+              <div 
+                className="w-11 h-11 rounded-full border-2 border-white shadow-sm overflow-hidden shrink-0 bg-gray-100 flex items-center justify-center cursor-pointer relative hover:ring-2 hover:ring-[#456A50]/40 transition group"
+                onClick={() => setShowSidebarProfileMenu(prev => !prev)}
+                title="Profile Photo Options"
+              >
+                {profilePic ? <img src={profilePic} className="w-full h-full object-cover" alt="User"/> : <UserCircle size={28} className="text-gray-400" />}
+                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition rounded-full">
+                  <Camera size={13} className="text-white" />
+                </div>
+              </div>
+
+              {/* 🌟 SIDEBAR CLICK POPUP MENU 🌟 */}
+              {showSidebarProfileMenu && (
+                <div className="absolute left-0 bottom-14 w-48 bg-white rounded-2xl shadow-xl border border-[#EBE9E0] py-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowSidebarProfileMenu(false);
+                      if (fileInputRef.current) fileInputRef.current.click();
+                    }}
+                    className="w-full text-left px-3.5 py-2 text-xs font-bold text-[#1C2C22] hover:bg-[#EAF0EC] hover:text-[#456A50] flex items-center gap-2.5 transition cursor-pointer"
+                  >
+                    <Camera size={14} className="text-[#456A50]" />
+                    <span>{profilePic ? 'Change Photo' : 'Upload Photo'}</span>
+                  </button>
+
+                  {profilePic && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        setShowSidebarProfileMenu(false);
+                        handleRemoveProfilePic(e);
+                      }}
+                      className="w-full text-left px-3.5 py-2 text-xs font-bold text-red-600 hover:bg-red-50 flex items-center gap-2.5 transition border-t border-gray-100 cursor-pointer"
+                    >
+                      <Trash2 size={14} className="text-red-500" />
+                      <span>Remove Photo</span>
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
             <div className="overflow-hidden"><p className="text-sm font-black text-[#1C2C22] truncate">{userName}</p><p className="text-[10px] font-bold text-[#456A50] uppercase tracking-widest truncate">Patient</p></div>
           </div>
@@ -2720,80 +3564,225 @@ const PatientDashboard = () => {
                 <div className="bg-white border border-[#EBE9E0] p-3.5 rounded-full shadow-sm group-hover:bg-gray-50 transition"><Bell size={22} className="text-[#1C2C22]" /></div>
                 {unreadCount > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-black w-6 h-6 rounded-full flex items-center justify-center border-2 border-[#FDFCF8] shadow-sm">{unreadCount}</span>}
               </div>
-              <div className="relative w-14 h-14 shrink-0 rounded-full border-4 border-white shadow-md overflow-hidden group cursor-pointer bg-gray-100" onClick={() => fileInputRef.current.click()}>
-                {profilePic ? <img src={profilePic} className="w-full h-full object-cover" alt="Profile" /> : <div className="w-full h-full flex items-center justify-center"><UserCircle size={28} className="text-[#5A6B60]"/></div>}
-                <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition duration-200"><Camera size={16} className="text-white" /></div>
+
+              {/* 🌟 HEADER AVATAR WITH CLICK-TRIGGERED POPUP MENU 🌟 */}
+              <div className="relative" ref={profileMenuRef}>
+                <div 
+                  className="w-14 h-14 shrink-0 rounded-full border-4 border-white shadow-md overflow-hidden cursor-pointer bg-gray-100 relative hover:ring-2 hover:ring-[#456A50]/40 transition group" 
+                  onClick={() => setShowProfileMenu(prev => !prev)}
+                  title="Click to manage profile photo"
+                >
+                  {profilePic ? (
+                    <img src={profilePic} className="w-full h-full object-cover" alt="Profile" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <UserCircle size={28} className="text-[#5A6B60]"/>
+                    </div>
+                  )}
+                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition duration-200">
+                    <Camera size={16} className="text-white" />
+                  </div>
+                </div>
+
+                {/* 🌟 CLICK-TRIGGERED PROFILE POPUP MENU 🌟 */}
+                {showProfileMenu && (
+                  <div className="absolute right-0 top-16 w-52 bg-white rounded-2xl shadow-xl border border-[#EBE9E0] py-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+                    <div className="px-3.5 py-2 border-b border-[#EBE9E0]/70 mb-1">
+                      <p className="text-xs font-black text-[#1C2C22] truncate">{userName}</p>
+                      <p className="text-[10px] font-bold text-[#456A50] uppercase tracking-wider">Patient Profile</p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowProfileMenu(false);
+                        if (fileInputRef.current) fileInputRef.current.click();
+                      }}
+                      className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-[#1C2C22] hover:bg-[#EAF0EC] hover:text-[#456A50] flex items-center gap-2.5 transition cursor-pointer"
+                    >
+                      <Camera size={15} className="text-[#456A50]" />
+                      <span>{profilePic ? 'Change Photo' : 'Upload Photo'}</span>
+                    </button>
+
+                    {profilePic && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          setShowProfileMenu(false);
+                          handleRemoveProfilePic(e);
+                        }}
+                        className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-red-600 hover:bg-red-50 flex items-center gap-2.5 transition border-t border-gray-100 cursor-pointer"
+                      >
+                        <Trash2 size={15} className="text-red-500" />
+                        <span>Remove Photo</span>
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
               <input type="file" ref={fileInputRef} onChange={handleProfilePicChange} accept="image/*" className="hidden" />
             </div>
           </div>
 
-          {/* 🔔 CLINIC MANAGER TODAY'S CONSULTATION REMINDER BANNER 🔔 */}
+          {/* 🔔 CLINIC MANAGER TODAY'S CONSULTATION REMINDER & LIVE TOKEN PASS BANNER 🔔 */}
           {todayConsultationReminders.length > 0 && (
             <div className="space-y-4">
               {todayConsultationReminders.map(appt => {
                 const docObj = nutritionists.find(n => String(n.id) === String(appt.nutritionist));
                 const docName = docObj ? `Dr. ${docObj.first_name} ${docObj.last_name}` : (appt.doctor_name || 'Assigned Clinical Nutritionist');
                 const isOnline = appt.mode === 'ONLINE';
+                const tokenNum = appt.token_number || 'TK-101';
+                const queueStatus = appt.queue_status || 'WAITING';
+                const isCalled = queueStatus === 'CALLED';
+                const isInSession = queueStatus === 'IN_CONSULTATION';
+                const isCompleted = queueStatus === 'COMPLETED';
+                const roomName = appt.allocated_room || (isOnline ? 'In-App Telehealth Video Suite' : 'Doctor Consultation Chamber (Ground Floor, Room 101)');
+
+                // Custom styling based on real-time live clinic queue state
+                const cardBg = isCalled
+                  ? 'bg-gradient-to-r from-[#78350F] via-[#92400E] to-[#78350F] border-2 border-amber-300 ring-4 ring-amber-400/30 shadow-2xl'
+                  : isInSession
+                  ? 'bg-gradient-to-r from-[#064E3B] via-[#047857] to-[#064E3B] border-2 border-emerald-400 shadow-xl'
+                  : isCompleted
+                  ? 'bg-gradient-to-r from-[#1E293B] via-[#334155] to-[#1E293B] border border-slate-600 shadow-md'
+                  : 'bg-gradient-to-r from-[#1C2C22] via-[#2A4433] to-[#1C2C22] border-2 border-emerald-500/40 shadow-xl';
 
                 return (
                   <div 
                     key={appt.id} 
-                    className="bg-gradient-to-r from-[#1C2C22] via-[#2A4433] to-[#1C2C22] text-white p-5 sm:p-6 rounded-3xl shadow-xl border-2 border-emerald-500/40 flex flex-col md:flex-row items-start md:items-center justify-between gap-5 animate-in slide-in-from-top-3 duration-500 relative overflow-hidden"
+                    className={`${cardBg} text-white p-5 sm:p-6 rounded-3xl flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5 animate-in slide-in-from-top-3 duration-500 relative overflow-hidden`}
                   >
                     <div className="absolute -top-10 -right-10 w-48 h-48 bg-emerald-400/10 rounded-full blur-3xl pointer-events-none"></div>
 
                     <div className="flex items-start gap-4 relative z-10">
-                      <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 flex items-center justify-center shrink-0 shadow-inner">
-                        <Bell size={24} className="animate-bounce text-amber-300" />
+                      <div className={`w-13 h-13 rounded-2xl flex items-center justify-center shrink-0 shadow-inner ${
+                        isCalled
+                          ? 'bg-amber-400 text-amber-950 animate-bounce'
+                          : isInSession
+                          ? 'bg-emerald-400/30 border border-emerald-300 text-emerald-200'
+                          : 'bg-emerald-500/20 border border-emerald-400/40 text-emerald-300'
+                      }`}>
+                        {isOnline ? (
+                          <Video size={26} className="text-white" />
+                        ) : isCalled ? (
+                          <Megaphone size={26} className="text-amber-950 animate-pulse" />
+                        ) : (
+                          <Ticket size={26} className="text-emerald-200" />
+                        )}
                       </div>
+
                       <div>
                         <div className="flex flex-wrap items-center gap-2 mb-1.5">
-                          <span className="bg-amber-400/20 border border-amber-400/40 text-amber-300 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full tracking-wider flex items-center gap-1.5 shadow-xs">
-                            <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span> TODAY'S CONSULTATION REMINDER
-                          </span>
-                          <span className="bg-white/10 text-emerald-200 border border-white/10 text-[10px] font-bold px-2.5 py-0.5 rounded-full">
-                            {isOnline ? '📹 Online Video Session' : '🏥 In-Clinic Visit'}
-                          </span>
+                          {isOnline ? (
+                            <span className="bg-purple-500/20 border border-purple-400/40 text-purple-200 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full tracking-wider flex items-center gap-1.5 shadow-xs">
+                              <Video size={11} /> 📹 ONLINE TELEHEALTH CONSULTATION
+                            </span>
+                          ) : isCalled ? (
+                            <span className="bg-amber-400 text-amber-950 font-black text-[10px] uppercase px-3 py-1 rounded-full tracking-wider flex items-center gap-1.5 shadow-md animate-pulse">
+                              <span className="w-2 h-2 rounded-full bg-amber-900 animate-ping"></span> 📢 YOUR TOKEN HAS BEEN CALLED!
+                            </span>
+                          ) : isInSession ? (
+                            <span className="bg-emerald-400 text-emerald-950 font-black text-[10px] uppercase px-3 py-0.5 rounded-full tracking-wider flex items-center gap-1.5 shadow-xs">
+                              <span className="w-2 h-2 rounded-full bg-emerald-950 animate-ping"></span> 🟢 IN CONSULTATION ROOM
+                            </span>
+                          ) : isCompleted ? (
+                            <span className="bg-white/20 text-gray-200 text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-full">
+                              ✓ CONSULTATION COMPLETED
+                            </span>
+                          ) : (
+                            <span className="bg-amber-400/20 border border-amber-400/40 text-amber-300 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full tracking-wider flex items-center gap-1.5 shadow-xs">
+                              <Ticket size={11} /> 🎟️ TODAY'S CLINIC LIVE TOKEN PASS
+                            </span>
+                          )}
+
+                          {!isOnline && (
+                            <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                              isCalled 
+                                ? 'bg-amber-300 text-amber-950 border-amber-200' 
+                                : isInSession 
+                                ? 'bg-emerald-300/20 text-emerald-200 border-emerald-300/40' 
+                                : 'bg-white/10 text-emerald-200 border-white/10'
+                            }`}>
+                              {isCalled ? 'PROCEED TO DOCTOR ROOM' : isInSession ? 'ACTIVE IN SESSION' : isCompleted ? 'SESSION CLOSED' : '⏳ WAITING IN LOBBY'}
+                            </span>
+                          )}
+
                           {appt.reminder_sent && (
                             <span className="bg-emerald-400/20 text-emerald-300 border border-emerald-400/30 text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">
-                              ✓ Clinic Alert Active
+                              ✓ Clinic Alert Sent
                             </span>
                           )}
                         </div>
-                        <h3 className="text-lg sm:text-xl font-black text-white tracking-tight">
-                          Consultation Scheduled with {docName}
+
+                        <h3 className="text-lg sm:text-xl font-black text-white tracking-tight flex flex-wrap items-center gap-2">
+                          Consultation with {docName}
+                          {!isOnline && (
+                            <span className="bg-black/30 border border-white/20 text-white font-mono px-2.5 py-0.5 rounded-lg text-sm font-black">
+                              Token #{tokenNum}
+                            </span>
+                          )}
                         </h3>
-                        <p className="text-xs text-gray-300 mt-1 flex flex-wrap items-center gap-2 font-medium">
-                          <span>⏰ Scheduled Time: <strong className="text-emerald-300 font-black">{appt.time}</strong> Today</span>
-                          <span>•</span>
-                          <span className="text-amber-200/90 italic">Active on portal until scheduled appointment time</span>
-                        </p>
+
+                        <div className="text-xs text-gray-200 mt-1 space-y-0.5 font-medium">
+                          <p className="flex flex-wrap items-center gap-2">
+                            <span>⏰ Scheduled Time: <strong className="text-emerald-300 font-black">{appt.time}</strong> Today</span>
+                            <span>•</span>
+                            <span className="flex items-center gap-1 text-white font-bold">
+                              <DoorOpen size={13} className="text-amber-300" /> {roomName}
+                            </span>
+                          </p>
+
+                          {!isOnline && (
+                            <p className={`text-[11px] font-bold pt-0.5 ${isCalled ? 'text-amber-200 animate-pulse' : isInSession ? 'text-emerald-200' : 'text-emerald-100/80'}`}>
+                              {isCalled 
+                                ? "👉 Doctor is ready for you! Please proceed immediately into the consultation chamber."
+                                : isInSession
+                                ? "🩺 Consultation session is actively underway inside the room."
+                                : isCompleted
+                                ? "✅ Session completed. You can view doctor recommendations and diet guidelines."
+                                : "🕒 Please take a seat in the reception lobby. Watch this card or listen for your token announcement."}
+                            </p>
+                          )}
+                        </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3 w-full md:w-auto relative z-10 shrink-0">
-                      {isOnline && appt.meet_link ? (
-                        <a 
-                          href={appt.meet_link} 
-                          target="_blank" 
-                          rel="noreferrer" 
-                          className="flex-1 md:flex-initial bg-emerald-500 hover:bg-emerald-600 text-white font-black px-6 py-3.5 rounded-2xl text-xs transition shadow-lg shadow-emerald-500/30 flex items-center justify-center gap-2 group cursor-pointer"
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto relative z-10 shrink-0">
+                      {isOnline ? (
+                        <button 
+                          type="button"
+                          onClick={() => handleStartVideoConsultation(appt)}
+                          className="flex-1 lg:flex-initial bg-emerald-500 hover:bg-emerald-600 text-white font-black px-6 py-3.5 rounded-2xl text-xs transition shadow-lg shadow-emerald-500/30 flex items-center justify-center gap-2 group cursor-pointer"
                         >
-                          <Video size={16} /> Join Google Meet <ExternalLink size={14} className="group-hover:translate-x-0.5 transition-transform" />
-                        </a>
-                      ) : isOnline ? (
-                        <div className="bg-white/10 border border-white/20 px-4 py-3 rounded-2xl text-xs text-gray-200 flex items-center gap-2 font-medium">
-                          <Video size={14} className="text-emerald-300" /> Room link will activate before start
-                        </div>
+                          <Video size={16} /> Enter Video Consultation Room <Sparkles size={14} className="text-amber-300" />
+                        </button>
                       ) : (
-                        <div className="bg-white/10 border border-white/20 px-4 py-3 rounded-2xl text-xs text-gray-200 flex items-center gap-2 font-bold">
-                          🏥 Room 302 • Clinic Reception Desk
+                        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full sm:w-auto">
+                          <div className={`px-4 py-2.5 rounded-2xl border text-center flex flex-col items-center justify-center shrink-0 w-full sm:w-auto ${
+                            isCalled 
+                              ? 'bg-white text-amber-950 border-amber-300 shadow-lg' 
+                              : isInSession 
+                              ? 'bg-emerald-950/60 border-emerald-400/50 text-emerald-200' 
+                              : 'bg-white/10 border-white/20 text-white'
+                          }`}>
+                            <span className="text-[9px] uppercase font-black tracking-widest block opacity-75">Your Token</span>
+                            <span className="text-xl font-mono font-black">{tokenNum}</span>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => printClinicTokenSlip(appt, { name: userName || profile.first_name })}
+                            className="flex-1 sm:flex-initial bg-white hover:bg-gray-100 text-[#1C2C22] font-black px-4 py-3 rounded-2xl text-xs transition shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+                            title="Print Official Token Pass"
+                          >
+                            <Printer size={15} className="text-[#456A50]" /> Print Token Pass
+                          </button>
                         </div>
                       )}
+
                       <button 
                         onClick={() => setActiveTab('appointments')} 
-                        className="bg-white/10 hover:bg-white/20 border border-white/10 text-white px-4 py-3.5 rounded-2xl text-xs font-bold transition cursor-pointer"
+                        className="bg-white/10 hover:bg-white/20 border border-white/10 text-white px-4 py-3.5 rounded-2xl text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1"
                       >
                         View Details
                       </button>
@@ -2837,12 +3826,24 @@ const PatientDashboard = () => {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3 shrink-0 w-full md:w-auto">
+                <div className="flex flex-wrap items-center gap-2.5 shrink-0 w-full md:w-auto">
+                  {!activeCurrentMealRecommendation.isLogged ? (
+                    <button
+                      onClick={handleQuickMarkActiveMealCompleted}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-3 rounded-xl text-xs font-bold transition shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <CheckCircle2 size={15} /> Mark Eaten
+                    </button>
+                  ) : (
+                    <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold px-3 py-2 rounded-xl flex items-center gap-1.5 shadow-2xs">
+                      <CheckCircle2 size={15} className="text-emerald-700" /> Eaten & Logged
+                    </span>
+                  )}
                   <button
                     onClick={() => {
                       setActiveTab('diet');
                     }}
-                    className="w-full md:w-auto bg-[#456A50] hover:bg-[#35533E] text-white px-5 py-3 rounded-xl text-xs font-bold transition shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                    className="bg-[#456A50] hover:bg-[#35533E] text-white px-5 py-3 rounded-xl text-xs font-bold transition shadow-md flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <Apple size={16} /> View Full Diet Plan
                   </button>
@@ -2906,8 +3907,70 @@ const PatientDashboard = () => {
                       <div className="grid grid-cols-2 gap-4">
                         <div className="bg-white p-5 rounded-2xl border border-[#EBE9E0] shadow-sm"><p className="text-[10px] uppercase font-bold text-[#5A6B60] tracking-widest mb-1.5">Medical History</p><p className="text-sm font-bold text-[#1C2C22]">{profile.medical_history || 'None reported'}</p></div>
                         <div className="bg-white p-5 rounded-2xl border border-[#EBE9E0] shadow-sm"><p className="text-[10px] uppercase font-bold text-[#5A6B60] tracking-widest mb-1.5">Family History</p><p className="text-sm font-bold text-[#1C2C22]">{profile.family_history || 'None reported'}</p></div>
-                        <div className="bg-white p-5 rounded-2xl border border-[#EBE9E0] col-span-2 shadow-sm"><p className="text-[10px] uppercase font-bold text-[#5A6B60] tracking-widest mb-1.5">Current Medications</p><p className="text-sm font-bold text-[#1C2C22]">{profile.current_medications || 'None'}</p></div>
+                        <div className="bg-white p-5 rounded-2xl border border-[#EBE9E0] shadow-sm"><p className="text-[10px] uppercase font-bold text-[#5A6B60] tracking-widest mb-1.5">Current Medications</p><p className="text-sm font-bold text-[#1C2C22]">{profile.current_medications || 'None reported'}</p></div>
+                        <div className="bg-white p-5 rounded-2xl border border-[#EBE9E0] shadow-sm"><p className="text-[10px] uppercase font-bold text-[#5A6B60] tracking-widest mb-1.5">Food Allergies</p><p className={`text-sm font-bold ${profile.food_allergies && profile.food_allergies !== 'None' ? 'text-red-600' : 'text-[#1C2C22]'}`}>{profile.food_allergies || 'None reported'}</p></div>
                       </div>
+
+                      {/* 🛡️ CLINICAL DECISION SUPPORT: DRUG-NUTRIENT & ALLERGY SAFETY ADVISORY */}
+                      {(() => {
+                        const safety = evaluateClinicalSafety(profile);
+                        return (
+                          <div className={`p-5 rounded-2xl border shadow-sm space-y-3 mt-3 transition-all ${
+                            safety.isAllClear ? 'bg-emerald-50/50 border-emerald-200' : 'bg-amber-50/70 border-amber-300'
+                          }`}>
+                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-black/5 pb-3">
+                              <div className="flex items-center gap-2.5">
+                                {safety.isAllClear ? (
+                                  <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                                    <ShieldCheck size={18} />
+                                  </div>
+                                ) : (
+                                  <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                                    <ShieldAlert size={18} />
+                                  </div>
+                                )}
+                                <div>
+                                  <h4 className="font-bold text-sm text-[#1C2C22]">Clinical Drug–Nutrient & Allergy Advisory</h4>
+                                  <p className="text-[11px] text-[#5A6B60]">Deterministic Rule-Based Clinical Decision Support (CDSS)</p>
+                                </div>
+                              </div>
+                              <span className={`text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-full border ${
+                                safety.isAllClear ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-amber-200 text-amber-900 border-amber-300'
+                              }`}>
+                                {safety.isAllClear ? '🛡️ Safety Verified • Zero Conflicts' : `⚠️ ${safety.totalAlerts} Active Clinical Directives`}
+                              </span>
+                            </div>
+
+                            {safety.isAllClear ? (
+                              <p className="text-xs text-emerald-800 leading-relaxed font-medium">
+                                🛡️ No adverse drug-food interactions or allergen contraindications detected for current profile. Dietary regime is medically cleared.
+                              </p>
+                            ) : (
+                              <div className="space-y-2.5 pt-1">
+                                {safety.alerts.map((alert) => (
+                                  <div key={alert.id} className="bg-white p-3.5 rounded-xl border border-amber-200 shadow-2xs space-y-1.5">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-md border ${alert.badgeColor}`}>
+                                        {alert.badge}
+                                      </span>
+                                      <span className="text-[10px] uppercase tracking-wider font-bold text-gray-500">
+                                        {alert.severity} Priority
+                                      </span>
+                                    </div>
+                                    <p className="text-xs font-bold text-[#1C2C22]">{alert.medication}</p>
+                                    <p className="text-[11px] text-gray-600 leading-relaxed">
+                                      <strong className="text-[#1C2C22]">Biomedical Mechanism:</strong> {alert.mechanism}
+                                    </p>
+                                    <div className="bg-amber-50/80 p-2.5 rounded-lg border border-amber-200 text-[11px] text-amber-950 font-medium">
+                                      <strong>Clinical Directive:</strong> {alert.clinicalDirective}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                       <h3 className="text-sm font-bold text-[#1C2C22] border-b border-[#EBE9E0] pb-2 mt-4">Lifestyle & Diet</h3>
                       <div className="grid grid-cols-2 gap-4">
                         <div className="bg-white p-5 rounded-2xl border border-[#EBE9E0] shadow-sm"><p className="text-[10px] uppercase font-bold text-[#5A6B60] tracking-widest mb-1.5">Diet Preferences</p><p className="text-sm font-bold text-[#1C2C22]">{profile.food_preferences || 'No preference'}</p></div>
@@ -2937,33 +4000,52 @@ const PatientDashboard = () => {
                             <span className="text-base font-black text-[#456A50]">{metabolicProfile.tdee} <small className="text-[10px] font-normal text-gray-500">kcal</small></span>
                             <span className="text-[9px] text-gray-400 block mt-0.5">Maintenance</span>
                           </div>
-                          <div className="bg-emerald-50/70 p-3 rounded-xl border border-emerald-200 shadow-2xs">
-                            <span className="text-[9px] font-black uppercase tracking-wider text-emerald-800 block">Target Goal</span>
-                            <span className="text-base font-black text-emerald-700">{metabolicProfile.targetCalories} <small className="text-[10px] font-bold text-emerald-600">kcal</small></span>
-                            <span className="text-[9px] text-emerald-600 font-bold block mt-0.5">Prescribed daily</span>
-                          </div>
+                          {hasPublishedDietPlan ? (
+                            <div className="bg-emerald-50/70 p-3 rounded-xl border border-emerald-200 shadow-2xs">
+                              <span className="text-[9px] font-black uppercase tracking-wider text-emerald-800 block">Target Goal</span>
+                              <span className="text-base font-black text-emerald-700">{metabolicProfile.targetCalories} <small className="text-[10px] font-bold text-emerald-600">kcal</small></span>
+                              <span className="text-[9px] text-emerald-600 font-bold block mt-0.5">Prescribed daily</span>
+                            </div>
+                          ) : (
+                            <div className="bg-amber-50/70 p-3 rounded-xl border border-amber-200 shadow-2xs flex flex-col justify-center">
+                              <span className="text-[9px] font-black uppercase tracking-wider text-amber-800 block">Target Goal</span>
+                              <span className="text-xs font-black text-amber-900 block mt-0.5">⏳ Pending</span>
+                              <span className="text-[9px] text-amber-700 font-bold block mt-0.5">Awaiting Plan</span>
+                            </div>
+                          )}
                         </div>
 
-                        <div className="space-y-2 pt-1">
-                          <div className="flex justify-between items-center text-xs">
-                            <span className="font-bold text-gray-700">Prescribed Macronutrient Grams</span>
-                            <span className="text-[10px] text-gray-400 font-medium">Daily Gram Splits</span>
+                        {hasPublishedDietPlan ? (
+                          <div className="space-y-2 pt-1">
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="font-bold text-gray-700">Prescribed Macronutrient Grams</span>
+                              <span className="text-[10px] text-gray-400 font-medium">Daily Gram Splits</span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-2 text-center text-xs font-bold">
+                              <div className="p-2.5 rounded-xl bg-amber-50/80 border border-amber-200">
+                                <span className="text-[9px] font-black text-amber-800 uppercase block">Carbs ({metabolicProfile.carbRatio}%)</span>
+                                <span className="text-sm font-black text-amber-900">{metabolicProfile.carbsGrams}g</span>
+                              </div>
+                              <div className="p-2.5 rounded-xl bg-blue-50/80 border border-blue-200">
+                                <span className="text-[9px] font-black text-blue-800 uppercase block">Protein ({metabolicProfile.proteinRatio}%)</span>
+                                <span className="text-sm font-black text-blue-900">{metabolicProfile.proteinGrams}g</span>
+                              </div>
+                              <div className="p-2.5 rounded-xl bg-emerald-50/80 border border-emerald-200">
+                                <span className="text-[9px] font-black text-emerald-800 uppercase block">Fats ({metabolicProfile.fatRatio}%)</span>
+                                <span className="text-sm font-black text-emerald-900">{metabolicProfile.fatsGrams}g</span>
+                              </div>
+                            </div>
                           </div>
-                          <div className="grid grid-cols-3 gap-2 text-center text-xs font-bold">
-                            <div className="p-2.5 rounded-xl bg-amber-50/80 border border-amber-200">
-                              <span className="text-[9px] font-black text-amber-800 uppercase block">Carbs ({metabolicProfile.carbRatio}%)</span>
-                              <span className="text-sm font-black text-amber-900">{metabolicProfile.carbsGrams}g</span>
-                            </div>
-                            <div className="p-2.5 rounded-xl bg-blue-50/80 border border-blue-200">
-                              <span className="text-[9px] font-black text-blue-800 uppercase block">Protein ({metabolicProfile.proteinRatio}%)</span>
-                              <span className="text-sm font-black text-blue-900">{metabolicProfile.proteinGrams}g</span>
-                            </div>
-                            <div className="p-2.5 rounded-xl bg-emerald-50/80 border border-emerald-200">
-                              <span className="text-[9px] font-black text-emerald-800 uppercase block">Fats ({metabolicProfile.fatRatio}%)</span>
-                              <span className="text-sm font-black text-emerald-900">{metabolicProfile.fatsGrams}g</span>
-                            </div>
+                        ) : (
+                          <div className="bg-amber-50/50 border border-dashed border-amber-300 rounded-xl p-3.5 text-center space-y-1">
+                            <p className="text-xs font-bold text-amber-900 flex items-center justify-center gap-1.5">
+                              <Clock size={14} className="text-amber-700" /> Awaiting Nutritionist Consultation for Prescribed Goal & Macros
+                            </p>
+                            <p className="text-[10px] text-[#5A6B60] font-medium leading-relaxed max-w-lg mx-auto">
+                              Your assigned clinical nutritionist will calibrate your daily caloric target and macronutrient splits based on your clinical assessment and consultations.
+                            </p>
                           </div>
-                        </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -3016,65 +4098,93 @@ const PatientDashboard = () => {
                     <ShieldCheck size={16} className="text-[#456A50] ml-auto" />
                   </div>
 
-                  <div className="space-y-3 overflow-y-auto max-h-56 pr-2 custom-scrollbar">
+                  <div className="space-y-3 overflow-y-auto max-h-80 pr-2 custom-scrollbar">
                     {labReports.map((report) => {
                       const isReviewed = report.status === 'REVIEWED';
+                      const docName = report.name || report.file?.split('/').pop() || 'Clinical Document';
+                      const docCategory = report.type || report.document_type || 'Clinical Report';
+                      const docDate = report.date || (report.uploaded_at ? new Date(report.uploaded_at).toLocaleDateString() : '');
+                      const docSize = report.size || '';
+
                       return (
-                      <div key={report.id} className="p-3.5 bg-white border border-[#EBE9E0] rounded-2xl shadow-xs hover:border-[#456A50]/40 transition group space-y-2.5">
-                        <div className="flex justify-between items-center">
-                          <div className="flex items-center gap-3 overflow-hidden flex-1">
-                            <div className={`p-2.5 rounded-xl shrink-0 ${isReviewed ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
-                              <File size={16} />
+                      <div key={report.id} className="p-4 bg-white border border-[#EBE9E0] rounded-2xl shadow-xs hover:border-[#456A50]/40 transition group space-y-3">
+                        {/* Top Header: File Icon + Full Document Name + Quick Actions */}
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-start gap-3 min-w-0 flex-1">
+                            <div className={`p-2.5 rounded-xl shrink-0 mt-0.5 ${isReviewed ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                              <File size={18} />
                             </div>
-                            <div className="truncate flex-1">
-                              <p className="font-bold text-xs text-[#1C2C22] truncate">{report.name || report.file?.split('/').pop() || 'Document'}</p>
-                              <div className="flex items-center gap-2 mt-0.5">
-                                <span className="text-[9px] text-[#456A50] font-black tracking-wider uppercase truncate">{report.type || report.document_type || 'Clinical Report'}</span>
-                                <span className="text-gray-300">•</span>
-                                <span className="text-[9px] text-gray-400 font-medium">{report.date || (report.uploaded_at ? new Date(report.uploaded_at).toLocaleDateString() : '')}</span>
+                            <div className="min-w-0 flex-1">
+                              <p className="font-bold text-xs sm:text-sm text-[#1C2C22] break-words leading-tight" title={docName}>
+                                {docName}
+                              </p>
+                              <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                <span className="text-[10px] bg-[#EAF0EC] text-[#456A50] font-black px-2 py-0.5 rounded uppercase tracking-wider">
+                                  {docCategory}
+                                </span>
+                                {docDate && (
+                                  <>
+                                    <span className="text-gray-300 text-xs">•</span>
+                                    <span className="text-[10px] text-gray-500 font-medium">{docDate}</span>
+                                  </>
+                                )}
+                                {docSize && (
+                                  <>
+                                    <span className="text-gray-300 text-xs">•</span>
+                                    <span className="text-[10px] text-gray-400 font-medium">{docSize}</span>
+                                  </>
+                                )}
                               </div>
                             </div>
                           </div>
 
+                          {/* Action Buttons */}
                           <div className="flex items-center gap-1.5 shrink-0">
-                            {/* Document Status Stepper / Badge */}
-                            {isReviewed ? (
-                              <span className="bg-emerald-50 text-emerald-800 border border-emerald-300 text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider flex items-center gap-1 shadow-2xs">
-                                <CheckCircle2 size={11} className="text-emerald-700" /> Reviewed
-                              </span>
-                            ) : (
-                              <span className="bg-amber-50 text-amber-800 border border-amber-300 text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider flex items-center gap-1 shadow-2xs">
-                                <Clock size={11} className="text-amber-700" /> Available for Review
-                              </span>
-                            )}
-
                             {report.fileUrl && (
                               <a 
                                 href={report.fileUrl} 
                                 target="_blank" 
                                 rel="noreferrer" 
-                                download={report.name} 
-                                className="text-[#456A50] hover:text-[#35533E] bg-[#EAF0EC] p-2 rounded-xl text-xs font-bold transition"
-                                title="Download/View Report"
+                                download={docName} 
+                                className="text-[#456A50] hover:text-[#35533E] bg-[#EAF0EC] hover:bg-[#dfe8e2] p-2 rounded-xl text-xs font-bold transition flex items-center justify-center shadow-xs"
+                                title="Download / View Document"
                               >
-                                <Download size={14} />
+                                <Download size={15} />
                               </a>
                             )}
-                            <button onClick={() => removeLabReport(report.id)} className="text-red-400 hover:text-red-600 bg-red-50 p-2 rounded-xl transition cursor-pointer" title="Delete Report">
-                              <Trash2 size={14}/>
+                            <button 
+                              onClick={() => removeLabReport(report.id)} 
+                              className="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 p-2 rounded-xl transition cursor-pointer flex items-center justify-center shadow-xs" 
+                              title="Delete Document"
+                            >
+                              <Trash2 size={15}/>
                             </button>
                           </div>
                         </div>
 
+                        {/* Status Row */}
+                        <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Clinical Status</span>
+                          {isReviewed ? (
+                            <span className="bg-emerald-50 text-emerald-800 border border-emerald-300 text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider flex items-center gap-1.5 shadow-2xs">
+                              <CheckCircle2 size={12} className="text-emerald-700" /> Reviewed
+                            </span>
+                          ) : (
+                            <span className="bg-amber-50 text-amber-800 border border-amber-300 text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider flex items-center gap-1.5 shadow-2xs">
+                              <Clock size={12} className="text-amber-700" /> Available for Review
+                            </span>
+                          )}
+                        </div>
+
                         {/* Nutritionist Review Notes (if reviewed) */}
                         {isReviewed && report.review_notes && (
-                          <div className="bg-[#FDFCF8] border border-emerald-200/80 rounded-xl p-2.5 text-[11px] text-[#1C2C22] shadow-inner">
-                            <p className="font-extrabold text-[#456A50] text-[10px] uppercase tracking-wider flex items-center gap-1.5 mb-0.5">
-                              <ClipboardList size={12}/> Nutritionist Clinical Findings & Note:
+                          <div className="bg-[#FDFCF8] border border-emerald-200/80 rounded-xl p-3 text-xs text-[#1C2C22] shadow-inner space-y-1">
+                            <p className="font-extrabold text-[#456A50] text-[10px] uppercase tracking-wider flex items-center gap-1.5">
+                              <ClipboardList size={13}/> Nutritionist Clinical Findings & Note:
                             </p>
-                            <p className="text-gray-700 italic font-medium">"{report.review_notes}"</p>
+                            <p className="text-gray-700 italic font-medium leading-relaxed">"{report.review_notes}"</p>
                             {report.reviewed_at && (
-                              <p className="text-[9px] text-gray-400 mt-1 text-right">Reviewed by {report.reviewed_by || 'Nutritionist'} on {report.reviewed_at}</p>
+                              <p className="text-[9px] text-gray-400 text-right">Reviewed by {report.reviewed_by || 'Nutritionist'} on {report.reviewed_at}</p>
                             )}
                           </div>
                         )}
@@ -3172,6 +4282,47 @@ const PatientDashboard = () => {
                   </button>
                 </div>
 
+                {/* 🔔 2-WEEK ADAPTATION COMPLETE — PROGRESS CONSULTATION SYSTEM REMINDER */}
+                {(!isPhase2Unlocked && (isPhase1Completed || selectedWeek >= 2)) && (
+                  <div className="bg-gradient-to-r from-amber-500/15 via-emerald-500/10 to-amber-500/15 border-2 border-amber-400 rounded-3xl p-5 md:p-6 shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-in fade-in">
+                    <div className="flex items-start gap-3.5">
+                      <div className="w-12 h-12 rounded-2xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-md">
+                        <Bell size={24} className="animate-bounce" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-0.5 bg-amber-500 text-white rounded-full">
+                            Clinical Protocol Milestone
+                          </span>
+                          <span className="text-xs font-black text-amber-900">
+                            Phase 1 Adaptation Complete (2 Weeks)
+                          </span>
+                        </div>
+                        <h4 className="text-base font-black text-[#1C2C22] mt-1">
+                          System Reminder: Book Progress Consultation to Unlock Phase 2 (Weeks 3 & 4)
+                        </h4>
+                        <p className="text-xs text-[#5A6B60] mt-1 max-w-2xl leading-relaxed font-medium">
+                          You have completed your initial 14-day Kerala metabolic adaptation protocol. To evaluate your clinical biomarkers, weight trajectory, and unlock Weeks 3 & 4 of your protocol, please schedule your follow-up consultation with <strong>{publishedPlan?.nutritionist_name || 'your certified nutritionist'}</strong>.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2.5 shrink-0 w-full md:w-auto">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('appointments');
+                          if (nutritionists.length > 0) {
+                            setApptForm(prev => ({ ...prev, nutritionist: publishedPlan?.nutritionist || nutritionists[0].id }));
+                          }
+                        }}
+                        className="w-full md:w-auto bg-[#456A50] hover:bg-[#35533E] text-white px-5 py-3 rounded-xl font-black text-xs transition shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <Calendar size={15} /> Book Progress Consultation
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* 🌟 4-WEEK TABS SELECTOR WITH 2-PHASE GATING 🌟 */}
                 <div className="bg-white p-4 rounded-3xl border border-[#EBE9E0] shadow-sm">
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -3221,27 +4372,80 @@ const PatientDashboard = () => {
                 </div>
 
                 {/* 🌟 7-DAY SELECTOR BAR 🌟 */}
-                <div className="bg-white p-3 rounded-2xl border border-[#EBE9E0] shadow-sm flex gap-2 overflow-x-auto">
-                  {daysOfWeek.map((day) => {
-                    const isSelected = selectedDay === day;
-                    return (
-                      <button
-                        key={day}
-                        onClick={() => setSelectedDay(day)}
-                        className={`flex-1 min-w-[100px] py-3 px-3 rounded-xl text-center transition-all cursor-pointer ${
-                          isSelected
-                            ? 'bg-[#456A50] text-white shadow-md font-black'
-                            : 'bg-[#FDFCF8] text-[#1C2C22] border border-[#EBE9E0] font-bold hover:bg-gray-50'
-                        }`}
-                      >
-                        <p className="text-xs uppercase tracking-wider">{day.slice(0, 3)}</p>
-                        <p className={`text-[10px] mt-0.5 ${isSelected ? 'text-emerald-100' : 'text-gray-400 font-medium'}`}>
-                          {getProtocolDate(selectedWeek || 1, day)}
-                        </p>
-                      </button>
-                    );
-                  })}
+                <div className="bg-white p-3 rounded-2xl border border-[#EBE9E0] shadow-sm flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                  <div className="flex gap-2 overflow-x-auto flex-1 pb-1 sm:pb-0 custom-scrollbar">
+                    {daysOfWeek.map((day) => {
+                      const isSelected = selectedDay === day;
+                      const isLiveToday = day === todayDayName && (selectedWeek === 1);
+                      return (
+                        <button
+                          key={day}
+                          type="button"
+                          onClick={() => setSelectedDay(day)}
+                          className={`flex-1 min-w-[105px] py-3 px-3 rounded-xl text-center transition-all cursor-pointer relative ${
+                            isSelected
+                              ? 'bg-[#456A50] text-white shadow-md font-black ring-2 ring-[#456A50]/30'
+                              : 'bg-[#FDFCF8] text-[#1C2C22] border border-[#EBE9E0] font-bold hover:bg-gray-50'
+                          }`}
+                        >
+                          <div className="flex items-center justify-center gap-1.5 mb-0.5">
+                            <p className="text-xs uppercase tracking-wider">{day.slice(0, 3)}</p>
+                            {isLiveToday && (
+                              <span className={`text-[8px] font-black uppercase px-1.5 py-0.2 rounded-full ${
+                                isSelected ? 'bg-emerald-300 text-emerald-950 font-extrabold shadow-2xs' : 'bg-emerald-600 text-white animate-pulse'
+                              }`}>
+                                TODAY
+                              </span>
+                            )}
+                          </div>
+                          <p className={`text-[10px] ${isSelected ? 'text-emerald-100' : 'text-gray-400 font-medium'}`}>
+                            {getProtocolDate(selectedWeek || 1, day)}
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {(selectedDay !== todayDayName || selectedWeek !== 1) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedWeek(1);
+                        setSelectedDay(todayDayName);
+                      }}
+                      className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shrink-0 shadow-2xs"
+                    >
+                      <Clock size={13} className="text-emerald-600" /> Today ({todayDayName.slice(0,3)})
+                    </button>
+                  )}
                 </div>
+
+                {/* 🛡️ CLINICAL MEAL TIMING & DRUG INTERACTION DIRECTIVES */}
+                {(() => {
+                  const safety = evaluateClinicalSafety(profile);
+                  if (safety.isAllClear) return null;
+                  return (
+                    <div className="bg-amber-50/90 border border-amber-300 rounded-3xl p-5 shadow-sm space-y-3">
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                        <div className="flex items-center gap-2 text-amber-900 font-bold text-sm">
+                          <ShieldAlert size={18} className="text-amber-700 shrink-0" />
+                          <span>Clinical Safety Directives for Today's Meals</span>
+                        </div>
+                        <span className="text-[10px] font-black uppercase tracking-wider bg-amber-200 text-amber-900 px-2.5 py-1 rounded-full border border-amber-300">
+                          {safety.totalAlerts} Active Timing / Allergy Rule{safety.totalAlerts > 1 ? 's' : ''}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                        {safety.alerts.map(a => (
+                          <div key={a.id} className="bg-white/95 p-3 rounded-2xl border border-amber-200 shadow-2xs space-y-1">
+                            <span className={`text-[10px] font-black px-2 py-0.5 rounded border inline-block ${a.badgeColor}`}>{a.badge}</span>
+                            <p className="text-xs font-bold text-[#1C2C22]">{a.safetyRule}</p>
+                            <p className="text-[11px] text-gray-600 leading-snug">{a.clinicalDirective}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* 🌟 LEVEL 3: ACTIVE 5 KERALA MEALS FOR SELECTED WEEK & DAY 🌟 */}
                 <div className="bg-white rounded-3xl p-6 md:p-8 shadow-sm border border-[#EBE9E0]">
@@ -3287,24 +4491,33 @@ const PatientDashboard = () => {
 
                     const activeSlots = targetSlotKeys.map(k => allSlotDefs[k]);
 
-                    const defaultMealNames = {
-                      pre_breakfast: 'Warm Jeera & Methi Seed Detox Water (15 kcal)',
-                      breakfast: 'Kerala Steamed Idiyappam with Kadala Curry (280 kcal)',
-                      drink: 'Kerala Spiced Buttermilk (Sambharam) with Curry Leaves (45 kcal)',
-                      lunch: 'Kerala Red Matta Rice with Fish Curry & Cabbage Thoran (360 kcal)',
-                      snack: 'Sprouted Moong Salad with Lemon & Herbs (140 kcal)',
-                      dinner: 'Steamed Wheat / Ragi Dosa (2 pcs) with Kerala Vegetable Stew (280 kcal)'
-                    };
-
                     const getActiveMealObj = (mealType) => {
-                      const mealStr = currentDayPlan[mealType] || defaultMealNames[mealType] || 'Nutritious Kerala Clinical Meal (250 kcal)';
-                      const calMatch = mealStr.match(/\((\d+\s*kcal)\)/i);
-                      const cal = calMatch ? calMatch[1] : '250 kcal';
-                      const name = mealStr.replace(/\(\d+\s*kcal\)/i, '').trim();
+                      const raw = currentDayPlan[mealType];
+                      let mealName = '';
+                      let cal = '250 kcal';
+
+                      if (typeof raw === 'object' && raw?.name) {
+                        mealName = raw.name;
+                        cal = raw.cal || '250 kcal';
+                      } else if (typeof raw === 'string') {
+                        mealName = raw;
+                        const calMatch = raw.match(/\((\d+\s*kcal)\)/i);
+                        if (calMatch) {
+                          cal = calMatch[1];
+                          mealName = raw.replace(/\s*\(\d+\s*kcal\)/i, '').trim();
+                        }
+                      }
+
+                      if (!mealName || !mealName.trim()) {
+                        const safe = getSafeUniversalMeal(mealType);
+                        mealName = safe.name;
+                        cal = safe.cal;
+                      }
+
                       return {
-                        name,
+                        name: mealName,
                         cal,
-                        img: getKeralaMealImage(name, mealType),
+                        img: getKeralaMealImage(mealName, mealType),
                         desc: 'Nutrient-dense personalized Kerala clinical recipe formulated for your metabolic health goals.'
                       };
                     };
@@ -3321,42 +4534,113 @@ const PatientDashboard = () => {
                       <div className={`grid grid-cols-1 sm:grid-cols-2 ${gridColsClass} gap-5 mb-10`}>
                         {activeSlots.map(({ type: mealType, label }) => {
                           const mealObj = getActiveMealObj(mealType);
+                          const isPassed = isMealTimeOver(selectedWeek, selectedDay, mealType, getMealTimingForSlot(mealType));
+                          const { allergenConflict, dietPreferenceConflict } = evaluateMealConflicts(mealObj.name, {
+                            food_allergies: profile?.food_allergies,
+                            food_preferences: profile?.food_preferences
+                          });
+                          const isAllergen = !!allergenConflict;
 
                           return (
                             <div 
                               key={mealType} 
-                              onClick={() => setSelectedMeal({ ...mealObj, type: mealType })} 
-                              className="bg-[#FDFCF8] border border-[#EBE9E0] rounded-[2rem] p-4 flex flex-col shadow-xs hover:shadow-xl hover:-translate-y-1 hover:border-[#456A50] transition-all cursor-pointer group relative overflow-hidden"
+                              onClick={() => {
+                                if (isPassed) return;
+                                setSelectedMeal({ ...mealObj, type: mealType });
+                              }}
+                              className={`rounded-[2rem] p-4 flex flex-col transition-all relative overflow-hidden ${
+                                isPassed
+                                  ? 'bg-gray-100/90 border border-gray-300 opacity-60 grayscale-[35%] cursor-not-allowed shadow-none select-none'
+                                  : isAllergen 
+                                    ? 'bg-red-50/80 border-2 border-red-500 shadow-md ring-2 ring-red-400/20 cursor-pointer group hover:shadow-xl hover:-translate-y-1' 
+                                    : dietPreferenceConflict
+                                      ? 'bg-amber-50/80 border-2 border-amber-500 shadow-md ring-2 ring-amber-400/20 cursor-pointer group hover:shadow-xl hover:-translate-y-1'
+                                      : 'bg-[#FDFCF8] border border-[#EBE9E0] shadow-xs hover:shadow-xl hover:-translate-y-1 hover:border-[#456A50] cursor-pointer group'
+                              }`}
                             >
                               <div className="relative overflow-hidden rounded-2xl mb-3 h-36 bg-gray-100 border border-gray-100">
                                 <img 
                                   src={mealObj.img} 
                                   alt={mealObj.name} 
                                   onError={(e) => { e.target.onerror = null; e.target.src = getKeralaMealImage(mealObj.name, mealType); }}
-                                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" 
+                                  className={`w-full h-full object-cover transition-transform duration-500 ${!isPassed ? 'group-hover:scale-105' : ''}`}
                                 />
                                 <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-lg">
                                   <span className="text-[9px] font-black text-white uppercase tracking-wider">{label}</span>
                                 </div>
-                                <div className="absolute top-2 right-2 bg-emerald-950/85 backdrop-blur-md px-2 py-0.5 rounded-lg border border-emerald-400/40 shadow-xs">
-                                  <span className="text-[9px] font-black text-emerald-300 tracking-wider flex items-center gap-1">
-                                    <Clock size={10} className="text-emerald-400" /> {getMealTimingForSlot(mealType)}
-                                  </span>
+                                {isPassed ? (
+                                  <div className="absolute top-2 right-2 bg-gray-900/90 backdrop-blur-md px-2 py-0.5 rounded-lg border border-gray-700 shadow-xs flex items-center gap-1 text-[9px] font-black text-gray-300 tracking-wider">
+                                    <Clock size={10} className="text-gray-400" /> {getMealTimingForSlot(mealType)} • Closed
+                                  </div>
+                                ) : (
+                                  <div className="absolute top-2 right-2 bg-emerald-950/85 backdrop-blur-md px-2 py-0.5 rounded-lg border border-emerald-400/40 shadow-xs">
+                                    <span className="text-[9px] font-black text-emerald-300 tracking-wider flex items-center gap-1">
+                                      <Clock size={10} className="text-emerald-400" /> {getMealTimingForSlot(mealType)}
+                                    </span>
+                                  </div>
+                                )}
+
+                                {isPassed ? (
+                                  <div className="absolute bottom-2 left-2 right-2 bg-gray-900/90 backdrop-blur-md px-2 py-1 rounded-lg text-center shadow-xs">
+                                    <span className="text-[9px] font-black text-amber-300 uppercase tracking-wider flex items-center justify-center gap-1">
+                                      <Lock size={10} /> Window Closed (Time Passed)
+                                    </span>
+                                  </div>
+                                ) : isAllergen ? (
+                                  <div className="absolute bottom-2 left-2 right-2 bg-red-600/90 backdrop-blur-md px-2 py-1 rounded-lg text-center">
+                                    <span className="text-[9px] font-black text-white uppercase tracking-wider flex items-center justify-center gap-1">
+                                      <AlertTriangle size={10} /> Allergen Warning
+                                    </span>
+                                  </div>
+                                ) : dietPreferenceConflict ? (
+                                  <div className="absolute bottom-2 left-2 right-2 bg-amber-600/90 backdrop-blur-md px-2 py-1 rounded-lg text-center">
+                                    <span className="text-[9px] font-black text-white uppercase tracking-wider flex items-center justify-center gap-1">
+                                      <AlertTriangle size={10} /> Non-{dietPreferenceConflict.preference}
+                                    </span>
+                                  </div>
+                                ) : null}
+                              </div>
+
+                              {isPassed ? (
+                                <div className="flex items-center gap-1.5 text-[10px] text-gray-700 bg-gray-200/80 px-2 py-0.5 rounded-md border border-gray-300 w-max mb-1 font-bold">
+                                  <Lock size={10} className="text-gray-600" /> Prescribed: {getMealTimingForSlot(mealType)} (Passed)
                                 </div>
-                              </div>
+                              ) : isAllergen ? (
+                                <div className="flex items-center gap-1 text-[10px] text-red-900 bg-red-100 px-2 py-0.5 rounded-md border border-red-300 w-full mb-1 font-bold animate-pulse">
+                                  <ShieldAlert size={12} className="text-red-600 shrink-0" />
+                                  <span className="truncate">Contains "{allergenConflict.matchedKeyword}"</span>
+                                </div>
+                              ) : dietPreferenceConflict ? (
+                                <div className="flex items-center gap-1 text-[10px] text-amber-900 bg-amber-100 px-2 py-0.5 rounded-md border border-amber-300 w-full mb-1 font-bold animate-pulse">
+                                  <AlertTriangle size={12} className="text-amber-600 shrink-0" />
+                                  <span className="truncate">Non-{dietPreferenceConflict.preference}: "{dietPreferenceConflict.matchedKeyword}"</span>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1.5 text-[10px] text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 w-max mb-1 font-bold">
+                                  <Clock size={10} className="text-emerald-700" /> Prescribed: {getMealTimingForSlot(mealType)}
+                                </div>
+                              )}
 
-                              <div className="flex items-center gap-1.5 text-[10px] text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 w-max mb-1 font-bold">
-                                <Clock size={10} className="text-emerald-700" /> Prescribed: {getMealTimingForSlot(mealType)}
-                              </div>
-
-                              <p className="text-xs font-black text-[#1C2C22] leading-snug flex-1 mb-3 line-clamp-2">{mealObj.name}</p>
+                              <p className={`text-xs font-black leading-snug flex-1 mb-3 line-clamp-2 ${
+                                isPassed ? 'text-gray-500 line-through' : isAllergen ? 'text-red-950' : dietPreferenceConflict ? 'text-amber-950' : 'text-[#1C2C22]'
+                              }`}>{mealObj.name}</p>
                               
                               <div className="mt-auto pt-3 border-t border-gray-100 flex justify-between items-center">
-                                <span className="text-[10px] font-black bg-white text-[#456A50] px-2 py-1 rounded-lg border border-[#EBE9E0] flex items-center gap-1 shadow-2xs">
+                                <span className={`text-[10px] font-black px-2 py-1 rounded-lg border flex items-center gap-1 shadow-2xs ${
+                                  isPassed ? 'bg-gray-200 text-gray-500 border-gray-300' : 'bg-white text-[#456A50] border-[#EBE9E0]'
+                                }`}>
                                   <Flame size={11}/> {mealObj.cal}
                                 </span>
-                                <span className="w-7 h-7 rounded-full bg-[#EAF0EC] text-[#456A50] flex items-center justify-center group-hover:bg-[#456A50] group-hover:text-white transition-colors">
-                                  <ChevronRight size={14}/>
+                                <span className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${
+                                  isPassed 
+                                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                                    : isAllergen 
+                                      ? 'bg-red-100 text-red-700 group-hover:bg-red-600 group-hover:text-white' 
+                                      : dietPreferenceConflict
+                                        ? 'bg-amber-100 text-amber-700 group-hover:bg-amber-600 group-hover:text-white'
+                                        : 'bg-[#EAF0EC] text-[#456A50] group-hover:bg-[#456A50] group-hover:text-white'
+                                }`}>
+                                  {isPassed ? <Lock size={12}/> : <ChevronRight size={14}/>}
                                 </span>
                               </div>
                             </div>
@@ -3422,6 +4706,49 @@ const PatientDashboard = () => {
                       🌿 {selectedMeal.desc}
                     </p>
                   )}
+                  {(() => {
+                    const { allergenConflict, dietPreferenceConflict } = evaluateMealConflicts(selectedMeal.name, {
+                      food_allergies: profile?.food_allergies,
+                      food_preferences: profile?.food_preferences
+                    });
+                    if (allergenConflict) {
+                      return (
+                        <div className="mt-3 p-3.5 bg-red-100 border border-red-300 rounded-2xl text-red-950 text-xs flex items-start gap-2.5 shadow-xs animate-in fade-in">
+                          <ShieldAlert size={18} className="text-red-600 shrink-0 mt-0.5" />
+                          <div>
+                            <p className="font-black text-red-800 text-[11px] uppercase tracking-wide">
+                              🚨 Severe Allergen Warning
+                            </p>
+                            <p className="text-xs font-bold text-red-900 mt-0.5">
+                              Contains "{allergenConflict.matchedKeyword}" which conflicts with your {allergenConflict.patientAllergy} allergy!
+                            </p>
+                            <p className="text-[11px] text-red-800 mt-1 leading-snug">
+                              Do not consume this dish. Click "Swap with Personalized Option" below to choose a safe alternative.
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    }
+                    if (dietPreferenceConflict) {
+                      return (
+                        <div className="mt-3 p-3.5 bg-amber-100 border border-amber-300 rounded-2xl text-amber-950 text-xs flex items-start gap-2.5 shadow-xs animate-in fade-in">
+                          <AlertTriangle size={18} className="text-amber-600 shrink-0 mt-0.5" />
+                          <div>
+                            <p className="font-black text-amber-800 text-[11px] uppercase tracking-wide">
+                              ⚠️ Dietary Preference Conflict ({dietPreferenceConflict.preference})
+                            </p>
+                            <p className="text-xs font-bold text-amber-900 mt-0.5">
+                              Contains non-{dietPreferenceConflict.preference.toLowerCase()} ingredient "{dietPreferenceConflict.matchedKeyword}".
+                            </p>
+                            <p className="text-[11px] text-amber-800 mt-1 leading-snug">
+                              {dietPreferenceConflict.warning} Click "Swap with Personalized Option" to pick a compliant meal.
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
                 </div>
 
                 <div className="flex items-center justify-between mt-4 p-4 rounded-2xl bg-[#EAF0EC] border border-[#456A50]/20 shadow-sm">
@@ -3553,16 +4880,48 @@ const PatientDashboard = () => {
 
                             const toggleSlot = () => {
                               const nextVal = !isCompleted;
+                              const updatedSlots = {
+                                ...(logForm.completed_slots || {}),
+                                [slot.key]: nextVal
+                              };
                               setLogForm(prev => ({
                                 ...prev,
-                                completed_slots: {
-                                  ...(prev.completed_slots || {}),
-                                  [slot.key]: nextVal
-                                },
+                                completed_slots: updatedSlots,
                                 ...(slot.key === 'breakfast' ? { breakfast_completed: nextVal } : {}),
                                 ...(slot.key === 'lunch' ? { lunch_completed: nextVal } : {}),
                                 ...(slot.key === 'dinner' ? { dinner_completed: nextVal } : {})
                               }));
+
+                              // Sync immediately to wellnessLogs & localStorage
+                              const now = new Date();
+                              const todayIso = now.toISOString().split('T')[0];
+                              const existingLogs = [...wellnessLogs];
+                              const todayIndex = existingLogs.findIndex(l => l.date && String(l.date).startsWith(todayIso));
+                              if (todayIndex >= 0) {
+                                existingLogs[todayIndex] = {
+                                  ...existingLogs[todayIndex],
+                                  completed_slots: updatedSlots,
+                                  breakfast_completed: slot.key === 'breakfast' ? nextVal : existingLogs[todayIndex].breakfast_completed,
+                                  lunch_completed: slot.key === 'lunch' ? nextVal : existingLogs[todayIndex].lunch_completed,
+                                  dinner_completed: slot.key === 'dinner' ? nextVal : existingLogs[todayIndex].dinner_completed
+                                };
+                              } else {
+                                existingLogs.unshift({
+                                  id: Date.now(),
+                                  date: todayIso,
+                                  completed_slots: updatedSlots,
+                                  breakfast_completed: slot.key === 'breakfast' ? nextVal : false,
+                                  lunch_completed: slot.key === 'lunch' ? nextVal : false,
+                                  dinner_completed: slot.key === 'dinner' ? nextVal : false,
+                                  ate_other_food: false,
+                                  sleep_hours: '7.5',
+                                  water_glasses: 4,
+                                  mood: 'Calm & Balanced',
+                                  physical_activity: '30 mins brisk walking'
+                                });
+                              }
+                              setWellnessLogs(existingLogs);
+                              localStorage.setItem(`healora_wellness_${userId}`, JSON.stringify(existingLogs));
                             };
 
                             return (
@@ -4448,7 +5807,7 @@ const PatientDashboard = () => {
                           <h2 className="text-xl font-black text-[#1C2C22] flex items-center gap-2">
                             <Calendar size={22} className="text-[#456A50]"/> My Appointments
                           </h2>
-                          <p className="text-xs text-[#5A6B60] mt-0.5">Track bookings, join telehealth Google Meets & download receipts.</p>
+                          <p className="text-xs text-[#5A6B60] mt-0.5">Track bookings, enter in-app telehealth video sessions & download receipts.</p>
                         </div>
                         <button 
                           onClick={() => { setShowApptModal(true); setPaymentErrors({}); }} 
@@ -4495,9 +5854,19 @@ const PatientDashboard = () => {
 
                         if (!todayAppt) return null;
 
-                        const isCalled = todayAppt.queue_status === 'CALLED';
-                        const isInSession = todayAppt.queue_status === 'IN_CONSULTATION';
-                        const isCompleted = todayAppt.queue_status === 'COMPLETED';
+                        const cachedAll = JSON.parse(localStorage.getItem('healora_all_appointments')) || [];
+                        const cachedAppt = cachedAll.find(c => String(c.id) === String(todayAppt.id)) || {};
+                        const todaysAll = cachedAll.filter(a => (a.date === isoToday || a.date === localToday) && a.status !== 'CANCELLED');
+                        todaysAll.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+                        const queueIdx = todaysAll.findIndex(a => String(a.id) === String(todayAppt.id));
+                        const fallbackToken = queueIdx >= 0 ? `TK-${101 + queueIdx}` : 'TK-101';
+                        const tokenNum = todayAppt.token_number || cachedAppt.token_number || fallbackToken;
+                        const roomName = todayAppt.allocated_room || cachedAppt.allocated_room || (todayAppt.mode === 'ONLINE' ? 'In-App Telehealth Video Suite' : 'Doctor Consultation Chamber (Ground Floor, Room 101)');
+
+                        const qStatus = todayAppt.queue_status || cachedAppt.queue_status || 'WAITING';
+                        const isCalled = qStatus === 'CALLED';
+                        const isInSession = qStatus === 'IN_CONSULTATION';
+                        const isCompleted = qStatus === 'COMPLETED';
 
                         return (
                           <div className={`p-4 rounded-2xl border transition-all duration-300 ${
@@ -4524,8 +5893,8 @@ const PatientDashboard = () => {
                                     <span className="text-xs font-bold opacity-80">Slot: {todayAppt.time}</span>
                                   </div>
                                   <h4 className="font-black text-lg mt-0.5 flex items-center gap-2">
-                                    Token #{todayAppt.token_number || 'TK-101'}
-                                    <span className="text-xs font-normal opacity-90">• {todayAppt.allocated_room || 'Doctor Consultation Chamber'}</span>
+                                    Token #{tokenNum}
+                                    <span className="text-xs font-normal opacity-90">• {roomName}</span>
                                   </h4>
                                 </div>
                               </div>
@@ -4557,15 +5926,14 @@ const PatientDashboard = () => {
                                   >
                                     <Printer size={13} /> Print Token Pass
                                   </button>
-                                ) : todayAppt.meet_link && (
-                                  <a 
-                                    href={todayAppt.meet_link} 
-                                    target="_blank" 
-                                    rel="noreferrer"
-                                    className="bg-white text-emerald-800 font-bold px-3 py-1.5 rounded-xl text-xs flex items-center gap-1.5 shadow-sm transition hover:bg-gray-100 shrink-0"
+                                ) : (
+                                  <button 
+                                    type="button"
+                                    onClick={() => handleStartVideoConsultation(todayAppt)} 
+                                    className="bg-white text-emerald-800 font-bold px-3 py-1.5 rounded-xl text-xs flex items-center gap-1.5 shadow-sm transition hover:bg-gray-100 shrink-0 cursor-pointer"
                                   >
-                                    <Video size={13} /> Join Meet
-                                  </a>
+                                    <Video size={13} /> Enter Video Room
+                                  </button>
                                 )}
                               </div>
                             </div>
@@ -4612,19 +5980,14 @@ const PatientDashboard = () => {
                                         </span>
                                       );
                                     }
-                                    return a.meet_link ? (
-                                      <a 
-                                        href={a.meet_link} 
-                                        target="_blank" 
-                                        rel="noreferrer" 
-                                        className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-xl font-bold text-xs shadow-sm transition"
+                                    return (
+                                      <button 
+                                        type="button"
+                                        onClick={() => handleStartVideoConsultation(a)} 
+                                        className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-xl font-bold text-xs shadow-sm transition cursor-pointer"
                                       >
-                                        <Video size={13} /> Join Meet <ExternalLink size={11} />
-                                      </a>
-                                    ) : (
-                                      <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg inline-flex items-center gap-1">
-                                        <Clock size={11} /> Link arriving soon
-                                      </span>
+                                        <Video size={13} /> Enter Video Room
+                                      </button>
                                     );
                                   })()
                                 ) : (
@@ -5112,6 +6475,19 @@ const PatientDashboard = () => {
 
         </div>
       </main>
+      {/* 🌟 HEALORA IN-APP TELEHEALTH VIDEO CONSULTATION STUDIO 🌟 */}
+      {activeVideoCallAppt && (
+        <TelehealthVideoRoom 
+          isOpen={!!activeVideoCallAppt}
+          onClose={() => setActiveVideoCallAppt(null)}
+          appointment={activeVideoCallAppt}
+          currentUserRole="PATIENT"
+          currentUserName={userName || 'Patient'}
+          patientProfile={profile}
+          nutritionistInfo={nutritionists.find(n => String(n.id) === String(activeVideoCallAppt.nutritionist)) || {}}
+        />
+      )}
+
       <style>{`
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }

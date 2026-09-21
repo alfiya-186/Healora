@@ -9,6 +9,8 @@ import {
   ClipboardList, Edit3
 } from 'lucide-react';
 import { getKeralaPersonalizedOptions, getKeralaMealImage, generatePersonalizedKeralaWeeks } from '../utils/keralaNutritionEngine.js';
+import TelehealthVideoRoom from '../components/TelehealthVideoRoom.jsx';
+import { evaluateClinicalSafety, checkMealAllergenConflict, evaluateMealConflicts } from '../utils/clinicalSafetyRules.js';
 
 export const DEFAULT_MEAL_TIMINGS = {
   pre_breakfast: '07:00 AM',
@@ -25,6 +27,11 @@ const NutritionistDashboard = () => {
   const nutritionistId = localStorage.getItem('user_id') || 'nut_1';
 
   const [activeTab, setActiveTab] = useState('directory'); // 'directory', 'case', 'messages'
+  const [activeVideoCallAppt, setActiveVideoCallAppt] = useState(null);
+
+  const handleStartVideoConsultation = (appt) => {
+    setActiveVideoCallAppt(appt);
+  };
   const [searchQuery, setSearchQuery] = useState('');
   const [adherenceFilter, setAdherenceFilter] = useState('ALL'); // 'ALL' | 'ATTENTION' | 'HIGH' | 'MODERATE' | 'STRUGGLING'
   const [selectedPatient, setSelectedPatient] = useState(null);
@@ -256,11 +263,11 @@ const NutritionistDashboard = () => {
   };
 
   // --- PROGRAM-WISE SMART FOOD SUGGESTIONS DATABASE ---
-  // --- CLINICAL PERSONALIZED KERALA MEAL SUGGESTION ENGINE (2-3 PERSONALIZED OPTIONS) ---
+  // --- CLINICAL PERSONALIZED KERALA MEAL SUGGESTION ENGINE (EXACTLY 2 PERSONALIZED OPTIONS) ---
   const getSuggestionsForPatient = (mealType) => {
     if (!selectedPatient) return [];
     const options = getKeralaPersonalizedOptions(mealType, selectedPatient, patientReports);
-    return options.map(opt => `${opt.name} (${opt.cal})`);
+    return options.slice(0, 2).map(opt => `${opt.name} (${opt.cal})`);
   };
 
 
@@ -530,6 +537,18 @@ const NutritionistDashboard = () => {
     }));
   };
 
+  const handleAutoFillPersonalizedPlan = () => {
+    if (!selectedPatient) return;
+    const patientLabDocs = (selectedPatient?.medical_documents || []).concat(patientReports.filter(r => String(r.patient) === String(selectedPatient?.id)));
+    const freq = monthlyPlanData.meal_frequency || 5;
+    const newWeeks = generatePersonalizedKeralaWeeks(selectedPatient, patientLabDocs, freq);
+    setMonthlyPlanData(prev => ({
+      ...prev,
+      weeks: newWeeks
+    }));
+    alert(`✨ Successfully populated a 100% personalized, conflict-free 4-week protocol for ${selectedPatient.first_name}!\n\n• Allergies Filtered: Zero ${selectedPatient.food_allergies || 'None'}\n• Diet Protocol: 100% ${selectedPatient.food_preferences || 'Standard'}\n• Clinical Condition: Tailored for ${selectedPatient.enrolled_program || selectedPatient.medical_history || 'metabolic wellness'}`);
+  };
+
   const handleMealTimingChange = (slotKey, newTime) => {
     setMonthlyPlanData(prev => ({
       ...prev,
@@ -681,6 +700,38 @@ const NutritionistDashboard = () => {
 
   const handlePublishPlan = async () => {
     if (!selectedPatient) return;
+
+    // Scan for allergen and dietary preference conflicts before publishing
+    const conflicts = [];
+    for (const [wk, days] of Object.entries(monthlyPlanData.weeks || {})) {
+      for (const [day, slots] of Object.entries(days || {})) {
+        for (const [slotKey, mealVal] of Object.entries(slots || {})) {
+          const evalRes = evaluateMealConflicts(mealVal, {
+            food_allergies: selectedPatient?.food_allergies,
+            food_preferences: selectedPatient?.food_preferences
+          });
+          if (evalRes.allergenConflict) {
+            conflicts.push(`• [ALLERGEN] Week ${wk} ${day} (${slotKey}): "${mealVal}" — Contains ${evalRes.allergenConflict.matchedKeyword} (${evalRes.allergenConflict.patientAllergy} Allergy)`);
+          }
+          if (evalRes.dietPreferenceConflict) {
+            conflicts.push(`• [DIET CONFLICT] Week ${wk} ${day} (${slotKey}): "${mealVal}" — Contains "${evalRes.dietPreferenceConflict.matchedKeyword}" (${evalRes.dietPreferenceConflict.preference} Violation)`);
+          }
+        }
+      }
+    }
+
+    if (conflicts.length > 0) {
+      const confirmMsg = 
+        `🚨 CLINICAL ALLERGEN & DIET CONFLICT FOR ${selectedPatient.first_name.toUpperCase()}!\n\n` +
+        `The care plan contains items conflicting with ${selectedPatient.first_name}'s restrictions:\n\n` +
+        conflicts.slice(0, 5).join('\n') +
+        (conflicts.length > 5 ? `\n...and ${conflicts.length - 5} more conflict(s)` : '') +
+        `\n\nPrescribing known food allergens or non-compliant foods risks patient harm.\nAre you certain you want to force-publish this plan?`;
+      
+      if (!window.confirm(confirmMsg)) {
+        return;
+      }
+    }
 
     const fullPlan = {
       ...monthlyPlanData,
@@ -1076,7 +1127,7 @@ const NutritionistDashboard = () => {
                 {activeTab === 'directory' 
                   ? 'Search records, view biometrics, and build monthly care plans.' 
                   : activeTab === 'consultations'
-                  ? 'Directly join scheduled Google Meet sessions and review patient appointments.'
+                  ? 'Directly enter scheduled in-app video consultation sessions and review patient appointments.'
                   : activeTab === 'messages' 
                   ? 'Secure communication with patients and management.' 
                   : `Patient ID: #${selectedPatient?.id} | Enrolled Program: ${selectedPatient?.enrolled_program || selectedPatient?.health_goals || 'Weight Management'}`}
@@ -1448,8 +1499,8 @@ const NutritionistDashboard = () => {
               <div className="bg-white rounded-3xl shadow-sm border border-[#EBE9E0] overflow-hidden">
                 <div className="p-6 border-b border-[#EBE9E0] bg-[#FDFCF8] flex justify-between items-center">
                   <div>
-                    <h2 className="text-xl font-black text-[#1C2C22]">My Consultation Bookings & Google Meet Rooms</h2>
-                    <p className="text-xs text-[#5A6B60] mt-0.5">Directly join video consultations scheduled by the clinic desk.</p>
+                    <h2 className="text-xl font-black text-[#1C2C22]">My Consultation Bookings & Telehealth Sessions</h2>
+                    <p className="text-xs text-[#5A6B60] mt-0.5">Directly enter in-app video consultations scheduled with your patients.</p>
                   </div>
                 </div>
 
@@ -1524,19 +1575,14 @@ const NutritionistDashboard = () => {
                                     </span>
                                   );
                                 }
-                                return a.meet_link ? (
-                                  <a 
-                                    href={a.meet_link} 
-                                    target="_blank" 
-                                    rel="noreferrer" 
-                                    className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-xl font-bold text-xs shadow-sm transition transform hover:scale-105"
+                                return (
+                                  <button 
+                                    type="button"
+                                    onClick={() => handleStartVideoConsultation(a)} 
+                                    className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-xl font-bold text-xs shadow-sm transition transform hover:scale-105 cursor-pointer"
                                   >
-                                    <Video size={14} /> Join Google Meet <ExternalLink size={12} />
-                                  </a>
-                                ) : (
-                                  <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1 rounded-lg inline-flex items-center gap-1.5">
-                                    <Clock size={12} /> Meet Link Pending Setup
-                                  </span>
+                                    <Video size={14} /> Enter Video Room
+                                  </button>
                                 );
                               })()
                             ) : (
@@ -1599,22 +1645,21 @@ const NutritionistDashboard = () => {
                           </span>
                         </div>
                         <p className="text-xs text-gray-600 mt-1">
-                          {patientAppt.meet_link 
-                            ? 'Google Meet room is active and ready for your clinical consultation.' 
-                            : 'Consultation session scheduled. Meet link will be provided by clinic desk prior to call.'}
+                          {patientAppt.mode === 'ONLINE' 
+                            ? 'Healora In-App Telehealth Room is active and ready for your clinical consultation.' 
+                            : 'In-clinic consultation session scheduled.'}
                         </p>
                       </div>
                     </div>
 
-                    {patientAppt.meet_link && (
-                      <a 
-                        href={patientAppt.meet_link} 
-                        target="_blank" 
-                        rel="noreferrer" 
-                        className="bg-emerald-700 hover:bg-emerald-800 text-white px-5 py-3 rounded-2xl font-bold text-xs shadow-md shadow-emerald-700/20 flex items-center gap-2 transition transform hover:scale-105 shrink-0"
+                    {patientAppt.mode === 'ONLINE' && (
+                      <button 
+                        type="button"
+                        onClick={() => handleStartVideoConsultation(patientAppt)} 
+                        className="bg-emerald-700 hover:bg-emerald-800 text-white px-5 py-3 rounded-2xl font-bold text-xs shadow-md shadow-emerald-700/20 flex items-center gap-2 transition transform hover:scale-105 shrink-0 cursor-pointer"
                       >
-                        <Video size={16} /> Join Google Meet <ExternalLink size={14} />
-                      </a>
+                        <Video size={16} /> Enter Video Consultation Room <Sparkles size={14} className="text-amber-300" />
+                      </button>
                     )}
                   </div>
                 );
@@ -1743,20 +1788,85 @@ const NutritionistDashboard = () => {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs font-medium">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs font-medium">
                   <div className="bg-white p-4 rounded-xl border border-[#EBE9E0]">
                     <span className="text-[10px] font-bold text-[#5A6B60] uppercase">Food Preferences</span>
                     <p className="font-bold text-sm mt-1 text-[#1C2C22]">{selectedPatient.food_preferences || 'No preference'}</p>
                   </div>
                   <div className="bg-white p-4 rounded-xl border border-[#EBE9E0]">
                     <span className="text-[10px] font-bold text-[#5A6B60] uppercase">Food Allergies</span>
-                    <p className="font-bold text-sm mt-1 text-red-500">{selectedPatient.food_allergies || 'None reported'}</p>
+                    <p className={`font-bold text-sm mt-1 ${selectedPatient.food_allergies && selectedPatient.food_allergies !== 'None' ? 'text-red-600' : 'text-[#1C2C22]'}`}>{selectedPatient.food_allergies || 'None reported'}</p>
                   </div>
                   <div className="bg-white p-4 rounded-xl border border-[#EBE9E0]">
                     <span className="text-[10px] font-bold text-[#5A6B60] uppercase">Medical History</span>
                     <p className="font-bold text-sm mt-1 text-[#1C2C22]">{selectedPatient.medical_history || 'None reported'}</p>
                   </div>
+                  <div className="bg-white p-4 rounded-xl border border-[#EBE9E0]">
+                    <span className="text-[10px] font-bold text-[#5A6B60] uppercase">Current Medications</span>
+                    <p className="font-bold text-sm mt-1 text-[#1C2C22]">{selectedPatient.current_medications || 'None reported'}</p>
+                  </div>
                 </div>
+
+                {/* 🛡️ CLINICAL DRUG-NUTRIENT & ALLERGY SAFETY ADVISORY (CDSS) */}
+                {(() => {
+                  const safety = evaluateClinicalSafety(selectedPatient || {});
+                  return (
+                    <div className={`p-5 rounded-2xl border shadow-sm space-y-3 mt-4 ${
+                      safety.isAllClear ? 'bg-emerald-50/40 border-emerald-200' : 'bg-amber-50/70 border-amber-300'
+                    }`}>
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-black/5 pb-3">
+                        <div className="flex items-center gap-2.5">
+                          {safety.isAllClear ? (
+                            <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                              <ShieldCheck size={18} />
+                            </div>
+                          ) : (
+                            <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                              <ShieldAlert size={18} />
+                            </div>
+                          )}
+                          <div>
+                            <h4 className="font-bold text-sm text-[#1C2C22]">Clinical Decision Support: Drug–Nutrient & Allergy Protocol</h4>
+                            <p className="text-[11px] text-[#5A6B60]">Deterministic Rule-Based Interaction & Malabsorption Screening</p>
+                          </div>
+                        </div>
+                        <span className={`text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-full border ${
+                          safety.isAllClear ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-amber-200 text-amber-900 border-amber-300'
+                        }`}>
+                          {safety.isAllClear ? '🛡️ Safety Verified • No Contraindications' : `⚠️ ${safety.totalAlerts} Active Contraindication(s)`}
+                        </span>
+                      </div>
+
+                      {safety.isAllClear ? (
+                        <p className="text-xs text-emerald-800 leading-relaxed font-medium">
+                          Patient profile cleared: No prescription-food contraindications or active food allergen conflicts detected.
+                        </p>
+                      ) : (
+                        <div className="space-y-2.5 pt-1">
+                          {safety.alerts.map((alert) => (
+                            <div key={alert.id} className="bg-white p-3.5 rounded-xl border border-amber-200 shadow-2xs space-y-1.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-md border ${alert.badgeColor}`}>
+                                  {alert.badge}
+                                </span>
+                                <span className="text-[10px] uppercase tracking-wider font-bold text-gray-500">
+                                  {alert.severity} Priority
+                                </span>
+                              </div>
+                              <p className="text-xs font-bold text-[#1C2C22]">{alert.medication}</p>
+                              <p className="text-[11px] text-gray-600 leading-relaxed">
+                                <strong className="text-[#1C2C22]">Pathological Mechanism:</strong> {alert.mechanism}
+                              </p>
+                              <div className="bg-amber-50/80 p-2.5 rounded-lg border border-amber-200 text-[11px] text-amber-950 font-medium">
+                                <strong>Clinical Directive:</strong> {alert.clinicalDirective}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* 🌟 PATIENT CLINICAL LABORATORY REPORTS & DIAGNOSTIC VAULT 🌟 */}
@@ -2652,23 +2762,61 @@ const NutritionistDashboard = () => {
                     </div>
 
                     {/* CLINICAL KERALA PERSONALIZATION CONTEXT BANNER */}
-                    <div className="bg-[#EAF0EC]/80 border border-[#456A50]/25 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-                      <div className="flex items-center gap-2 text-[#456A50] font-black">
-                        <Sparkles size={16} />
-                        <span>Kerala Clinical Nutrition Matrix for {selectedPatient.first_name}</span>
+                    <div className="bg-[#EAF0EC]/80 border border-[#456A50]/25 rounded-2xl p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-xs">
+                      <div>
+                        <div className="flex items-center gap-2 text-[#456A50] font-black">
+                          <Sparkles size={16} />
+                          <span>Kerala Clinical Nutrition Matrix for {selectedPatient.first_name}</span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium text-gray-700 mt-2">
+                          <span className="bg-white px-2.5 py-1 rounded-lg border border-[#EBE9E0] shadow-2xs">
+                            🌴 Program: <strong>{selectedPatient.enrolled_program || selectedPatient.health_goals || 'Weight Loss'}</strong>
+                          </span>
+                          <span className="bg-white px-2.5 py-1 rounded-lg border border-[#EBE9E0] shadow-2xs">
+                            🥗 Diet: <strong>{selectedPatient.food_preferences || 'Standard'}</strong>
+                          </span>
+                          <span className="bg-white px-2.5 py-1 rounded-lg border border-[#EBE9E0] shadow-2xs">
+                            🚫 Allergies: <strong>{selectedPatient.food_allergies || 'None'}</strong>
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium text-gray-700">
-                        <span className="bg-white px-2.5 py-1 rounded-lg border border-[#EBE9E0] shadow-2xs">
-                          🌴 Program: <strong>{selectedPatient.enrolled_program || selectedPatient.health_goals || 'Weight Loss'}</strong>
-                        </span>
-                        <span className="bg-white px-2.5 py-1 rounded-lg border border-[#EBE9E0] shadow-2xs">
-                          🥗 Diet: <strong>{selectedPatient.food_preferences || 'Standard'}</strong>
-                        </span>
-                        <span className="bg-white px-2.5 py-1 rounded-lg border border-[#EBE9E0] shadow-2xs">
-                          🚫 Allergies: <strong>{selectedPatient.food_allergies || 'None'}</strong>
-                        </span>
-                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleAutoFillPersonalizedPlan}
+                        className="bg-[#456A50] hover:bg-[#35533E] text-white px-4 py-2.5 rounded-xl font-bold text-xs shadow-sm transition flex items-center gap-1.5 cursor-pointer shrink-0"
+                      >
+                        <Sparkles size={14} /> Auto-Fill Tailored Protocol
+                      </button>
                     </div>
+
+                    {/* CLINICAL SAFETY CONTRAINDICATION ALERT FOR MEAL FORMULATION */}
+                    {(() => {
+                      const safety = evaluateClinicalSafety(selectedPatient || {});
+                      if (safety.isAllClear) return null;
+                      return (
+                        <div className="bg-amber-50/90 border border-amber-300 rounded-2xl p-4 shadow-2xs space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 text-amber-900 font-bold text-xs">
+                              <ShieldAlert size={16} className="text-amber-700 shrink-0" />
+                              <span>Clinical Safety Directives for {selectedPatient.first_name}</span>
+                            </div>
+                            <span className="text-[10px] font-black bg-amber-200 text-amber-900 px-2 py-0.5 rounded border border-amber-300">
+                              {safety.totalAlerts} Active Rule{safety.totalAlerts > 1 ? 's' : ''}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                            {safety.alerts.map(a => (
+                              <div key={a.id} className="bg-white/95 p-2.5 rounded-xl border border-amber-200">
+                                <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border inline-block mb-1 ${a.badgeColor}`}>{a.badge}</span>
+                                <p className="text-[11px] font-bold text-[#1C2C22]">{a.safetyRule}</p>
+                                <p className="text-[10px] text-gray-600 mt-0.5">{a.clinicalDirective}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     {/* CLINICAL MEAL FREQUENCY & TIMETABLE SELECTOR */}
                     <div className="bg-white p-4 rounded-2xl border border-[#EBE9E0] flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-2xs">
@@ -2761,15 +2909,42 @@ const NutritionistDashboard = () => {
                         return activeSlots.map(slot => {
                           const mealVal = monthlyPlanData.weeks?.[selectedWeek]?.[selectedDay]?.[slot.key] || '';
                           const imgUrl = getKeralaMealImage(mealVal, slot.key);
+                          const { allergenConflict, dietPreferenceConflict } = evaluateMealConflicts(mealVal, {
+                            food_allergies: selectedPatient?.food_allergies,
+                            food_preferences: selectedPatient?.food_preferences
+                          });
+                          const isAllergen = !!allergenConflict;
 
                           return (
-                            <div key={slot.key} className="space-y-1.5 bg-white p-4 rounded-2xl border border-[#EBE9E0] shadow-2xs flex flex-col justify-between">
+                            <div 
+                              key={slot.key} 
+                              className={`space-y-1.5 p-4 rounded-2xl transition-all flex flex-col justify-between ${
+                                isAllergen 
+                                  ? 'bg-red-50/70 border-2 border-red-500 shadow-md ring-2 ring-red-400/20' 
+                                  : dietPreferenceConflict
+                                    ? 'bg-amber-50/70 border-2 border-amber-500 shadow-md ring-2 ring-amber-400/20'
+                                    : 'bg-white border border-[#EBE9E0] shadow-2xs'
+                              }`}
+                            >
                               <div>
                                 <div className="flex justify-between items-center mb-2">
-                                  <label className={`block text-[10px] font-black uppercase tracking-widest ${slot.text}`}>
+                                  <label className={`block text-[10px] font-black uppercase tracking-widest ${
+                                    isAllergen ? 'text-red-700' : dietPreferenceConflict ? 'text-amber-800' : slot.text
+                                  }`}>
                                     {slot.label}
                                   </label>
-                                  <span className="text-[10px] text-gray-400 font-bold">W{selectedWeek} • {selectedDay}</span>
+                                  <div className="flex items-center gap-1.5">
+                                    {isAllergen ? (
+                                      <span className="text-[9px] font-black uppercase tracking-wider bg-red-600 text-white px-2 py-0.5 rounded-md flex items-center gap-1 animate-pulse">
+                                        <AlertTriangle size={10} /> Allergen Alert
+                                      </span>
+                                    ) : dietPreferenceConflict ? (
+                                      <span className="text-[9px] font-black uppercase tracking-wider bg-amber-600 text-white px-2 py-0.5 rounded-md flex items-center gap-1 animate-pulse">
+                                        <AlertTriangle size={10} /> {dietPreferenceConflict.preference} Clashed
+                                      </span>
+                                    ) : null}
+                                    <span className="text-[10px] text-gray-400 font-bold">W{selectedWeek} • {selectedDay}</span>
+                                  </div>
                                 </div>
                                 <div className="relative h-28 rounded-xl overflow-hidden mb-2.5 bg-gray-100 border border-gray-100 shadow-2xs">
                                   <img 
@@ -2787,20 +2962,59 @@ const NutritionistDashboard = () => {
                                   }}
                                   className={`w-full border ${slot.border} ${slot.bg} rounded-xl p-2.5 text-xs font-semibold text-[#1C2C22] outline-none focus:ring-1 ${slot.ring} cursor-pointer mb-2`}
                                 >
-                                  <option value="">💡 2-3 Tailored Options for {selectedPatient.first_name}...</option>
+                                  <option value="">💡 2 Tailored Options for {selectedPatient.first_name}...</option>
                                   {getSuggestionsForPatient(slot.key).map((opt, i) => (
                                     <option key={i} value={opt}>✨ Option {i + 1}: {opt}</option>
                                   ))}
                                   <option value="__custom__">✍️ Custom food (Type below)...</option>
                                 </select>
                               </div>
-                              <input 
-                                type="text" 
-                                value={mealVal} 
-                                onChange={e => handleMealChange(slot.key, e.target.value)} 
-                                placeholder={slot.placeholder} 
-                                className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2.5 text-xs outline-none focus:border-[#456A50] text-[#1C2C22] font-medium" 
-                              />
+
+                              <div>
+                                <input 
+                                  type="text" 
+                                  value={mealVal} 
+                                  onChange={e => handleMealChange(slot.key, e.target.value)} 
+                                  placeholder={slot.placeholder} 
+                                  className={`w-full border rounded-xl p-2.5 text-xs outline-none font-medium transition ${
+                                    isAllergen 
+                                      ? 'border-2 border-red-500 bg-white text-red-950 font-bold shadow-xs focus:ring-2 focus:ring-red-400' 
+                                      : dietPreferenceConflict
+                                        ? 'border-2 border-amber-500 bg-white text-amber-950 font-bold shadow-xs focus:ring-2 focus:ring-amber-400'
+                                        : 'border-[#EBE9E0] bg-[#FDFCF8] text-[#1C2C22] focus:border-[#456A50]'
+                                  }`} 
+                                />
+
+                                {allergenConflict && (
+                                  <div className="mt-2.5 p-2.5 bg-red-100 border border-red-300 rounded-xl text-red-950 text-xs space-y-1 shadow-xs animate-in fade-in">
+                                    <div className="flex items-center gap-1.5 text-red-800 font-black text-[11px] uppercase tracking-wide">
+                                      <ShieldAlert size={15} className="text-red-600 shrink-0" />
+                                      <span>Allergen Conflict: {allergenConflict.allergenLabel}</span>
+                                    </div>
+                                    <p className="text-[11px] leading-snug font-bold text-red-900">
+                                      ⚠️ "{allergenConflict.matchedKeyword}" conflicts with {selectedPatient.first_name}'s <span className="underline">{allergenConflict.patientAllergy}</span> allergy!
+                                    </p>
+                                    <p className="text-[10px] text-red-800 leading-tight">
+                                      {allergenConflict.warning} Replace this meal before publishing.
+                                    </p>
+                                  </div>
+                                )}
+
+                                {!allergenConflict && dietPreferenceConflict && (
+                                  <div className="mt-2.5 p-2.5 bg-amber-100 border border-amber-300 rounded-xl text-amber-950 text-xs space-y-1 shadow-xs animate-in fade-in">
+                                    <div className="flex items-center gap-1.5 text-amber-800 font-black text-[11px] uppercase tracking-wide">
+                                      <AlertTriangle size={15} className="text-amber-600 shrink-0" />
+                                      <span>Diet Preference Conflict: {dietPreferenceConflict.preference}</span>
+                                    </div>
+                                    <p className="text-[11px] leading-snug font-bold text-amber-900">
+                                      ⚠️ "{dietPreferenceConflict.matchedKeyword}" is non-{dietPreferenceConflict.preference.toLowerCase()} and violates {selectedPatient.first_name}'s <span className="underline">{dietPreferenceConflict.preference}</span> diet!
+                                    </p>
+                                    <p className="text-[10px] text-amber-800 leading-tight">
+                                      {dietPreferenceConflict.warning}
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           );
                         });
@@ -3247,6 +3461,22 @@ const NutritionistDashboard = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {/* 🌟 HEALORA IN-APP TELEHEALTH VIDEO CONSULTATION STUDIO 🌟 */}
+      {activeVideoCallAppt && (
+        <TelehealthVideoRoom 
+          isOpen={!!activeVideoCallAppt}
+          onClose={() => setActiveVideoCallAppt(null)}
+          appointment={activeVideoCallAppt}
+          currentUserRole="NUTRITIONIST"
+          currentUserName={nutritionistName}
+          patientProfile={selectedPatient || {}}
+          nutritionistInfo={{ first_name: nutritionistName.replace('Dr. ', '').split(' ')[0], last_name: nutritionistName.replace('Dr. ', '').split(' ')[1] || '' }}
+          onSaveNotes={(notesData) => {
+            console.log("Clinical consultation notes recorded:", notesData);
+          }}
+        />
       )}
 
       <style>{`

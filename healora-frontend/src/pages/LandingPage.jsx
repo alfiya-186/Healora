@@ -57,14 +57,76 @@ const LandingPage = () => {
     setTimeout(() => setSubscribed(false), 5000);
   };
 
-  const programs = [
-    { id: 'weight-loss', name: 'Weight Loss', img: 'https://images.unsplash.com/photo-1518611012118-696072aa579a?auto=format&fit=crop&w=800&q=80' },
-    { id: 'weight-gain', name: 'Weight Gain', img: 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&w=800&q=80' },
-    { id: 'pcos-care', name: 'PCOS Care', img: 'https://images.unsplash.com/photo-1490645935967-10de6ba17061?auto=format&fit=crop&w=800&q=80' },
-    { id: 'diabetic-care', name: 'Diabetic Care', img: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=800&q=80' },
-    { id: 'pregnancy-nutrition', name: 'Pregnancy Nutrition', img: 'https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=800&q=80' },
-    { id: 'kids-elderly', name: 'Kids & Elderly', img: 'https://images.unsplash.com/photo-1498837167922-ddd27525d352?auto=format&fit=crop&w=800&q=80' },
+  const PROGRAM_IMAGE_MAP = {
+    'weight-loss': 'https://images.unsplash.com/photo-1518611012118-696072aa579a?auto=format&fit=crop&w=800&q=80',
+    'weight-gain': 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&w=800&q=80',
+    'pcos-care': 'https://images.unsplash.com/photo-1490645935967-10de6ba17061?auto=format&fit=crop&w=800&q=80',
+    'diabetic-care': 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=800&q=80',
+    'pregnancy-nutrition': 'https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=800&q=80',
+    'kids-elderly': 'https://images.unsplash.com/photo-1498837167922-ddd27525d352?auto=format&fit=crop&w=800&q=80',
+    'hypertension': 'https://images.unsplash.com/photo-1505576399279-565b52d4ac71?auto=format&fit=crop&w=800&q=80',
+    'cardiac': 'https://images.unsplash.com/photo-1505576399279-565b52d4ac71?auto=format&fit=crop&w=800&q=80',
+    'thyroid': 'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=800&q=80',
+  };
+
+  const getProgramImage = (name, slug) => {
+    const s = `${slug || ''} ${name || ''}`.toLowerCase();
+    for (const [key, url] of Object.entries(PROGRAM_IMAGE_MAP)) {
+      if (s.includes(key.replace(/-/g, ' ')) || s.includes(key)) return url;
+    }
+    // High quality clinical wellness image fallback
+    return 'https://images.unsplash.com/photo-1490645935967-10de6ba17061?auto=format&fit=crop&w=800&q=80';
+  };
+
+  const DEFAULT_PROGRAMS = [
+    { id: 'weight-loss', name: 'Weight Loss', img: PROGRAM_IMAGE_MAP['weight-loss'] },
+    { id: 'weight-gain', name: 'Weight Gain', img: PROGRAM_IMAGE_MAP['weight-gain'] },
+    { id: 'pcos-care', name: 'PCOS Care', img: PROGRAM_IMAGE_MAP['pcos-care'] },
+    { id: 'diabetic-care', name: 'Diabetic Care', img: PROGRAM_IMAGE_MAP['diabetic-care'] },
+    { id: 'pregnancy-nutrition', name: 'Pregnancy Nutrition', img: PROGRAM_IMAGE_MAP['pregnancy-nutrition'] },
+    { id: 'kids-elderly', name: 'Kids & Elderly', img: PROGRAM_IMAGE_MAP['kids-elderly'] },
   ];
+
+  const [programs, setPrograms] = useState(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('healora_programs_v2')) || JSON.parse(localStorage.getItem('healora_programs'));
+      if (stored && Array.isArray(stored) && stored.length > 0) {
+        return stored.filter(p => p.status !== 'Inactive').map(p => ({
+          id: p.id ? String(p.id) : (p.name || '').toLowerCase().replace(/\s+/g, '-'),
+          slug: (p.name || '').toLowerCase().replace(/\s+/g, '-'),
+          name: p.name,
+          description: p.description,
+          img: getProgramImage(p.name, (p.name || '').toLowerCase().replace(/\s+/g, '-'))
+        }));
+      }
+    } catch (e) {}
+    return DEFAULT_PROGRAMS;
+  });
+
+  useEffect(() => {
+    const syncPrograms = () => {
+      try {
+        const stored = JSON.parse(localStorage.getItem('healora_programs_v2')) || JSON.parse(localStorage.getItem('healora_programs'));
+        if (stored && Array.isArray(stored) && stored.length > 0) {
+          const activeList = stored.filter(p => p.status !== 'Inactive').map(p => ({
+            id: p.id ? String(p.id) : (p.name || '').toLowerCase().replace(/\s+/g, '-'),
+            slug: (p.name || '').toLowerCase().replace(/\s+/g, '-'),
+            name: p.name,
+            description: p.description,
+            img: getProgramImage(p.name, (p.name || '').toLowerCase().replace(/\s+/g, '-'))
+          }));
+          setPrograms(activeList);
+        }
+      } catch (e) {}
+    };
+
+    window.addEventListener('storage', syncPrograms);
+    const interval = setInterval(syncPrograms, 2000);
+    return () => {
+      window.removeEventListener('storage', syncPrograms);
+      clearInterval(interval);
+    };
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#f9faf7] font-sans text-[#1a241d] scroll-smooth selection:bg-[#3A5A40] selection:text-white overflow-x-hidden">
@@ -273,43 +335,43 @@ const LandingPage = () => {
       </section>
 
       {/* 🌟 7. EXPANDED 6-PROGRAM CARDS (3-COLUMN GRID) 🌟 */}
-      <section id="programs" className="py-36 bg-[#f0f2eb] relative overflow-hidden">
-        <div className="max-w-[100rem] mx-auto px-6 lg:px-12">
+      <section id="programs" className="py-20 bg-[#f0f2eb] relative overflow-hidden">
+        <div className="max-w-7xl mx-auto px-6 lg:px-8">
           
-          <div className="flex flex-col md:flex-row justify-between items-end mb-20 gap-6 animate-on-scroll">
-            <div className="max-w-3xl">
-              <h2 className="text-5xl lg:text-[3.5rem] font-black text-[#1a241d] tracking-tighter leading-tight">Specialized Care Plans.</h2>
-              <p className="text-[#5C7362] mt-6 text-xl font-medium">Select a dedicated protocol managed by clinical specialists to start your tailored wellness journey.</p>
+          <div className="flex flex-col md:flex-row justify-between items-end mb-12 gap-4 animate-on-scroll">
+            <div className="max-w-2xl">
+              <h2 className="text-3xl lg:text-4xl font-black text-[#1a241d] tracking-tighter leading-tight">Specialized Care Plans.</h2>
+              <p className="text-[#5C7362] mt-3 text-base font-medium">Select a dedicated protocol managed by clinical specialists to start your tailored wellness journey.</p>
             </div>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {programs.map((prog, idx) => (
               <div 
                 key={prog.id} 
                 onClick={() => navigate(isLoggedIn ? '/book-consultation' : `/signup?program=${prog.id}`)} 
-                className="group relative rounded-[2.5rem] overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-700 cursor-pointer h-[540px] animate-on-scroll transform hover:-translate-y-2"
+                className="group relative rounded-3xl overflow-hidden shadow-md hover:shadow-xl transition-all duration-500 cursor-pointer h-[320px] sm:h-[340px] animate-on-scroll transform hover:-translate-y-1.5"
                 style={{ transitionDelay: `${(idx % 3) * 100}ms` }}
               >
                 {/* Background Image with Zoom on Hover */}
                 <img 
                   src={prog.img} 
                   alt={prog.name} 
-                  className="absolute inset-0 w-full h-full object-cover transition-transform duration-[1.5s] ease-out group-hover:scale-110" 
+                  className="absolute inset-0 w-full h-full object-cover transition-transform duration-[1.2s] ease-out group-hover:scale-105" 
                 />
                 
                 {/* Dark Gradient Overlay for text readability */}
-                <div className="absolute inset-0 bg-gradient-to-t from-[#111a14]/95 via-[#111a14]/30 to-transparent transition-opacity duration-500" />
+                <div className="absolute inset-0 bg-gradient-to-t from-[#111a14]/90 via-[#111a14]/30 to-transparent transition-opacity duration-500" />
                 
                 {/* Content Container */}
-                <div className="absolute bottom-0 left-0 p-10 w-full flex flex-col items-start z-10 transform translate-y-3 group-hover:translate-y-0 transition-transform duration-500">
-                  <h3 className="text-[2rem] font-black text-white mb-8 leading-[1.1] tracking-tight drop-shadow-lg">
+                <div className="absolute bottom-0 left-0 p-6 w-full flex flex-col items-start z-10">
+                  <h3 className="text-xl sm:text-2xl font-black text-white mb-4 leading-tight tracking-tight drop-shadow-md">
                     {prog.name.split(' ').map((word, i) => <React.Fragment key={i}>{word}<br/></React.Fragment>)}
                   </h3>
                   
                   {/* Gray Translucent Button matching the exact aesthetic */}
-                  <button className="bg-[#4d5746]/70 backdrop-blur-md border border-white/20 text-white text-[15px] font-bold py-3.5 px-8 rounded-full flex items-center gap-2.5 group-hover:bg-white group-hover:text-[#1a241d] transition-colors duration-300 shadow-xl">
-                    {isLoggedIn ? 'Book' : 'Register'} <ArrowRight size={18} className="transition-transform group-hover:translate-x-1" />
+                  <button className="bg-[#4d5746]/75 backdrop-blur-md border border-white/20 text-white text-xs sm:text-sm font-bold py-2 px-5 rounded-full flex items-center gap-2 group-hover:bg-white group-hover:text-[#1a241d] transition-colors duration-300 shadow-md">
+                    {isLoggedIn ? 'Book' : 'Register'} <ArrowRight size={15} className="transition-transform group-hover:translate-x-1" />
                   </button>
                 </div>
               </div>
