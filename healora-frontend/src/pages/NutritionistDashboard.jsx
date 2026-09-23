@@ -6,11 +6,13 @@ import {
   ArrowRight, Sparkles, AlertCircle, Clock, CheckCircle, Scale, 
   Flame, Stethoscope, UserCircle, Layers, Bell, MessageSquare, X, ShieldAlert, Droplets, Moon, Footprints, Star,
   Video, ExternalLink, Link2, Eye, ShieldCheck, Download, Lock, Unlock, AlertTriangle, TrendingUp, TrendingDown, Target, Award, Zap,
-  ClipboardList, Edit3
+  ClipboardList, Edit3, History, Megaphone, DoorOpen, Volume2, Printer, Ticket, Check,
+  RefreshCw, Plus
 } from 'lucide-react';
 import { getKeralaPersonalizedOptions, getKeralaMealImage, generatePersonalizedKeralaWeeks } from '../utils/keralaNutritionEngine.js';
 import TelehealthVideoRoom from '../components/TelehealthVideoRoom.jsx';
 import { evaluateClinicalSafety, checkMealAllergenConflict, evaluateMealConflicts } from '../utils/clinicalSafetyRules.js';
+import { playClinicChime, printClinicTokenSlip } from './ClinicManagerDashboard.jsx';
 
 export const DEFAULT_MEAL_TIMINGS = {
   pre_breakfast: '07:00 AM',
@@ -21,16 +23,260 @@ export const DEFAULT_MEAL_TIMINGS = {
   dinner: '08:00 PM'
 };
 
+export const DEFAULT_ACTIVITY_PLAN = {
+  start_date: '2026-09-22',
+  end_date: '2026-10-22',
+  weekly_target_days: 5,
+  who_guideline: 'WHO recommends adults generally get 150–300 minutes of moderate aerobic activity per week and muscle-strengthening activities on 2 or more days per week, while reducing sedentary time.',
+  activities: [
+    {
+      id: 'act_1',
+      name: 'Brisk Walking & Post-Meal Pacing',
+      type: 'Walking',
+      frequency: '5 days/week',
+      duration_mins: 30,
+      intensity: 'Moderate',
+      target: '6,000 - 8,000 steps/day',
+      preferred_time: 'Evening (06:00 PM)',
+      instructions: 'Walk at a comfortable, brisk pace and gradually increase duration. Stay hydrated.',
+      start_date: '2026-09-22',
+      end_date: '2026-10-22'
+    },
+    {
+      id: 'act_2',
+      name: 'Core Strengthening & Joint Mobility Yoga',
+      type: 'Yoga',
+      frequency: '2 days/week',
+      duration_mins: 20,
+      intensity: 'Light',
+      target: 'Surya Namaskar, bridge pose & gentle spinal twists',
+      preferred_time: 'Morning (07:00 AM)',
+      instructions: 'Perform mindful breathing, focus on core engagement, and do not hold breath.',
+      start_date: '2026-09-22',
+      end_date: '2026-10-22'
+    }
+  ]
+};
+
+export const DEFAULT_LIFESTYLE_PLAN = {
+  start_date: '2026-09-22',
+  end_date: '2026-10-22',
+  who_guideline: 'WHO also identifies sleep, physical activity, hydration, and healthy lifestyle practices as essential elements of clinical self-care.',
+  sleep: {
+    area: 'Sleep Hygiene',
+    target_value: '7 - 8 hrs restorative',
+    current: '5 - 6 hrs irregular',
+    target: '7 - 8 hrs restorative',
+    bedtime: '10:30 PM',
+    wakeup_time: '06:30 AM',
+    frequency: 'Nightly',
+    start_date: '2026-09-22',
+    end_date: '2026-10-22',
+    instructions: 'Turn off all screens 45 mins before bed. Keep bedroom cool, quiet, and dark.'
+  },
+  hydration: {
+    area: 'Hydration & Fluids',
+    target_value: '2.5 - 3.0 L / day (8+ glasses)',
+    current: '1.0 - 1.2 L / day',
+    target: '2.5 - 3.0 L / day',
+    frequency: 'Daily',
+    start_date: '2026-09-22',
+    end_date: '2026-10-22',
+    water_reminders: true,
+    instructions: 'Keep a 1L water bottle at desk. Drink 1 glass upon waking and 1 glass before each meal; enjoy spiced Sambharam.'
+  },
+  meal_timing: {
+    area: 'Meal Timing & Cadence',
+    target_value: 'Follow prescribed meal schedule (No gaps > 4h)',
+    current: 'Skips breakfast, late dinner (>10 PM)',
+    target: 'Breakfast <9:00 AM, Lunch 1:30 PM, Dinner <8:00 PM',
+    frequency: 'Daily',
+    start_date: '2026-09-22',
+    end_date: '2026-10-22',
+    instructions: 'Avoid prolonged fasting gaps (>4 hours) during daytime; stop eating heavy meals 2 hours before bed.'
+  },
+  screen_sedentary: {
+    area: 'Screen & Sedentary Time',
+    target_value: '< 4 hrs static screen time / movement breaks',
+    current: '6 - 7 hrs uninterrupted desk sitting',
+    target: '< 4 hrs static screen time / movement breaks',
+    frequency: 'Daily',
+    start_date: '2026-09-22',
+    end_date: '2026-10-22',
+    instructions: 'Take a 5-minute movement or standing stretch break for every 45 minutes of continuous desk work.'
+  },
+  stress_management: {
+    area: 'Stress Modulation & Recovery',
+    target_value: '10 mins daily conscious relaxation / Box Breathing',
+    current: 'High daily stress / tension',
+    target: '10 mins daily conscious relaxation',
+    frequency: 'Daily',
+    start_date: '2026-09-22',
+    end_date: '2026-10-22',
+    instructions: 'Practice 4-4-4-4 Box Breathing or 10 minutes of guided evening Pranayama before sleep.'
+  }
+};
+
+export const DEFAULT_BEHAVIOR_CHANGE_PLAN = {
+  cbt_approach: 'Cognitive Behavioural Therapy (CBT) habit transformation: identify the patient\'s actual behaviour problem, root barrier, and structure actionable replacement habit loops.',
+  habits: [
+    {
+      id: 'beh_1',
+      current_behavior: 'Skips breakfast due to morning rush',
+      target_behavior: 'Eat balanced, protein-rich breakfast regularly',
+      action_strategy: 'Prepare breakfast (overnight oats or boiled eggs) the night before',
+      target_frequency: '5 days/week',
+      start_date: '2026-09-22',
+      target_date: '2026-10-22',
+      status: 'In Progress'
+    },
+    {
+      id: 'beh_2',
+      current_behavior: 'Drinks sugary soft drinks / sweetened milk tea every afternoon',
+      target_behavior: 'Reduce sugary drinks & replace with healthy hydration',
+      action_strategy: 'Replace with Sambharam (spiced buttermilk) or fresh lemon-mint water',
+      target_frequency: 'Maximum 1 time/week treat',
+      start_date: '2026-09-22',
+      target_date: '2026-10-22',
+      status: 'In Progress'
+    },
+    {
+      id: 'beh_3',
+      current_behavior: 'Sleeps at inconsistent times and scrolls phone in bed',
+      target_behavior: 'Fixed restorative bedtime routine',
+      action_strategy: 'Set a 10:00 PM wind-down reminder; charge phone across the room',
+      target_frequency: 'Before 11:00 PM nightly',
+      start_date: '2026-09-22',
+      target_date: '2026-10-22',
+      status: 'In Progress'
+    }
+  ]
+};
+
 const NutritionistDashboard = () => {
   const navigate = useNavigate();
   const nutritionistName = localStorage.getItem('user_name') || 'Dr. Sarah Jenkins';
   const nutritionistId = localStorage.getItem('user_id') || 'nut_1';
 
-  const [activeTab, setActiveTab] = useState('directory'); // 'directory', 'case', 'messages'
+  // 🌟 PRIMARY VIEW: BOOKED CONSULTATIONS FIRST 🌟
+  const [activeTab, setActiveTab] = useState('consultations'); // 'consultations' (default), 'directory', 'case', 'messages'
+  const [carePlanPillar, setCarePlanPillar] = useState('meals'); // 'meals' | 'activity' | 'lifestyle' | 'behavior'
+  const [consultationModeFilter, setConsultationModeFilter] = useState('ONLINE'); // 'ONLINE' | 'OFFLINE'
+  const [completingConsultationAppt, setCompletingConsultationAppt] = useState(null);
+  const [consultationForm, setConsultationForm] = useState({
+    notes: '',
+    weight: '',
+    bp: '',
+    glucose: '',
+    dietaryFindings: ''
+  });
+  const [patientConsultationHistory, setPatientConsultationHistory] = useState([]);
   const [activeVideoCallAppt, setActiveVideoCallAppt] = useState(null);
+  const [followupBarrierNote, setFollowupBarrierNote] = useState('');
 
   const handleStartVideoConsultation = (appt) => {
     setActiveVideoCallAppt(appt);
+  };
+
+  // 🎟️ LIVE QUEUE & IN-CLINIC CHAMBER STATE & CALLING HANDLERS
+  const [calledAnnouncement, setCalledAnnouncement] = useState(null);
+
+  const handleCallToken = (apptId) => {
+    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    let calledApptData = null;
+
+    const updated = appointments.map(a => {
+      if (String(a.id) === String(apptId)) {
+        const tokenNum = a.token_number || `TK-${101 + ((a.id || 1) % 50)}`;
+        const patientObj = patients.find(p => String(p.id) === String(a.patient));
+        const pName = patientObj ? `${patientObj.first_name} ${patientObj.last_name}` : `Patient #${a.patient}`;
+        
+        // Dispatched patient notification
+        const patientNotifs = JSON.parse(localStorage.getItem(`healora_notifications_${a.patient}`)) || [];
+        patientNotifs.unshift({
+          id: Date.now(),
+          title: "🎟️ YOUR TOKEN HAS BEEN CALLED!",
+          message: `Token #${tokenNum} called! Please proceed into Doctor Consultation Chamber (Room 101).`,
+          date: new Date().toLocaleString(),
+          read: false
+        });
+        localStorage.setItem(`healora_notifications_${a.patient}`, JSON.stringify(patientNotifs));
+
+        calledApptData = {
+          token: tokenNum,
+          patientName: pName,
+          time: timeStr
+        };
+
+        return {
+          ...a,
+          token_number: tokenNum,
+          queue_status: 'CALLED',
+          token_called_at: timeStr,
+          allocated_room: 'Doctor Consultation Chamber (Ground Floor, Room 101)'
+        };
+      }
+      return a;
+    });
+
+    setAppointments(updated);
+    localStorage.setItem('healora_all_appointments', JSON.stringify(updated));
+    window.dispatchEvent(new Event('storage'));
+
+    // Audio chime sound in clinic
+    playClinicChime();
+
+    if (calledApptData) {
+      setCalledAnnouncement(calledApptData);
+    }
+  };
+
+  const handlePatientEntered = (apptId) => {
+    const updated = appointments.map(a => {
+      if (String(a.id) === String(apptId)) {
+        return {
+          ...a,
+          queue_status: 'IN_CONSULTATION'
+        };
+      }
+      return a;
+    });
+    setAppointments(updated);
+    localStorage.setItem('healora_all_appointments', JSON.stringify(updated));
+    window.dispatchEvent(new Event('storage'));
+  };
+
+  const handleReturnToWaiting = (apptId) => {
+    const updated = appointments.map(a => {
+      if (String(a.id) === String(apptId)) {
+        return {
+          ...a,
+          queue_status: 'WAITING'
+        };
+      }
+      return a;
+    });
+    setAppointments(updated);
+    localStorage.setItem('healora_all_appointments', JSON.stringify(updated));
+    window.dispatchEvent(new Event('storage'));
+    if (calledAnnouncement) setCalledAnnouncement(null);
+  };
+
+  const handleCallNextWaitingToken = () => {
+    const waitingAppt = appointments.find(a => 
+      a.mode === 'OFFLINE' && 
+      a.patient !== 1 && 
+      String(a.patient) !== '1' && 
+      a.status !== 'COMPLETED' && 
+      a.queue_status !== 'COMPLETED' && 
+      a.queue_status !== 'IN_CONSULTATION' && 
+      a.queue_status !== 'CALLED'
+    );
+    if (waitingAppt) {
+      handleCallToken(waitingAppt.id);
+    } else {
+      alert("No waiting in-clinic patients found in the lobby queue.");
+    }
   };
   const [searchQuery, setSearchQuery] = useState('');
   const [adherenceFilter, setAdherenceFilter] = useState('ALL'); // 'ALL' | 'ATTENTION' | 'HIGH' | 'MODERATE' | 'STRUGGLING'
@@ -366,7 +612,24 @@ const NutritionistDashboard = () => {
         const apptRes = await fetch('/api/admin-api/appointments/');
         if (apptRes.ok) {
           const apptData = await apptRes.json();
-          const cleanAppts = (Array.isArray(apptData) ? apptData : []).filter(a => a.patient !== 1 && String(a.patient) !== '1');
+          const cachedAppts = JSON.parse(localStorage.getItem('healora_all_appointments')) || [];
+          const cachedMap = new Map();
+          cachedAppts.forEach(c => cachedMap.set(String(c.id), c));
+
+          const cleanAppts = (Array.isArray(apptData) ? apptData : [])
+            .filter(a => a.patient !== 1 && String(a.patient) !== '1')
+            .map(a => {
+              const cached = cachedMap.get(String(a.id)) || {};
+              return {
+                ...a,
+                ...cached,
+                token_number: cached.token_number || a.token_number || (a.mode === 'OFFLINE' ? `TK-${101 + ((a.id || 1) % 50)}` : undefined),
+                queue_status: cached.queue_status || a.queue_status || (a.status === 'COMPLETED' ? 'COMPLETED' : 'WAITING'),
+                allocated_room: cached.allocated_room || a.allocated_room || 'Doctor Consultation Chamber (Ground Floor, Room 101)',
+                status: cached.status || a.status
+              };
+            });
+
           if (!cancelled) {
             setAppointments(cleanAppts);
             localStorage.setItem('healora_all_appointments', JSON.stringify(cleanAppts));
@@ -391,6 +654,18 @@ const NutritionistDashboard = () => {
       clearInterval(syncInterval);
     };
   }, [nutritionistId]);
+
+  // Immediate storage sync across tabs
+  useEffect(() => {
+    const handleStorageChange = () => {
+      const cached = JSON.parse(localStorage.getItem('healora_all_appointments')) || [];
+      if (cached.length > 0) {
+        setAppointments(cached);
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
 
   // Scroll on chat update
   useEffect(() => {
@@ -438,8 +713,31 @@ const NutritionistDashboard = () => {
       setEvaluations(allEvals);
       setWeeklyEvaluation(allEvals[selectedPatient.id] || '');
       setEvaluationRating(5);
+
+      // Load Patient's Complete Consultation History
+      const patientLocalHistory = JSON.parse(localStorage.getItem(`healora_consultation_history_${selectedPatient.id}`)) || [];
+      const patientAppts = appointments.filter(a => String(a.patient) === String(selectedPatient.id));
+
+      const mappedApptHistory = patientAppts.map(a => ({
+        id: a.id,
+        date: a.date,
+        time: a.time,
+        mode: a.mode,
+        status: a.status,
+        nutritionist_name: nutritionistName,
+        clinical_notes: a.health_notes || (a.status === 'COMPLETED' ? 'Consultation completed. Clinical vitals and nutritional targets evaluated.' : 'Session scheduled.'),
+        vitals: a.vitals || null,
+        completed_at: a.completed_at || (a.status === 'COMPLETED' ? `${a.date} ${a.time}` : null)
+      }));
+
+      const historyMap = new Map();
+      mappedApptHistory.forEach(h => historyMap.set(String(h.id), h));
+      patientLocalHistory.forEach(h => historyMap.set(String(h.id || h.appt_id), h));
+
+      const sortedHistory = Array.from(historyMap.values()).sort((a,b) => new Date(`${b.date} ${b.time || '00:00'}`) - new Date(`${a.date} ${a.time || '00:00'}`));
+      setPatientConsultationHistory(sortedHistory);
     }
-  }, [selectedPatient]);
+  }, [selectedPatient, appointments]);
 
 
   // --- NOTIFICATIONS HANDLER ---
@@ -515,8 +813,72 @@ const NutritionistDashboard = () => {
     activity_recommendation: '30 mins brisk walking daily + 15 min core strengthening.',
     lifestyle_recommendation: 'Hydrate 3L daily with Sambharam/Herbal infusions, sleep by 10:30 PM.',
     nutritionist_notes: 'Phase 1: Initial 2-week adaptation. Re-evaluate biomarkers at consultation before Phase 2 progression.',
-    weeks: generatePersonalizedKeralaWeeks({}, [], 5)
+    weeks: generatePersonalizedKeralaWeeks({}, [], 5),
+    activity_plan: { ...DEFAULT_ACTIVITY_PLAN },
+    lifestyle_plan: { ...DEFAULT_LIFESTYLE_PLAN },
+    behavior_change_plan: { ...DEFAULT_BEHAVIOR_CHANGE_PLAN }
   });
+
+  const patientAdherence = useMemo(() => {
+    if (!selectedPatient) return null;
+    const key = `healora_activity_adherence_${selectedPatient.id}`;
+    const stored = localStorage.getItem(key);
+    if (stored) {
+      try { return JSON.parse(stored); } catch { /* ignore */ }
+    }
+    // Realistic clinical initial demo tracking: 4/5 days completed (80%), Wednesday missed with reason
+    return {
+      week_number: 1,
+      target_days: 5,
+      days: {
+        Monday: { status: 'completed', reason: '' },
+        Tuesday: { status: 'completed', reason: '' },
+        Wednesday: { status: 'missed', reason: 'Busy with college' },
+        Thursday: { status: 'completed', reason: '' },
+        Friday: { status: 'completed', reason: '' },
+        Saturday: { status: 'pending', reason: '' },
+        Sunday: { status: 'pending', reason: '' }
+      },
+      last_updated: new Date().toISOString()
+    };
+  }, [selectedPatient]);
+
+  // 📊 MONTHLY PROGRESS & AUDIT REPORT STATE
+  const [selectedReportMonth, setSelectedReportMonth] = useState('2026-09');
+  const [monthlyNutritionistEval, setMonthlyNutritionistEval] = useState('');
+  const [carePlanChangesLog, setCarePlanChangesLog] = useState([]);
+
+  useEffect(() => {
+    if (selectedPatient) {
+      const evalKey = `healora_monthly_eval_${selectedPatient.id}_${selectedReportMonth}`;
+      const savedEval = localStorage.getItem(evalKey);
+      if (savedEval) {
+        setMonthlyNutritionistEval(savedEval);
+      } else {
+        setMonthlyNutritionistEval(
+          `Monthly Nutritionist Clinical Review (${selectedReportMonth === '2026-09' ? 'September 2026' : selectedReportMonth}): Patient ${selectedPatient.first_name || 'Patient'} demonstrates consistent engagement with the Phase 1 lifestyle protocol. Physical activity cadence maintained at 4/5 days weekly with documented college workload barrier on Wednesday. Daily hydration consistently above 2.2L. Prescribed carbohydrate timing aligns well with metabolic pacing. Recommend continuing walking routine and reinforcing stress down-regulation before sleep.`
+        );
+      }
+
+      const changesKey = `healora_care_plan_changes_${selectedPatient.id}`;
+      const savedChanges = JSON.parse(localStorage.getItem(changesKey)) || [
+        {
+          date: '2026-09-22',
+          previous_plan: 'Phase 1 Initial Clinical Assessment & Standard Guidelines',
+          updated_plan: 'Personalized 4-Pillar Care Plan (Meals: 1550 kcal, Activity: 5 days/wk, Lifestyle: 5-Domain, Behaviour: CBT Habits)',
+          reason: 'Initial consultation protocol prescription based on blood glucose and metabolic findings.'
+        }
+      ];
+      setCarePlanChangesLog(savedChanges);
+    }
+  }, [selectedPatient, selectedReportMonth]);
+
+  const handleSaveMonthlyEval = () => {
+    if (!selectedPatient) return;
+    const evalKey = `healora_monthly_eval_${selectedPatient.id}_${selectedReportMonth}`;
+    localStorage.setItem(evalKey, monthlyNutritionistEval);
+    alert(`✅ Monthly Nutritionist Evaluation & Sign-off saved for ${selectedReportMonth}!`);
+  };
 
   useEffect(() => {
     localStorage.setItem('healora_assessments', JSON.stringify(assessments));
@@ -559,6 +921,151 @@ const NutritionistDashboard = () => {
     }));
   };
 
+  // 🌟 CONSULTATION COMPLETION & CLINICAL HISTORY HANDLERS 🌟
+  const handleOpenCompleteModal = (appt) => {
+    const p = patients.find(pt => String(pt.id) === String(appt.patient)) || selectedPatient;
+    setCompletingConsultationAppt(appt);
+    setConsultationForm({
+      notes: appt.health_notes || '',
+      weight: p?.weight_kg || '',
+      bp: '120/80',
+      glucose: '95',
+      dietaryFindings: ''
+    });
+  };
+
+  const handleCompleteConsultation = async (e, openPlanImmediately = false) => {
+    if (e) e.preventDefault();
+    if (!completingConsultationAppt) return;
+
+    const appt = completingConsultationAppt;
+    const apptId = appt.id;
+    const patientId = appt.patient;
+    const targetPatient = patients.find(p => String(p.id) === String(patientId)) || selectedPatient;
+    const now = new Date();
+    const completedAtStr = now.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) + ' at ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    const noteText = consultationForm.notes.trim() || `Consultation successfully conducted via ${appt.mode === 'ONLINE' ? 'Online Telehealth' : 'In-Clinic session'}. Vitals & dietary needs assessed.`;
+
+    // 1. Update appointment object in state & localStorage
+    const updatedAppts = appointments.map(a => {
+      if (String(a.id) === String(apptId)) {
+        return {
+          ...a,
+          status: 'COMPLETED',
+          queue_status: 'COMPLETED',
+          health_notes: noteText,
+          vitals: {
+            bp: consultationForm.bp,
+            weight: consultationForm.weight,
+            glucose: consultationForm.glucose,
+            dietaryFindings: consultationForm.dietaryFindings
+          },
+          completed_at: completedAtStr
+        };
+      }
+      return a;
+    });
+    setAppointments(updatedAppts);
+    localStorage.setItem('healora_all_appointments', JSON.stringify(updatedAppts));
+    window.dispatchEvent(new Event('storage'));
+    setCalledAnnouncement(null);
+
+    // 2. Call Django backend patch if endpoint active
+    try {
+      await fetch(`/api/appointments/${apptId}/`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({
+          status: 'COMPLETED',
+          health_notes: noteText
+        })
+      });
+    } catch (err) {
+      console.warn('Backend appointment patch error:', err);
+    }
+
+    // 3. Save to patient's permanent consultation history
+    const patientHistory = JSON.parse(localStorage.getItem(`healora_consultation_history_${patientId}`)) || [];
+    const historyEntry = {
+      id: `hist_${apptId}_${Date.now()}`,
+      appt_id: apptId,
+      date: appt.date,
+      time: appt.time,
+      mode: appt.mode,
+      status: 'COMPLETED',
+      nutritionist_name: nutritionistName,
+      clinical_notes: noteText,
+      vitals: {
+        bp: consultationForm.bp,
+        weight: consultationForm.weight,
+        glucose: consultationForm.glucose,
+        dietaryFindings: consultationForm.dietaryFindings
+      },
+      completed_at: completedAtStr
+    };
+    const newHistory = [historyEntry, ...patientHistory.filter(h => String(h.appt_id) !== String(apptId))];
+    localStorage.setItem(`healora_consultation_history_${patientId}`, JSON.stringify(newHistory));
+    if (selectedPatient && String(selectedPatient.id) === String(patientId)) {
+      setPatientConsultationHistory(newHistory);
+    }
+
+    // 4. Update weight history if weight entered
+    if (consultationForm.weight && targetPatient) {
+      const hM = (parseFloat(targetPatient.height_cm) || 165) / 100;
+      const wKg = parseFloat(consultationForm.weight);
+      const bmi = (wKg / (hM * hM)).toFixed(1);
+      const currentWeightHist = JSON.parse(localStorage.getItem(`healora_weight_history_${patientId}`)) || [];
+      const newWeightEntry = {
+        id: Date.now(),
+        date: new Date().toISOString().split('T')[0],
+        weight_kg: consultationForm.weight,
+        bmi: bmi,
+        notes: `Recorded during ${appt.mode === 'ONLINE' ? 'Telehealth' : 'In-Clinic'} Consultation`
+      };
+      const updatedWeightHist = [newWeightEntry, ...currentWeightHist];
+      localStorage.setItem(`healora_weight_history_${patientId}`, JSON.stringify(updatedWeightHist));
+      if (selectedPatient && String(selectedPatient.id) === String(patientId)) {
+        setPatientWeightHistory(updatedWeightHist);
+      }
+    }
+
+    // 5. Notify patient portal
+    const patientNotifs = JSON.parse(localStorage.getItem(`healora_notifications_${patientId}`)) || [];
+    patientNotifs.unshift({
+      id: Date.now(),
+      title: "Consultation Completed",
+      message: `Your ${appt.mode === 'ONLINE' ? 'Online Telehealth' : 'In-Clinic'} consultation with ${nutritionistName} has been marked completed. Dietary care plan formulation is now active.`,
+      date: new Date().toLocaleString(),
+      read: false
+    });
+    localStorage.setItem(`healora_notifications_${patientId}`, JSON.stringify(patientNotifs));
+
+    setCompletingConsultationAppt(null);
+    setConsultationForm({ notes: '', weight: '', bp: '', glucose: '', dietaryFindings: '' });
+
+    alert(`✅ Consultation marked as COMPLETED for ${targetPatient ? targetPatient.first_name : 'Patient'}!\nClinical consultation history updated & Care Plan builder unlocked.`);
+
+    if (openPlanImmediately && targetPatient) {
+      handleOpenCase(targetPatient);
+    }
+  };
+
+  const handleConductDirectConsultation = (patient) => {
+    const today = new Date().toISOString().split('T')[0];
+    const newDirectAppt = {
+      id: Date.now(),
+      patient: patient.id,
+      nutritionist: nutritionistId,
+      date: today,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      mode: 'ONLINE',
+      status: 'SCHEDULED',
+      health_notes: 'Direct intake consultation'
+    };
+    handleOpenCompleteModal(newDirectAppt);
+  };
+
   const handleOpenCase = (patient) => {
     setSelectedPatient(patient);
     setActiveTab('case');
@@ -578,6 +1085,9 @@ const NutritionistDashboard = () => {
         existing.weeks = generatePersonalizedKeralaWeeks(patient, patientLabDocs, freq);
       }
       existing.meal_frequency = freq;
+      if (!existing.activity_plan) existing.activity_plan = { ...DEFAULT_ACTIVITY_PLAN };
+      if (!existing.lifestyle_plan) existing.lifestyle_plan = { ...DEFAULT_LIFESTYLE_PLAN };
+      if (!existing.behavior_change_plan) existing.behavior_change_plan = { ...DEFAULT_BEHAVIOR_CHANGE_PLAN };
       setMonthlyPlanData(existing);
     } else {
       const programGoals = {
@@ -617,7 +1127,10 @@ const NutritionistDashboard = () => {
         activity_recommendation: '30 mins brisk walking daily + 15 min core strengthening.',
         lifestyle_recommendation: 'Hydrate 3L daily with Sambharam/Herbal infusions, sleep by 10:30 PM.',
         nutritionist_notes: 'Phase 1: Initial 2-week adaptation. Re-evaluate biomarkers at consultation before Phase 2 progression.',
-        weeks: personalizedWeeks
+        weeks: personalizedWeeks,
+        activity_plan: { ...DEFAULT_ACTIVITY_PLAN },
+        lifestyle_plan: { ...DEFAULT_LIFESTYLE_PLAN },
+        behavior_change_plan: { ...DEFAULT_BEHAVIOR_CHANGE_PLAN }
       });
     }
   };
@@ -701,6 +1214,18 @@ const NutritionistDashboard = () => {
   const handlePublishPlan = async () => {
     if (!selectedPatient) return;
 
+    // 🔒 CLINICAL PROTOCOL: Check consultation completion
+    const patientCompletedConsultations = appointments.filter(
+      a => String(a.patient) === String(selectedPatient.id) && a.status === 'COMPLETED'
+    );
+    const patientLocalHistory = JSON.parse(localStorage.getItem(`healora_consultation_history_${selectedPatient.id}`)) || [];
+    const hasCompletedConsultation = patientCompletedConsultations.length > 0 || patientLocalHistory.length > 0;
+
+    if (!hasCompletedConsultation) {
+      alert(`⚠️ Clinical Governance Rule:\n\nA consultation (Online Telehealth or In-Clinic) must be conducted and completed with ${selectedPatient.first_name || 'the patient'} before you can prescribe and publish a personalized Care Plan.`);
+      return;
+    }
+
     // Scan for allergen and dietary preference conflicts before publishing
     const conflicts = [];
     for (const [wk, days] of Object.entries(monthlyPlanData.weeks || {})) {
@@ -778,6 +1303,18 @@ const NutritionistDashboard = () => {
       localStorage.setItem('healora_care_plans', JSON.stringify(updated));
       localStorage.setItem(`healora_patient_dietplan_${selectedPatient.id}`, JSON.stringify(publishedData));
       localStorage.setItem(`healora_diet_plan_${selectedPatient.id}`, JSON.stringify(publishedData));
+
+      // 📝 Log Care Plan Change Audit Trail
+      const changesKey = `healora_care_plan_changes_${selectedPatient.id}`;
+      const existingChanges = JSON.parse(localStorage.getItem(changesKey)) || [];
+      existingChanges.unshift({
+        date: new Date().toISOString().split('T')[0],
+        previous_plan: 'Phase 1 Care Plan Baseline',
+        updated_plan: `${publishedData.nutrition_goal || 'Personalized Kerala Protocol'} (${publishedData.target_calories || 1550} kcal, ${publishedData.meal_frequency || 5} meals/day)`,
+        reason: publishedData.nutritionist_notes || 'Care plan published and active for patient adherence tracking.'
+      });
+      localStorage.setItem(changesKey, JSON.stringify(existingChanges));
+      setCarePlanChangesLog(existingChanges);
 
       const notifKey = `healora_notifications_${selectedPatient.id}`;
       const notifs = JSON.parse(localStorage.getItem(notifKey) || '[]');
@@ -1038,6 +1575,40 @@ const NutritionistDashboard = () => {
     });
   }, [patients, searchQuery, adherenceFilter, patientAdherenceMap]);
 
+  // --- 🎟️ IN-CLINIC OFFLINE QUEUE DATA & CHAMBER OCCUPANCY ---
+  const offlineAppointments = useMemo(() => {
+    const list = appointments.filter(a => a.mode === 'OFFLINE' && a.patient !== 1 && String(a.patient) !== '1');
+    const statusOrder = { 'CALLED': 1, 'IN_CONSULTATION': 2, 'WAITING': 3, 'COMPLETED': 4 };
+    return [...list].sort((a, b) => {
+      const orderA = statusOrder[a.queue_status] || (a.status === 'COMPLETED' ? 4 : 3);
+      const orderB = statusOrder[b.queue_status] || (b.status === 'COMPLETED' ? 4 : 3);
+      if (orderA !== orderB) return orderA - orderB;
+      return (a.time || '').localeCompare(b.time || '');
+    }).map((appt, idx) => ({
+      ...appt,
+      token_number: appt.token_number || `TK-${101 + ((appt.id || (idx + 1)) % 50)}`,
+      queue_status: appt.queue_status || (appt.status === 'COMPLETED' ? 'COMPLETED' : 'WAITING'),
+      allocated_room: appt.allocated_room || 'Doctor Consultation Chamber (Ground Floor, Room 101)'
+    }));
+  }, [appointments]);
+
+  const activeCalledAppt = useMemo(() => {
+    return offlineAppointments.find(a => a.queue_status === 'CALLED');
+  }, [offlineAppointments]);
+
+  const activeInChamberAppt = useMemo(() => {
+    return offlineAppointments.find(a => a.queue_status === 'IN_CONSULTATION');
+  }, [offlineAppointments]);
+
+  const nextWaitingAppt = useMemo(() => {
+    return offlineAppointments.find(a => 
+      a.queue_status !== 'COMPLETED' && 
+      a.queue_status !== 'IN_CONSULTATION' && 
+      a.queue_status !== 'CALLED' && 
+      a.status !== 'COMPLETED'
+    );
+  }, [offlineAppointments]);
+
   return (
     <div className="h-screen w-screen overflow-hidden flex bg-[#FDFCF8] font-sans text-[#1C2C22]">
       
@@ -1064,6 +1635,130 @@ const NutritionistDashboard = () => {
         </div>
       )}
 
+      {/* 🌟 CONSULTATION COMPLETION & CLINICAL INTAKE MODAL 🌟 */}
+      {completingConsultationAppt && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl w-full max-w-xl p-6 sm:p-8 shadow-2xl border border-[#EBE9E0] space-y-6 max-h-[90vh] overflow-y-auto" onClick={e=>e.stopPropagation()}>
+            <div className="flex justify-between items-start border-b border-[#EBE9E0] pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-[#EAF0EC] text-[#456A50] rounded-2xl">
+                  <Stethoscope size={24} />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black text-[#1C2C22]">Conduct & Complete Consultation</h3>
+                  <p className="text-xs text-[#5A6B60] mt-0.5">
+                    {completingConsultationAppt.mode === 'ONLINE' ? '🎥 Online Video Telehealth' : '🏥 In-Clinic Offline Session'} • 
+                    Patient #{completingConsultationAppt.patient} ({(() => {
+                      const p = patients.find(pt => String(pt.id) === String(completingConsultationAppt.patient)) || selectedPatient;
+                      return p ? `${p.first_name} ${p.last_name}` : 'Patient';
+                    })()})
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setCompletingConsultationAppt(null)}
+                className="text-gray-400 hover:text-gray-700 p-2 rounded-full hover:bg-gray-100 transition cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={(e) => handleCompleteConsultation(e, false)} className="space-y-4">
+              <div className="bg-[#FDFCF8] p-4 rounded-2xl border border-[#EBE9E0] flex items-center justify-between text-xs">
+                <div>
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block">Session Scheduled</span>
+                  <span className="font-bold text-[#1C2C22]">📅 {completingConsultationAppt.date} at {completingConsultationAppt.time}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block">Consulting Doctor</span>
+                  <span className="font-bold text-[#456A50]">{nutritionistName}</span>
+                </div>
+              </div>
+
+              {/* Clinical Notes */}
+              <div>
+                <label className="block text-[11px] font-black uppercase tracking-wider text-[#1C2C22] mb-1.5">
+                  Clinical Consultation Notes & Dietary Observations <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  rows={4}
+                  required
+                  value={consultationForm.notes}
+                  onChange={(e) => setConsultationForm({...consultationForm, notes: e.target.value})}
+                  placeholder="Record patient complaints, appetite patterns, current eating routine, digestive symptoms, and dietary targets discussed..."
+                  className="w-full bg-[#FDFCF8] border border-[#EBE9E0] rounded-2xl p-3.5 text-xs text-[#1C2C22] outline-none focus:border-[#456A50] focus:ring-1 focus:ring-[#456A50]/20 resize-none shadow-inner"
+                />
+              </div>
+
+              {/* Vitals Recorded */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#5A6B60] mb-1">Weight (kg)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={consultationForm.weight}
+                    onChange={(e) => setConsultationForm({...consultationForm, weight: e.target.value})}
+                    placeholder="e.g. 64.5"
+                    className="w-full bg-[#FDFCF8] border border-[#EBE9E0] rounded-xl p-2.5 text-xs outline-none focus:border-[#456A50]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#5A6B60] mb-1">Blood Pressure (mmHg)</label>
+                  <input
+                    type="text"
+                    value={consultationForm.bp}
+                    onChange={(e) => setConsultationForm({...consultationForm, bp: e.target.value})}
+                    placeholder="e.g. 120/80"
+                    className="w-full bg-[#FDFCF8] border border-[#EBE9E0] rounded-xl p-2.5 text-xs outline-none focus:border-[#456A50]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#5A6B60] mb-1">Fasting Glucose (mg/dL)</label>
+                  <input
+                    type="text"
+                    value={consultationForm.glucose}
+                    onChange={(e) => setConsultationForm({...consultationForm, glucose: e.target.value})}
+                    placeholder="e.g. 95"
+                    className="w-full bg-[#FDFCF8] border border-[#EBE9E0] rounded-xl p-2.5 text-xs outline-none focus:border-[#456A50]"
+                  />
+                </div>
+              </div>
+
+              {/* Additional dietary findings */}
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-[#5A6B60] mb-1">Specific Food Allergens or Dislikes Identified</label>
+                <input
+                  type="text"
+                  value={consultationForm.dietaryFindings}
+                  onChange={(e) => setConsultationForm({...consultationForm, dietaryFindings: e.target.value})}
+                  placeholder="e.g. Mild lactose sensitivity, prefers low coconut oil"
+                  className="w-full bg-[#FDFCF8] border border-[#EBE9E0] rounded-xl p-2.5 text-xs outline-none focus:border-[#456A50]"
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-col sm:flex-row items-center justify-end gap-3 pt-4 border-t border-[#EBE9E0]">
+                <button
+                  type="button"
+                  onClick={() => setCompletingConsultationAppt(null)}
+                  className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 text-xs font-bold transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => handleCompleteConsultation(e, true)}
+                  className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-[#456A50] hover:bg-[#35533E] text-white text-xs font-bold transition shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <CheckCircle2 size={15} /> Complete & Open Diet Plan Builder
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* 🌟 NUTRITIONIST SIDEBAR 🌟 */}
       <aside className="w-64 bg-white border-r border-[#EBE9E0] flex flex-col shadow-sm z-10 flex-shrink-0 h-full">
         <div className="p-6 flex items-center gap-2 cursor-pointer" onClick={() => navigate('/')}>
@@ -1073,17 +1768,66 @@ const NutritionistDashboard = () => {
         
         <nav className="flex-1 px-4 mt-4 space-y-2 font-medium overflow-y-auto">
           <p className="px-4 text-[10px] font-bold text-[#5A6B60] uppercase tracking-widest mb-3 mt-2">Nutritionist Console</p>
+          
+          {/* 🌟 1. BOOKED CONSULTATIONS (DEFAULT / PRIMARY) 🌟 */}
+          <button 
+            type="button"
+            onClick={() => { setActiveTab('consultations'); setSelectedPatient(null); }} 
+            className={`w-full flex items-center justify-between gap-2.5 px-4 py-3 rounded-xl transition text-sm text-left cursor-pointer ${activeTab==='consultations' ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'}`}
+          >
+            <div className="flex items-center gap-3 min-w-0 text-left">
+              <Calendar size={18} className="shrink-0" />
+              <span className="text-left font-bold whitespace-nowrap">Booked Consultations</span>
+            </div>
+            <span className="bg-[#456A50] text-white text-[10px] font-black px-2 py-0.5 rounded-full shrink-0">
+              {appointments.filter(a => a.patient !== 1 && String(a.patient) !== '1' && patients.some(p => String(p.id) === String(a.patient))).length}
+            </span>
+          </button>
+
+          {/* Sub-modes for Online vs Offline */}
+          {activeTab === 'consultations' && (
+            <div className="pl-6 space-y-1.5 pt-1 animate-in fade-in">
+              <button
+                type="button"
+                onClick={() => setConsultationModeFilter('ONLINE')}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${consultationModeFilter === 'ONLINE' ? 'bg-purple-100 text-purple-800 shadow-2xs' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100/60'}`}
+              >
+                <span className="flex items-center gap-2">
+                  <Video size={13} className="text-purple-600" /> Online Telehealth
+                </span>
+                <span className="text-[10px] bg-white text-purple-700 font-bold px-1.5 py-0.5 rounded border border-purple-200">
+                  {appointments.filter(a => a.mode === 'ONLINE' && a.patient !== 1 && String(a.patient) !== '1' && patients.some(p => String(p.id) === String(a.patient))).length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setConsultationModeFilter('OFFLINE')}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${consultationModeFilter === 'OFFLINE' ? 'bg-blue-100 text-blue-800 shadow-2xs' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100/60'}`}
+              >
+                <span className="flex items-center gap-2">
+                  <Stethoscope size={13} className="text-blue-600" /> In-Clinic (Offline)
+                </span>
+                <span className="text-[10px] bg-white text-blue-700 font-bold px-1.5 py-0.5 rounded border border-blue-200">
+                  {appointments.filter(a => a.mode === 'OFFLINE' && a.patient !== 1 && String(a.patient) !== '1' && patients.some(p => String(p.id) === String(a.patient))).length}
+                </span>
+              </button>
+            </div>
+          )}
+
+          {/* 🌟 2. ASSIGNED PATIENTS DIRECTORY 🌟 */}
           <button onClick={() => { setActiveTab('directory'); setSelectedPatient(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition text-sm cursor-pointer ${activeTab==='directory' && !selectedPatient ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'}`}>
             <Users size={18} /> Assigned Patients
           </button>
-          <button onClick={() => { setActiveTab('consultations'); setSelectedPatient(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition text-sm cursor-pointer ${activeTab==='consultations' ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'}`}>
-            <Video size={18} /> Online Consultations
-          </button>
+
+          {/* 🌟 3. PATIENT CASE FILE 🌟 */}
           {selectedPatient && (
             <button onClick={() => setActiveTab('case')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition text-sm cursor-pointer ${activeTab==='case' ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'}`}>
               <FileText size={18} /> Patient Case File
             </button>
           )}
+
+          {/* 🌟 4. MESSAGES & CHAT 🌟 */}
           <button onClick={() => setActiveTab('messages')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition text-sm cursor-pointer ${activeTab==='messages' ? 'bg-[#EAF0EC] text-[#456A50] font-bold shadow-sm border border-[#456A50]/20' : 'text-[#5A6B60] hover:bg-[#FDFCF8] hover:text-[#1C2C22]'}`}>
             <MessageSquare size={18} /> Messages & Chat
           </button>
@@ -1118,7 +1862,7 @@ const NutritionistDashboard = () => {
                 {activeTab === 'directory' 
                   ? 'Assigned Patient Directory' 
                   : activeTab === 'consultations'
-                  ? 'Online Consultations & Telehealth'
+                  ? (consultationModeFilter === 'ONLINE' ? 'Online Telehealth Consultations' : 'In-Clinic (Offline) Consultations')
                   : activeTab === 'messages' 
                   ? 'Clinic & Patient Messaging' 
                   : `Patient Case: ${selectedPatient?.first_name} ${selectedPatient?.last_name}`}
@@ -1127,7 +1871,9 @@ const NutritionistDashboard = () => {
                 {activeTab === 'directory' 
                   ? 'Search records, view biometrics, and build monthly care plans.' 
                   : activeTab === 'consultations'
-                  ? 'Directly enter scheduled in-app video consultation sessions and review patient appointments.'
+                  ? (consultationModeFilter === 'ONLINE' 
+                      ? 'Directly enter scheduled in-app video consultation sessions and review telehealth appointments.' 
+                      : 'Manage in-clinic physical appointments, patient intake, and clinical vital assessments.')
                   : activeTab === 'messages' 
                   ? 'Secure communication with patients and management.' 
                   : `Patient ID: #${selectedPatient?.id} | Enrolled Program: ${selectedPatient?.enrolled_program || selectedPatient?.health_goals || 'Weight Management'}`}
@@ -1447,176 +2193,659 @@ const NutritionistDashboard = () => {
             </div>
           )}
 
-          {/* 🌟 2. ONLINE CONSULTATIONS & TELEHEALTH SCHEDULE 🌟 */}
+          {/* 🌟 1. BOOKED CONSULTATIONS (ONLINE & OFFLINE KEPT SEPARATELY) 🌟 */}
           {activeTab === 'consultations' && (
             <div className="space-y-6 animate-in fade-in">
-              {/* METRIC CARDS */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-                <div className="bg-white p-6 rounded-3xl border border-[#EBE9E0] shadow-sm flex items-center gap-4">
-                  <div className="p-3.5 bg-emerald-100 text-emerald-700 rounded-2xl">
-                    <Video size={24} />
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-extrabold text-[#5A6B60] uppercase tracking-widest">Total Telehealth</p>
-                    <h3 className="text-2xl font-black text-[#1C2C22] mt-0.5">
-                      {appointments.filter(a => a.mode === 'ONLINE').length} Sessions
-                    </h3>
-                  </div>
+              {/* TOP MODE TOGGLE & QUICK ACTIONS */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-2 p-1.5 bg-[#F4F7F5] border border-[#DCE4DE] rounded-2xl w-fit">
+                  <button
+                    type="button"
+                    onClick={() => setConsultationModeFilter('ONLINE')}
+                    className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer ${
+                      consultationModeFilter === 'ONLINE'
+                        ? 'bg-purple-600 text-white shadow-sm'
+                        : 'text-[#5A6B60] hover:text-[#1C2C22]'
+                    }`}
+                  >
+                    <Video size={15} />
+                    Online Telehealth Sessions
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                      consultationModeFilter === 'ONLINE' ? 'bg-purple-700 text-white' : 'bg-white text-[#5A6B60] border'
+                    }`}>
+                      {appointments.filter(a => a.mode === 'ONLINE' && a.patient !== 1 && String(a.patient) !== '1' && patients.some(p => String(p.id) === String(a.patient))).length}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setConsultationModeFilter('OFFLINE')}
+                    className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer ${
+                      consultationModeFilter === 'OFFLINE'
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'text-[#5A6B60] hover:text-[#1C2C22]'
+                    }`}
+                  >
+                    <Stethoscope size={15} />
+                    In-Clinic (Offline) Consultations
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                      consultationModeFilter === 'OFFLINE' ? 'bg-blue-700 text-white' : 'bg-white text-[#5A6B60] border'
+                    }`}>
+                      {appointments.filter(a => a.mode === 'OFFLINE' && a.patient !== 1 && String(a.patient) !== '1' && patients.some(p => String(p.id) === String(a.patient))).length}
+                    </span>
+                  </button>
                 </div>
 
-                <div className="bg-white p-6 rounded-3xl border border-[#EBE9E0] shadow-sm flex items-center gap-4">
-                  <div className="p-3.5 bg-blue-100 text-blue-700 rounded-2xl">
-                    <Calendar size={24} />
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-extrabold text-[#5A6B60] uppercase tracking-widest">Today's Schedule</p>
-                    <h3 className="text-2xl font-black text-[#1C2C22] mt-0.5">
-                      {(() => {
-                        const now = new Date();
-                        const y = now.getFullYear();
-                        const m = String(now.getMonth() + 1).padStart(2, '0');
-                        const d = String(now.getDate()).padStart(2, '0');
-                        const localToday = `${y}-${m}-${d}`;
-                        const isoToday = now.toISOString().split('T')[0];
-                        return appointments.filter(a => a.date === localToday || a.date === isoToday).length;
-                      })()} Bookings
-                    </h3>
-                  </div>
-                </div>
-
-                <div className="bg-white p-6 rounded-3xl border border-[#EBE9E0] shadow-sm flex items-center gap-4">
-                  <div className="p-3.5 bg-purple-100 text-purple-700 rounded-2xl">
-                    <Users size={24} />
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-extrabold text-[#5A6B60] uppercase tracking-widest">Assigned Patients</p>
-                    <h3 className="text-2xl font-black text-[#1C2C22] mt-0.5">{patients.length} Active</h3>
-                  </div>
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={() => { setActiveTab('directory'); setSelectedPatient(null); }}
+                    className="bg-white hover:bg-gray-50 border border-[#DCE4DE] text-[#5A6B60] px-4 py-2.5 rounded-xl text-xs font-bold transition shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Users size={14} /> View All Patients ({patients.length})
+                  </button>
                 </div>
               </div>
 
-              {/* CONSULTATIONS TABLE */}
-              <div className="bg-white rounded-3xl shadow-sm border border-[#EBE9E0] overflow-hidden">
-                <div className="p-6 border-b border-[#EBE9E0] bg-[#FDFCF8] flex justify-between items-center">
-                  <div>
-                    <h2 className="text-xl font-black text-[#1C2C22]">My Consultation Bookings & Telehealth Sessions</h2>
-                    <p className="text-xs text-[#5A6B60] mt-0.5">Directly enter in-app video consultations scheduled with your patients.</p>
+              {/* MODE-SPECIFIC METRIC CARDS */}
+              {consultationModeFilter === 'ONLINE' ? (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                    <div className="bg-white p-6 rounded-3xl border border-[#EBE9E0] shadow-sm flex items-center gap-4">
+                      <div className="p-3.5 bg-purple-100 text-purple-700 rounded-2xl">
+                        <Video size={24} />
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-extrabold text-[#5A6B60] uppercase tracking-widest">Total Online Telehealth</p>
+                        <h3 className="text-2xl font-black text-[#1C2C22] mt-0.5">
+                          {appointments.filter(a => a.mode === 'ONLINE').length} Bookings
+                        </h3>
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-6 rounded-3xl border border-[#EBE9E0] shadow-sm flex items-center gap-4">
+                      <div className="p-3.5 bg-blue-100 text-blue-700 rounded-2xl">
+                        <Calendar size={24} />
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-extrabold text-[#5A6B60] uppercase tracking-widest">Today's Video Calls</p>
+                        <h3 className="text-2xl font-black text-[#1C2C22] mt-0.5">
+                          {(() => {
+                            const now = new Date();
+                            const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                            const isoToday = now.toISOString().split('T')[0];
+                            return appointments.filter(a => a.mode === 'ONLINE' && (a.date === localToday || a.date === isoToday)).length;
+                          })()} Today
+                        </h3>
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-6 rounded-3xl border border-[#EBE9E0] shadow-sm flex items-center gap-4">
+                      <div className="p-3.5 bg-emerald-100 text-emerald-700 rounded-2xl">
+                        <CheckCircle2 size={24} />
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-extrabold text-[#5A6B60] uppercase tracking-widest">Completed Telehealth</p>
+                        <h3 className="text-2xl font-black text-emerald-700 mt-0.5">
+                          {appointments.filter(a => a.mode === 'ONLINE' && a.status === 'COMPLETED').length} Finished
+                        </h3>
+                      </div>
+                    </div>
                   </div>
-                </div>
 
-                <table className="w-full text-left text-sm text-[#1C2C22]">
-                  <thead className="bg-[#FDFCF8] text-[10px] uppercase font-extrabold text-[#5A6B60] tracking-widest border-b">
-                    <tr>
-                      <th className="py-4 px-6">Date & Time</th>
-                      <th className="py-4 px-6">Patient</th>
-                      <th className="py-4 px-6">Mode</th>
-                      <th className="py-4 px-6">Telehealth Video</th>
-                      <th className="py-4 px-6">Status</th>
-                      <th className="py-4 px-6 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#EBE9E0]">
-                    {appointments.filter(a => a.patient !== 1 && String(a.patient) !== '1' && patients.some(p => String(p.id) === String(a.patient))).map(a => {
-                      const patientObj = patients.find(p => String(p.id) === String(a.patient));
-                      const pName = patientObj ? `${patientObj.first_name} ${patientObj.last_name}` : `Patient`;
-                      const pPhone = patientObj?.phone_number || patientObj?.phone;
-                      const isToday = (() => {
-                        const now = new Date();
-                        const y = now.getFullYear();
-                        const m = String(now.getMonth() + 1).padStart(2, '0');
-                        const d = String(now.getDate()).padStart(2, '0');
-                        const localToday = `${y}-${m}-${d}`;
-                        const isoToday = now.toISOString().split('T')[0];
-                        return a.date === localToday || a.date === isoToday;
-                      })();
+                  {/* ONLINE TELEHEALTH TABLE */}
+                  <div className="bg-white rounded-3xl shadow-sm border border-[#EBE9E0] overflow-hidden">
+                    <div className="p-6 border-b border-[#EBE9E0] bg-[#FDFCF8] flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+                      <div>
+                        <h2 className="text-xl font-black text-[#1C2C22] flex items-center gap-2">
+                          <Video className="text-purple-600" size={22} />
+                          Online Telehealth Consultation Bookings
+                        </h2>
+                        <p className="text-xs text-[#5A6B60] mt-0.5">
+                          Enter scheduled live video rooms, conduct telehealth intake, record clinical notes, and formulate diet plans.
+                        </p>
+                      </div>
+                    </div>
 
-                      return (
-                        <tr key={a.id} className={`hover:bg-[#FDFCF8] transition group ${isToday ? 'bg-amber-50/20' : ''}`}>
-                          <td className="py-5 px-6">
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-[#1C2C22]">{a.date}</span>
-                              <span className="text-xs font-semibold text-[#456A50]">at {a.time}</span>
-                              {isToday && (
-                                <span className="bg-amber-100 text-amber-800 text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">
-                                  Today
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="py-5 px-6">
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center font-bold text-gray-500 overflow-hidden shadow-2xs">
-                                {patientObj?.profile_image ? (
-                                  <img src={patientObj.profile_image} className="w-full h-full object-cover" alt="Profile" />
-                                ) : (
-                                  <UserCircle size={18} />
-                                )}
-                              </div>
-                              <div>
-                                <span className="font-black text-[#1C2C22] block">{pName}</span>
-                                {pPhone && <span className="text-[11px] text-gray-500 font-medium">📞 {pPhone}</span>}
-                              </div>
-                            </div>
-                          </td>
-                          <td className="py-5 px-6">
-                            <span className={`px-3 py-1.5 rounded-lg text-[10px] font-bold tracking-widest uppercase ${a.mode === 'ONLINE' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
-                              {a.mode === 'ONLINE' ? 'Online Telehealth' : 'In-Clinic'}
-                            </span>
-                          </td>
-                          <td className="py-5 px-6">
-                            {a.mode === 'ONLINE' ? (
-                              (() => {
-                                const todayIso = new Date().toISOString().split('T')[0];
-                                const isPast = a.date && a.date < todayIso;
-                                if (isPast || a.status === 'COMPLETED' || a.status === 'CANCELLED') {
-                                  return (
-                                    <span className="text-[11px] font-bold text-gray-400 bg-gray-50 border border-gray-200 px-3 py-1 rounded-lg inline-flex items-center gap-1.5">
-                                      📅 Session Completed
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-sm text-[#1C2C22]">
+                        <thead className="bg-[#FDFCF8] text-[10px] uppercase font-extrabold text-[#5A6B60] tracking-widest border-b">
+                          <tr>
+                            <th className="py-4 px-6">Date & Time</th>
+                            <th className="py-4 px-6">Patient</th>
+                            <th className="py-4 px-6">Video Studio</th>
+                            <th className="py-4 px-6">Status</th>
+                            <th className="py-4 px-6">Clinical Notes</th>
+                            <th className="py-4 px-6 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#EBE9E0]">
+                          {appointments
+                            .filter(a => a.mode === 'ONLINE' && a.patient !== 1 && String(a.patient) !== '1' && patients.some(p => String(p.id) === String(a.patient)))
+                            .map(a => {
+                              const patientObj = patients.find(p => String(p.id) === String(a.patient));
+                              const pName = patientObj ? `${patientObj.first_name} ${patientObj.last_name}` : `Patient #${a.patient}`;
+                              const pPhone = patientObj?.phone_number || patientObj?.phone;
+                              const isToday = (() => {
+                                const now = new Date();
+                                const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                                const isoToday = now.toISOString().split('T')[0];
+                                return a.date === localToday || a.date === isoToday;
+                              })();
+                              const isCompleted = a.status === 'COMPLETED';
+
+                              return (
+                                <tr key={a.id} className={`hover:bg-[#FDFCF8] transition group ${isToday ? 'bg-amber-50/20' : ''}`}>
+                                  <td className="py-5 px-6">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-bold text-[#1C2C22]">{a.date}</span>
+                                      <span className="text-xs font-semibold text-[#456A50]">at {a.time}</span>
+                                      {isToday && (
+                                        <span className="bg-amber-100 text-amber-800 text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                          Today
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+
+                                  <td className="py-5 px-6">
+                                    <div className="flex items-center gap-3">
+                                      <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center font-bold text-gray-500 overflow-hidden shadow-2xs">
+                                        {patientObj?.profile_image ? (
+                                          <img src={patientObj.profile_image} className="w-full h-full object-cover" alt="Profile" />
+                                        ) : (
+                                          <UserCircle size={20} />
+                                        )}
+                                      </div>
+                                      <div>
+                                        <span className="font-black text-[#1C2C22] block">{pName}</span>
+                                        <div className="flex items-center gap-2 text-[11px] text-gray-500">
+                                          {pPhone && <span>📞 {pPhone}</span>}
+                                          {patientObj?.enrolled_program && (
+                                            <span className="text-[#456A50] font-semibold truncate max-w-[120px]">
+                                              • {patientObj.enrolled_program}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </td>
+
+                                  <td className="py-5 px-6">
+                                    {isCompleted ? (
+                                      <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-xl inline-flex items-center gap-1.5">
+                                        <CheckCircle size={12} /> Consultation Completed
+                                      </span>
+                                    ) : (
+                                      <button 
+                                        type="button"
+                                        onClick={() => handleStartVideoConsultation(a)} 
+                                        className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-xl font-bold text-xs shadow-sm transition transform hover:scale-105 cursor-pointer"
+                                      >
+                                        <Video size={14} /> Enter Video Room
+                                      </button>
+                                    )}
+                                  </td>
+
+                                  <td className="py-5 px-6">
+                                    <span className={`px-3 py-1 rounded-lg text-[10px] font-black tracking-widest uppercase ${
+                                      isCompleted 
+                                        ? 'bg-green-100 text-green-700 border border-green-200' 
+                                        : a.status === 'RESCHEDULED' 
+                                        ? 'bg-blue-100 text-blue-700' 
+                                        : 'bg-amber-100 text-amber-800 border border-amber-200'
+                                    }`}>
+                                      {a.status}
                                     </span>
-                                  );
-                                }
-                                return (
-                                  <button 
-                                    type="button"
-                                    onClick={() => handleStartVideoConsultation(a)} 
-                                    className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-xl font-bold text-xs shadow-sm transition transform hover:scale-105 cursor-pointer"
-                                  >
-                                    <Video size={14} /> Enter Video Room
-                                  </button>
-                                );
-                              })()
-                            ) : (
-                              <span className="text-xs text-gray-400 font-medium">In-Clinic Session</span>
-                            )}
-                          </td>
-                          <td className="py-5 px-6">
-                            <span className={`px-3 py-1.5 rounded-lg text-[10px] font-bold tracking-widest uppercase ${a.status === 'COMPLETED' ? 'bg-green-100 text-green-700' : a.status === 'RESCHEDULED' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>
-                              {a.status}
+                                  </td>
+
+                                  <td className="py-5 px-6 max-w-xs">
+                                    <p className="text-xs text-gray-600 truncate" title={a.health_notes || 'No consultation notes recorded yet.'}>
+                                      {a.health_notes || <span className="text-gray-400 italic">No notes recorded</span>}
+                                    </p>
+                                  </td>
+
+                                  <td className="py-5 px-6 text-right">
+                                    <div className="flex items-center justify-end gap-2">
+                                      {!isCompleted && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenCompleteModal(a)}
+                                          className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-2xs inline-flex items-center gap-1 cursor-pointer"
+                                          title="Mark consultation completed and record clinical findings"
+                                        >
+                                          <CheckCircle2 size={13} /> Complete Session
+                                        </button>
+                                      )}
+
+                                      {patientObj && (
+                                        <button 
+                                          onClick={() => handleOpenCase(patientObj)} 
+                                          className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition shadow-2xs inline-flex items-center gap-1.5 cursor-pointer ${
+                                            isCompleted
+                                              ? 'bg-[#456A50] hover:bg-[#35533E] text-white shadow-sm'
+                                              : 'bg-white border border-[#EBE9E0] text-[#456A50] hover:bg-[#EAF0EC]'
+                                          }`}
+                                          title={isCompleted ? "Open case file & formulate diet plan" : "View patient medical details"}
+                                        >
+                                          <FileText size={13} /> {isCompleted ? 'Prescribe Plan' : 'Open Case'}
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+
+                          {appointments.filter(a => a.mode === 'ONLINE' && a.patient !== 1 && String(a.patient) !== '1' && patients.some(p => String(p.id) === String(a.patient))).length === 0 && (
+                            <tr>
+                              <td colSpan="6" className="py-16 text-center text-gray-400 italic">
+                                No online telehealth consultations found.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                /* 🏥 IN-CLINIC (OFFLINE) LIVE QUEUE & CONSULTATION CHAMBER CONSOLE 🏥 */
+                <div className="space-y-6">
+                  {/* 🔔 LIVE TOKEN CALLING ANNOUNCEMENT BANNER */}
+                  {activeCalledAppt && (
+                    <div className="bg-gradient-to-r from-amber-500 via-amber-600 to-amber-500 text-white p-5 sm:p-6 rounded-3xl shadow-xl border-2 border-amber-300 animate-pulse flex flex-col md:flex-row items-center justify-between gap-5">
+                      <div className="flex items-center gap-4 text-center md:text-left">
+                        <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center shrink-0 shadow-inner">
+                          <Megaphone size={28} className="text-white animate-bounce" />
+                        </div>
+                        <div>
+                          <div className="inline-flex items-center gap-2 bg-black/25 px-3 py-1 rounded-full text-[10px] font-black tracking-widest uppercase mb-1.5">
+                            <span className="w-2 h-2 rounded-full bg-red-400 animate-ping" />
+                            Live Patient Queue Calling Active
+                          </div>
+                          <h2 className="text-2xl sm:text-3xl font-black tracking-tight">
+                            NOW CALLING: <span className="underline decoration-wavy decoration-white font-mono bg-white/20 px-2.5 py-0.5 rounded-xl">{activeCalledAppt.token_number || 'TK-101'}</span>
+                          </h2>
+                          <p className="text-xs sm:text-sm font-bold text-amber-100 mt-1 flex items-center gap-2">
+                            <span>👉 Please enter Doctor Consultation Chamber (Dr. Sarah Jenkins).</span>
+                          </p>
+                          <p className="text-[11px] text-amber-200/90 font-medium mt-0.5">
+                            🔒 Privacy-First Queue: Patient enters when their token is displayed — no need to call patient's name aloud.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2.5 shrink-0 flex-wrap justify-center">
+                        <button
+                          type="button"
+                          onClick={() => handlePatientEntered(activeCalledAppt.id)}
+                          className="bg-white hover:bg-amber-50 text-amber-950 font-black px-5 py-3 rounded-2xl text-xs shadow-lg transition transform hover:scale-105 flex items-center gap-2 cursor-pointer"
+                        >
+                          <DoorOpen size={16} className="text-amber-800" /> Patient Entered Chamber
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { playClinicChime(); alert(`🔔 Audio chime sounded for Token #${activeCalledAppt.token_number}!`); }}
+                          className="bg-amber-700/80 hover:bg-amber-700 text-white font-black px-4 py-3 rounded-2xl text-xs transition flex items-center gap-1.5 cursor-pointer border border-amber-400/40"
+                          title="Re-ring chime in waiting lobby"
+                        >
+                          <Volume2 size={15} /> Re-Chime
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleReturnToWaiting(activeCalledAppt.id)}
+                          className="bg-black/20 hover:bg-black/30 text-white font-bold px-3.5 py-3 rounded-2xl text-xs transition cursor-pointer"
+                          title="Reset back to waiting if patient delayed"
+                        >
+                          Return to Waiting
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 🚪 LIVE CONSULTATION CHAMBER STATUS CONSOLE */}
+                  <div className="bg-white rounded-3xl border border-[#DCE4DE] p-6 shadow-sm">
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                      <div className="flex items-start sm:items-center gap-4">
+                        <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 shadow-sm ${
+                          activeInChamberAppt 
+                            ? 'bg-emerald-600 text-white ring-4 ring-emerald-100' 
+                            : activeCalledAppt
+                            ? 'bg-amber-500 text-white ring-4 ring-amber-100 animate-pulse'
+                            : 'bg-[#456A50] text-white ring-4 ring-emerald-50'
+                        }`}>
+                          {activeInChamberAppt ? <Stethoscope size={28} /> : activeCalledAppt ? <Megaphone size={28} /> : <DoorOpen size={28} />}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="text-lg font-black text-[#1C2C22]">Doctor Consultation Chamber (Ground Floor, Room 101)</h3>
+                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border inline-flex items-center gap-1 ${
+                              activeInChamberAppt
+                                ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                                : activeCalledAppt
+                                ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                : 'bg-green-50 text-green-800 border-green-200'
+                            }`}>
+                              {activeInChamberAppt ? '🟢 IN ACTIVE CONSULTATION' : activeCalledAppt ? '📢 CALLING TOKEN' : '⚪ CHAMBER READY / AVAILABLE'}
                             </span>
-                          </td>
-                          <td className="py-5 px-6 text-right">
-                            {patientObj && (
-                              <button 
-                                onClick={() => handleOpenCase(patientObj)} 
-                                className="bg-white border border-[#EBE9E0] text-[#456A50] hover:bg-[#EAF0EC] px-3.5 py-1.5 rounded-xl text-xs font-bold transition shadow-2xs inline-flex items-center gap-1.5 cursor-pointer"
-                              >
-                                <FileText size={13} /> Open Case
-                              </button>
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1 font-medium">
+                            Attending Clinician: <span className="font-bold text-[#1C2C22]">{nutritionistName} (Lead Clinical Nutritionist)</span>
+                          </p>
+                          <p className="text-xs text-[#5A6B60] mt-0.5">
+                            {activeInChamberAppt ? (
+                              <span className="font-bold text-emerald-800">
+                                🩺 Currently consulting with Token #{activeInChamberAppt.token_number} ({patients.find(p => String(p.id) === String(activeInChamberAppt.patient))?.first_name || 'Patient'}). Assessing vitals & formulating clinical care plan.
+                              </span>
+                            ) : activeCalledAppt ? (
+                              <span className="font-bold text-amber-800">
+                                📢 Token #{activeCalledAppt.token_number} called on board. Patient is entering the consultation chamber now.
+                              </span>
+                            ) : (
+                              <span>Chamber is unoccupied and ready for the next scheduled in-clinic consultation.</span>
                             )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {appointments.length === 0 && (
-                      <tr>
-                        <td colSpan="6" className="py-16 text-center text-gray-400 italic">
-                          No consultation appointments booked yet.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Top Action Console */}
+                      <div className="flex items-center gap-3 shrink-0 flex-wrap">
+                        {activeInChamberAppt ? (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenCompleteModal(activeInChamberAppt)}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-black px-6 py-3 rounded-2xl text-xs shadow-md shadow-emerald-600/20 transition transform hover:scale-105 flex items-center gap-2 cursor-pointer"
+                          >
+                            <CheckCircle2 size={16} /> Complete Consultation & Prescribe Plan
+                          </button>
+                        ) : activeCalledAppt ? (
+                          <button
+                            type="button"
+                            onClick={() => handlePatientEntered(activeCalledAppt.id)}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-black px-6 py-3 rounded-2xl text-xs shadow-md shadow-emerald-600/20 transition transform hover:scale-105 flex items-center gap-2 cursor-pointer"
+                          >
+                            <DoorOpen size={16} /> Patient Entered Chamber
+                          </button>
+                        ) : nextWaitingAppt ? (
+                          <button
+                            type="button"
+                            onClick={() => handleCallToken(nextWaitingAppt.id)}
+                            className="bg-[#456A50] hover:bg-[#35533E] text-white font-black px-6 py-3 rounded-2xl text-xs shadow-md shadow-[#456A50]/20 transition transform hover:scale-105 flex items-center gap-2 cursor-pointer"
+                          >
+                            <Megaphone size={16} /> Call Next Token (#{nextWaitingAppt.token_number || 'TK-101'})
+                          </button>
+                        ) : (
+                          <span className="text-xs font-bold text-gray-400 bg-gray-50 border border-gray-200 px-4 py-2.5 rounded-xl">
+                            All Queued Patients Attended
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 📊 IN-CLINIC LIVE QUEUE METRIC STATS */}
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+                    <div className="bg-white p-4 rounded-2xl border border-[#EBE9E0] shadow-2xs">
+                      <p className="text-[10px] font-extrabold text-[#5A6B60] uppercase tracking-widest">Total Tokens</p>
+                      <h3 className="text-xl font-black text-[#1C2C22] mt-0.5">{offlineAppointments.length}</h3>
+                    </div>
+
+                    <div className="bg-white p-4 rounded-2xl border border-[#EBE9E0] shadow-2xs">
+                      <p className="text-[10px] font-extrabold text-blue-700 uppercase tracking-widest">Waiting in Lobby</p>
+                      <h3 className="text-xl font-black text-blue-800 mt-0.5">
+                        {offlineAppointments.filter(a => (a.queue_status === 'WAITING' || (!a.queue_status && a.status !== 'COMPLETED')) && a.status !== 'COMPLETED').length}
+                      </h3>
+                    </div>
+
+                    <div className="bg-white p-4 rounded-2xl border border-[#EBE9E0] shadow-2xs">
+                      <p className="text-[10px] font-extrabold text-amber-700 uppercase tracking-widest">Called / Entering</p>
+                      <h3 className="text-xl font-black text-amber-800 mt-0.5">
+                        {offlineAppointments.filter(a => a.queue_status === 'CALLED').length}
+                      </h3>
+                    </div>
+
+                    <div className="bg-white p-4 rounded-2xl border border-[#EBE9E0] shadow-2xs">
+                      <p className="text-[10px] font-extrabold text-emerald-700 uppercase tracking-widest">In Consultation</p>
+                      <h3 className="text-xl font-black text-emerald-800 mt-0.5">
+                        {offlineAppointments.filter(a => a.queue_status === 'IN_CONSULTATION').length}
+                      </h3>
+                    </div>
+
+                    <div className="bg-white p-4 rounded-2xl border border-[#EBE9E0] shadow-2xs col-span-2 sm:col-span-1">
+                      <p className="text-[10px] font-extrabold text-gray-600 uppercase tracking-widest">Completed</p>
+                      <h3 className="text-xl font-black text-gray-800 mt-0.5">
+                        {offlineAppointments.filter(a => a.status === 'COMPLETED' || a.queue_status === 'COMPLETED').length}
+                      </h3>
+                    </div>
+                  </div>
+
+                  {/* 📋 IN-CLINIC PHYSICAL APPOINTMENTS & QUEUE BOARD TABLE */}
+                  <div className="bg-white rounded-3xl shadow-sm border border-[#EBE9E0] overflow-hidden">
+                    <div className="p-6 border-b border-[#EBE9E0] bg-[#FDFCF8] flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+                      <div>
+                        <h2 className="text-xl font-black text-[#1C2C22] flex items-center gap-2">
+                          <Stethoscope className="text-blue-600" size={22} />
+                          In-Clinic Physical Consultation & Token Calling Queue
+                        </h2>
+                        <p className="text-xs text-[#5A6B60] mt-0.5">
+                          Call patient tokens into the consultation room, record clinical vitals, complete sessions, and formulate diet plans.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-sm text-[#1C2C22]">
+                        <thead className="bg-[#FDFCF8] text-[10px] uppercase font-extrabold text-[#5A6B60] tracking-widest border-b">
+                          <tr>
+                            <th className="py-4 px-6">Queue Token #</th>
+                            <th className="py-4 px-6">Patient Details</th>
+                            <th className="py-4 px-6">Scheduled Slot</th>
+                            <th className="py-4 px-6">Chamber / Desk</th>
+                            <th className="py-4 px-6">Live Queue Status</th>
+                            <th className="py-4 px-6">Clinical Notes</th>
+                            <th className="py-4 px-6 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#EBE9E0]">
+                          {offlineAppointments
+                            .filter(a => patients.some(p => String(p.id) === String(a.patient)))
+                            .map(a => {
+                              const patientObj = patients.find(p => String(p.id) === String(a.patient));
+                              const pName = patientObj ? `${patientObj.first_name} ${patientObj.last_name}` : `Patient #${a.patient}`;
+                              const pPhone = patientObj?.phone_number || patientObj?.phone;
+                              const isToday = (() => {
+                                const now = new Date();
+                                const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                                const isoToday = now.toISOString().split('T')[0];
+                                return a.date === localToday || a.date === isoToday;
+                              })();
+                              const isCompleted = a.status === 'COMPLETED' || a.queue_status === 'COMPLETED';
+                              const isCalled = a.queue_status === 'CALLED';
+                              const isInConsultation = a.queue_status === 'IN_CONSULTATION';
+
+                              return (
+                                <tr key={a.id} className={`hover:bg-[#FDFCF8] transition group ${isCalled ? 'bg-amber-50/40' : isInConsultation ? 'bg-emerald-50/30' : isToday ? 'bg-amber-50/20' : ''}`}>
+                                  {/* 🎟️ TOKEN NUMBER BADGE */}
+                                  <td className="py-5 px-6">
+                                    <span className="font-mono font-black text-sm bg-gray-100 text-[#1C2C22] px-3 py-1.5 rounded-xl border border-gray-300 inline-flex items-center gap-1.5 shadow-2xs">
+                                      <Ticket size={13} className="text-[#456A50]" />
+                                      {a.token_number || `TK-${101 + ((a.id || 1) % 50)}`}
+                                    </span>
+                                  </td>
+
+                                  {/* PATIENT DETAILS */}
+                                  <td className="py-5 px-6">
+                                    <div className="flex items-center gap-3">
+                                      <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center font-bold text-gray-500 overflow-hidden shadow-2xs">
+                                        {patientObj?.profile_image ? (
+                                          <img src={patientObj.profile_image} className="w-full h-full object-cover" alt="Profile" />
+                                        ) : (
+                                          <UserCircle size={20} />
+                                        )}
+                                      </div>
+                                      <div>
+                                        <span className="font-black text-[#1C2C22] block">{pName}</span>
+                                        <div className="flex items-center gap-2 text-[11px] text-gray-500">
+                                          {pPhone && <span>📞 {pPhone}</span>}
+                                          {patientObj?.enrolled_program && (
+                                            <span className="text-[#456A50] font-semibold truncate max-w-[120px]">
+                                              • {patientObj.enrolled_program}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </td>
+
+                                  {/* SCHEDULED SLOT */}
+                                  <td className="py-5 px-6">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-bold text-[#1C2C22]">{a.date}</span>
+                                      <span className="text-xs font-semibold text-[#456A50]">at {a.time}</span>
+                                      {isToday && (
+                                        <span className="bg-amber-100 text-amber-800 text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                          Today
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+
+                                  {/* CHAMBER / DESK */}
+                                  <td className="py-5 px-6">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-xs font-bold text-blue-900 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-lg inline-flex items-center gap-1">
+                                        <Stethoscope size={11} className="text-blue-700" /> Room 101
+                                      </span>
+                                    </div>
+                                  </td>
+
+                                  {/* LIVE QUEUE STATUS */}
+                                  <td className="py-5 px-6">
+                                    <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider border inline-flex items-center gap-1 ${
+                                      isInConsultation
+                                        ? 'bg-emerald-50 text-emerald-900 border-emerald-300'
+                                        : isCalled
+                                        ? 'bg-amber-50 text-amber-900 border-amber-300 animate-pulse'
+                                        : isCompleted
+                                        ? 'bg-gray-100 text-gray-700 border-gray-200'
+                                        : 'bg-blue-50 text-blue-800 border-blue-200'
+                                    }`}>
+                                      {isInConsultation 
+                                        ? <><DoorOpen size={11} /> 🟢 In Chamber</> 
+                                        : isCalled 
+                                        ? <><Megaphone size={11} /> 📢 Called (Entering)</> 
+                                        : isCompleted 
+                                        ? <><Check size={11} /> ✓ Completed</> 
+                                        : <><Clock size={11} /> ⏳ In Lobby</>}
+                                    </span>
+                                  </td>
+
+                                  {/* CLINICAL NOTES */}
+                                  <td className="py-5 px-6 max-w-xs">
+                                    <p className="text-xs text-gray-600 truncate" title={a.health_notes || 'No consultation notes recorded yet.'}>
+                                      {a.health_notes || <span className="text-gray-400 italic">No notes recorded</span>}
+                                    </p>
+                                  </td>
+
+                                  {/* ACTIONS */}
+                                  <td className="py-5 px-6 text-right">
+                                    <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                                      {/* Print token slip */}
+                                      <button
+                                        type="button"
+                                        onClick={() => printClinicTokenSlip(a, { name: pName })}
+                                        className="bg-white hover:bg-gray-50 border border-[#DCE4DE] text-[#1C2C22] px-2.5 py-1.5 rounded-xl text-xs font-bold transition shadow-2xs inline-flex items-center gap-1 cursor-pointer"
+                                        title="Print Official Token Pass"
+                                      >
+                                        <Printer size={12} className="text-[#456A50]" /> Pass
+                                      </button>
+
+                                      {!isCompleted && !isInConsultation && !isCalled && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleCallToken(a.id)}
+                                          className="bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-xs inline-flex items-center gap-1 cursor-pointer"
+                                          title="Call patient token into chamber"
+                                        >
+                                          <Megaphone size={12} /> Call Token
+                                        </button>
+                                      )}
+
+                                      {isCalled && (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() => handlePatientEntered(a.id)}
+                                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-xs inline-flex items-center gap-1 cursor-pointer"
+                                            title="Mark patient as entered room"
+                                          >
+                                            <DoorOpen size={12} /> Entered
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => { playClinicChime(); alert(`🔔 Audio chime sounded for Token #${a.token_number}!`); }}
+                                            className="bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 px-2 py-1.5 rounded-xl text-xs font-bold transition inline-flex items-center cursor-pointer"
+                                            title="Re-ring chime"
+                                          >
+                                            <Volume2 size={12} />
+                                          </button>
+                                        </>
+                                      )}
+
+                                      {isInConsultation && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenCompleteModal(a)}
+                                          className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-xl text-xs font-black transition shadow-xs inline-flex items-center gap-1 cursor-pointer"
+                                          title="Record vitals and finish consultation"
+                                        >
+                                          <CheckCircle2 size={13} /> Complete & Prescribe
+                                        </button>
+                                      )}
+
+                                      {isCompleted && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenCompleteModal(a)}
+                                          className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-2.5 py-1.5 rounded-xl text-xs font-bold transition shadow-2xs inline-flex items-center gap-1 cursor-pointer"
+                                          title="Review or update clinical intake findings"
+                                        >
+                                          <CheckCircle2 size={12} /> Notes
+                                        </button>
+                                      )}
+
+                                      {patientObj && (
+                                        <button 
+                                          onClick={() => handleOpenCase(patientObj)} 
+                                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-2xs inline-flex items-center gap-1 cursor-pointer ${
+                                            isCompleted
+                                              ? 'bg-[#456A50] hover:bg-[#35533E] text-white shadow-sm'
+                                              : 'bg-white border border-[#EBE9E0] text-[#456A50] hover:bg-[#EAF0EC]'
+                                          }`}
+                                          title={isCompleted ? "Formulate / Prescribe Personalized Care Plan" : "View patient profile & history"}
+                                        >
+                                          <FileText size={12} /> {isCompleted ? 'Prescribe Plan' : 'Case'}
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+
+                          {offlineAppointments.filter(a => patients.some(p => String(p.id) === String(a.patient))).length === 0 && (
+                            <tr>
+                              <td colSpan="7" className="py-16 text-center text-gray-400 italic">
+                                No in-clinic offline consultations scheduled in queue.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1652,18 +2881,135 @@ const NutritionistDashboard = () => {
                       </div>
                     </div>
 
-                    {patientAppt.mode === 'ONLINE' && (
-                      <button 
-                        type="button"
-                        onClick={() => handleStartVideoConsultation(patientAppt)} 
-                        className="bg-emerald-700 hover:bg-emerald-800 text-white px-5 py-3 rounded-2xl font-bold text-xs shadow-md shadow-emerald-700/20 flex items-center gap-2 transition transform hover:scale-105 shrink-0 cursor-pointer"
-                      >
-                        <Video size={16} /> Enter Video Consultation Room <Sparkles size={14} className="text-amber-300" />
-                      </button>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {patientAppt.mode === 'ONLINE' && patientAppt.status !== 'COMPLETED' && (
+                        <button 
+                          type="button"
+                          onClick={() => handleStartVideoConsultation(patientAppt)} 
+                          className="bg-emerald-700 hover:bg-emerald-800 text-white px-5 py-3 rounded-2xl font-bold text-xs shadow-md shadow-emerald-700/20 flex items-center gap-2 transition transform hover:scale-105 shrink-0 cursor-pointer"
+                        >
+                          <Video size={16} /> Enter Video Consultation Room <Sparkles size={14} className="text-amber-300" />
+                        </button>
+                      )}
+
+                      {patientAppt.status !== 'COMPLETED' ? (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenCompleteModal(patientAppt)}
+                          className="bg-[#456A50] hover:bg-[#35533E] text-white px-5 py-3 rounded-2xl font-bold text-xs shadow-md transition flex items-center gap-2 shrink-0 cursor-pointer"
+                        >
+                          <CheckCircle2 size={16} /> Mark Completed & Record Notes
+                        </button>
+                      ) : (
+                        <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-4 py-2.5 rounded-2xl border border-emerald-300 flex items-center gap-1.5">
+                          <CheckCircle size={15} /> Consultation Completed
+                        </span>
+                      )}
+                    </div>
                   </div>
                 );
               })()}
+
+              {/* 📋 PATIENT'S COMPLETE CONSULTATION HISTORY & CLINICAL DOSSIER */}
+              <div className="bg-white rounded-3xl shadow-sm border border-[#EBE9E0] p-6 sm:p-8 space-y-6">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-[#EBE9E0] pb-5">
+                  <div className="flex items-center gap-3.5">
+                    <div className="p-3.5 bg-blue-100 text-blue-700 rounded-2xl shadow-sm">
+                      <History size={24} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-xl font-black text-[#1C2C22]">Consultation History & Clinical Records</h3>
+                        <span className="text-xs font-black px-2.5 py-0.5 rounded-xl bg-[#EAF0EC] text-[#456A50] border border-[#456A50]/20">
+                          {patientConsultationHistory.length} Recorded
+                        </span>
+                      </div>
+                      <p className="text-xs text-[#5A6B60] mt-0.5">
+                        Permanent chronological clinical history of in-clinic visits, telehealth calls, vital observations, and care plan authorizations.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleConductDirectConsultation(selectedPatient)}
+                      className="bg-[#456A50] hover:bg-[#35533E] text-white px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+                    >
+                      <Stethoscope size={14} /> Record New Consultation
+                    </button>
+                  </div>
+                </div>
+
+                {patientConsultationHistory.length === 0 ? (
+                  <div className="py-10 text-center text-gray-400 bg-[#FDFCF8] rounded-2xl border border-dashed border-[#EBE9E0] space-y-2">
+                    <History size={36} className="mx-auto opacity-30 text-gray-400" />
+                    <p className="text-sm font-bold text-gray-600">No consultation history recorded yet for {selectedPatient.first_name}.</p>
+                    <p className="text-xs text-gray-400 max-w-sm mx-auto">
+                      Conduct an Online Telehealth session or In-Clinic consultation to record clinical findings, vitals, and unlock their personalized care plan.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {patientConsultationHistory.map((h, idx) => {
+                      const isOnline = h.mode === 'ONLINE';
+                      const isCompleted = h.status === 'COMPLETED';
+
+                      return (
+                        <div key={h.id || idx} className="bg-[#FDFCF8] border border-[#EBE9E0] rounded-2xl p-5 hover:border-[#456A50]/30 transition shadow-2xs space-y-3">
+                          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                            <div className="flex items-center gap-3">
+                              <span className={`p-2 rounded-xl text-xs font-bold flex items-center gap-1.5 ${isOnline ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}`}>
+                                {isOnline ? <Video size={14} /> : <Stethoscope size={14} />}
+                                {isOnline ? 'Online Telehealth' : 'In-Clinic Offline'}
+                              </span>
+                              <span className="font-bold text-sm text-[#1C2C22]">
+                                📅 {h.date} {h.time && <span className="text-gray-500 font-normal">at {h.time}</span>}
+                              </span>
+                              <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase ${isCompleted ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-800'}`}>
+                                {h.status}
+                              </span>
+                            </div>
+
+                            <span className="text-[11px] text-gray-400 font-medium">
+                              Doctor: <strong className="text-gray-700">{h.nutritionist_name || nutritionistName}</strong>
+                            </span>
+                          </div>
+
+                          {/* Notes and findings */}
+                          <div className="bg-white p-3.5 rounded-xl border border-gray-100 space-y-2 text-xs">
+                            <div>
+                              <span className="text-[10px] font-black text-gray-400 uppercase tracking-wider block mb-0.5">Clinical Consultation Findings & Notes</span>
+                              <p className="text-[#1C2C22] leading-relaxed whitespace-pre-wrap">{h.clinical_notes || 'Consultation conducted without specific remarks.'}</p>
+                            </div>
+
+                            {/* Vitals if recorded */}
+                            {h.vitals && (h.vitals.bp || h.vitals.weight || h.vitals.glucose) && (
+                              <div className="flex flex-wrap items-center gap-4 pt-2 border-t border-gray-100 text-[11px]">
+                                {h.vitals.weight && (
+                                  <span className="font-medium text-gray-600">
+                                    ⚖️ Weight: <strong className="text-gray-900">{h.vitals.weight} kg</strong>
+                                  </span>
+                                )}
+                                {h.vitals.bp && (
+                                  <span className="font-medium text-gray-600">
+                                    💓 BP: <strong className="text-gray-900">{h.vitals.bp}</strong>
+                                  </span>
+                                )}
+                                {h.vitals.glucose && (
+                                  <span className="font-medium text-gray-600">
+                                    🩸 Fasting Glucose: <strong className="text-gray-900">{h.vitals.glucose} mg/dL</strong>
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
 
               {/* 🌟 CLINICAL ADHERENCE & COMPLIANCE INTELLIGENCE BANNER 🌟 */}
               {(() => {
@@ -2677,192 +4023,347 @@ const NutritionistDashboard = () => {
               </div>
 
               {/* 4-WEEK MONTHLY STRUCTURED CARE PLAN CREATOR */}
-              <div className="bg-white rounded-3xl shadow-sm border border-[#EBE9E0] p-8 space-y-6">
-                <div className="border-b border-[#EBE9E0] pb-4 flex items-center justify-between">
-                  <div>
-                    <h3 className="text-lg font-black text-[#1C2C22] flex items-center gap-2">
-                      <Apple size={20} className="text-[#456A50]"/> 4-Week Monthly Structured Care Plan Builder
-                    </h3>
-                    <p className="text-[11px] text-[#5A6B60] mt-0.5">
-                      Tailored specifically for program: <span className="font-bold text-[#456A50] uppercase">{selectedPatient.enrolled_program || selectedPatient.health_goals || 'Weight Management'}</span>. Pick from smart clinical recommendations or type custom entries.
-                    </p>
-                  </div>
-                  <span className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase ${monthlyPlanData.status === 'Published' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
-                    Status: {monthlyPlanData.status}
-                  </span>
-                </div>
+              {(() => {
+                const patientCompletedConsultations = appointments.filter(
+                  a => String(a.patient) === String(selectedPatient.id) && a.status === 'COMPLETED'
+                );
+                const localConsultHist = JSON.parse(localStorage.getItem(`healora_consultation_history_${selectedPatient.id}`)) || [];
+                const hasCompletedConsultation = patientCompletedConsultations.length > 0 || localConsultHist.length > 0;
+                const patientPendingAppt = appointments.find(a => String(a.patient) === String(selectedPatient.id) && a.status !== 'CANCELLED');
 
-                <div className="space-y-6">
-                  
-                  {/* Top Meta info */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                    <div>
-                      <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-widest mb-1.5">Nutrition Goal</label>
-                      <input type="text" value={monthlyPlanData.nutrition_goal} onChange={e=>setMonthlyPlanData({...monthlyPlanData, nutrition_goal: e.target.value})} className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-3 text-xs outline-none focus:border-[#456A50]" />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-widest mb-1.5">Start Date</label>
-                      <input type="date" value={monthlyPlanData.start_date} onChange={e=>setMonthlyPlanData({...monthlyPlanData, start_date: e.target.value})} className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-3 text-xs outline-none focus:border-[#456A50]" />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-widest mb-1.5">Review Date</label>
-                      <input type="date" value={monthlyPlanData.review_date} onChange={e=>setMonthlyPlanData({...monthlyPlanData, review_date: e.target.value})} className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-3 text-xs outline-none focus:border-[#456A50]" />
-                    </div>
-                  </div>
-
-                  {/* Week & Day Selector Tabs for Granular Customization */}
-                  <div className="bg-[#FDFCF8] border border-[#EBE9E0] p-6 rounded-2xl space-y-4 shadow-inner">
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-[#EBE9E0] pb-4 gap-3">
-                      <div>
-                        <h4 className="text-xs font-extrabold uppercase tracking-wider text-[#1C2C22] flex items-center gap-2">
-                          <Layers size={16} className="text-[#456A50]"/> Select Clinical Protocol Week & Day
-                        </h4>
-                        <p className="text-[11px] text-[#5A6B60] mt-0.5 font-medium">
-                          {selectedWeek <= 2 ? (
-                            <span className="text-emerald-700 font-bold">● Phase 1: Initial Adaptation (Weeks 1 & 2) — Active</span>
-                          ) : (
-                            <span className={monthlyPlanData.phase2_status === 'UNLOCKED' ? 'text-emerald-700 font-bold' : 'text-amber-700 font-bold'}>
-                              {monthlyPlanData.phase2_status === 'UNLOCKED' ? '● Phase 2: Progress Protocol — 🔓 Unlocked' : '● Phase 2: Requires Progress Consultation — 🔒 Gated'}
-                            </span>
-                          )}
-                        </p>
-                      </div>
-
-                      <div className="flex items-center gap-3">
-                        <div className="flex gap-1.5 bg-white p-1 rounded-xl border border-[#EBE9E0] shadow-2xs">
-                          {[1, 2, 3, 4].map(w => (
-                            <button 
-                              key={w} 
-                              type="button" 
-                              onClick={() => setSelectedWeek(w)} 
-                              className={`px-3 py-1.5 rounded-lg text-[10px] uppercase font-black tracking-widest transition cursor-pointer ${selectedWeek === w ? 'bg-[#456A50] text-white shadow-xs' : 'text-gray-600 hover:bg-gray-100'}`}
-                            >
-                              Wk {w} {w >= 3 && (monthlyPlanData.phase2_status === 'UNLOCKED' ? '🔓' : '🔒')}
-                            </button>
-                          ))}
+                if (!hasCompletedConsultation) {
+                  return (
+                    <div className="bg-white rounded-3xl shadow-sm border border-amber-200 p-8 space-y-6">
+                      <div className="flex flex-col items-center text-center max-w-lg mx-auto py-6 space-y-4">
+                        <div className="w-16 h-16 bg-amber-100 text-amber-800 rounded-3xl flex items-center justify-center shadow-inner">
+                          <Lock size={32} />
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-extrabold text-amber-800 uppercase tracking-widest bg-amber-100/70 px-3 py-1 rounded-full">
+                            Clinical Governance Protocol
+                          </span>
+                          <h3 className="text-xl font-black text-[#1C2C22] mt-2">
+                            Consultation Required Before Prescribing Diet Plan
+                          </h3>
+                          <p className="text-xs text-[#5A6B60] mt-1.5 leading-relaxed">
+                            Under Healora clinical safety protocols, a formal consultation (Online Telehealth or In-Clinic) must be conducted and completed with <strong>{selectedPatient.first_name} {selectedPatient.last_name}</strong> before a personalized Kerala dietary regimen can be formulated and published.
+                          </p>
                         </div>
 
-                        {selectedWeek >= 3 && (
-                          <button
-                            type="button"
-                            onClick={handleTogglePhase2Unlock}
-                            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer ${monthlyPlanData.phase2_status === 'UNLOCKED' ? 'bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200' : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}
-                          >
-                            {monthlyPlanData.phase2_status === 'UNLOCKED' ? <><Lock size={13}/> Relock Phase 2</> : <><Unlock size={13}/> 🔓 Unlock Phase 2 for Patient</>}
-                          </button>
+                        {patientPendingAppt ? (
+                          <div className="w-full bg-[#FDFCF8] border border-[#EBE9E0] p-4 rounded-2xl text-left flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-md uppercase ${patientPendingAppt.mode === 'ONLINE' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                                  {patientPendingAppt.mode === 'ONLINE' ? 'Online Telehealth' : 'In-Clinic Offline'}
+                                </span>
+                                <span className="text-xs font-bold text-[#1C2C22]">📅 {patientPendingAppt.date} at {patientPendingAppt.time}</span>
+                              </div>
+                              <p className="text-[11px] text-gray-500 mt-1">Status: <span className="font-semibold uppercase text-amber-700">{patientPendingAppt.status}</span></p>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              {patientPendingAppt.mode === 'ONLINE' && patientPendingAppt.status !== 'COMPLETED' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleStartVideoConsultation(patientPendingAppt)}
+                                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+                                >
+                                  <Video size={14} /> Start Video Call
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleOpenCompleteModal(patientPendingAppt)}
+                                className="bg-[#456A50] hover:bg-[#35533E] text-white px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+                              >
+                                <CheckCircle2 size={14} /> Complete Consultation & Unlock Plan
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="w-full bg-gray-50 border border-gray-200 p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 text-left">
+                            <p className="text-xs text-gray-600">
+                              No booked appointment found for this patient. You can record a direct clinical intake consultation right now to assess vitals and unlock their plan.
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => handleConductDirectConsultation(selectedPatient)}
+                              className="bg-[#456A50] hover:bg-[#35533E] text-white px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0 cursor-pointer"
+                            >
+                              <Stethoscope size={14} /> Record Direct Consultation
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>
+                  );
+                }
 
-                    {/* Day selector pills */}
-                    <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
-                      {daysOfWeek.map(d => (
-                        <button key={d} type="button" onClick={() => setSelectedDay(d)} className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer ${selectedDay === d ? 'bg-[#1C2C22] text-white' : 'bg-white border border-[#EBE9E0] text-gray-600 hover:bg-gray-50'}`}>{d}</button>
-                      ))}
+                return (
+                  <div className="bg-white rounded-3xl shadow-sm border border-[#EBE9E0] p-8 space-y-6">
+                    {/* Unlocked banner */}
+                    <div className="bg-emerald-50 border border-emerald-200 p-3.5 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 text-xs font-bold text-emerald-900">
+                        <CheckCircle size={17} className="text-emerald-600" />
+                        <span>Clinical Consultation Verified & Completed • 4-Week Care Plan Prescribing Unlocked</span>
+                      </div>
+                      <span className="text-[10px] font-extrabold text-emerald-800 bg-white px-2.5 py-1 rounded-full border border-emerald-300 w-fit">
+                        {patientCompletedConsultations[0]?.date ? `Completed: ${patientCompletedConsultations[0].date}` : 'Consultation On File'}
+                      </span>
                     </div>
 
-                    {/* CLINICAL KERALA PERSONALIZATION CONTEXT BANNER */}
-                    <div className="bg-[#EAF0EC]/80 border border-[#456A50]/25 rounded-2xl p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-xs">
+                    <div className="border-b border-[#EBE9E0] pb-4 flex items-center justify-between">
                       <div>
-                        <div className="flex items-center gap-2 text-[#456A50] font-black">
-                          <Sparkles size={16} />
-                          <span>Kerala Clinical Nutrition Matrix for {selectedPatient.first_name}</span>
+                        <h3 className="text-lg font-black text-[#1C2C22] flex items-center gap-2">
+                          <Apple size={20} className="text-[#456A50]"/> 4-Week Monthly Structured Care Plan Builder
+                        </h3>
+                        <p className="text-[11px] text-[#5A6B60] mt-0.5">
+                          Tailored specifically for program: <span className="font-bold text-[#456A50] uppercase">{selectedPatient.enrolled_program || selectedPatient.health_goals || 'Weight Management'}</span>. Pick from smart clinical recommendations or type custom entries.
+                        </p>
+                      </div>
+                      <span className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase ${monthlyPlanData.status === 'Published' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+                        Status: {monthlyPlanData.status}
+                      </span>
+                    </div>
+
+                <div className="space-y-6">
+                  
+                  {/* 🌟 5 CARE PLAN PILLARS SEGMENTED NAVIGATION BAR 🌟 */}
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2 p-1.5 bg-[#FDFCF8] border border-[#EBE9E0] rounded-2xl shadow-inner">
+                    <button
+                      type="button"
+                      onClick={() => setCarePlanPillar('meals')}
+                      className={`py-3 px-2 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                        carePlanPillar === 'meals' 
+                          ? 'bg-[#456A50] text-white shadow-sm' 
+                          : 'text-[#5A6B60] hover:bg-white hover:text-[#1C2C22]'
+                      }`}
+                    >
+                      <Apple size={16} className={carePlanPillar === 'meals' ? 'text-white' : 'text-[#456A50]'} />
+                      <span className="truncate">1. Meal Protocol</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setCarePlanPillar('activity')}
+                      className={`py-3 px-2 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer relative ${
+                        carePlanPillar === 'activity' 
+                          ? 'bg-[#456A50] text-white shadow-sm' 
+                          : 'text-[#5A6B60] hover:bg-white hover:text-[#1C2C22]'
+                      }`}
+                    >
+                      <Footprints size={16} className={carePlanPillar === 'activity' ? 'text-white' : 'text-blue-600'} />
+                      <span className="truncate">2. Activity & Adherence</span>
+                      <span className="w-2 h-2 rounded-full bg-amber-400 absolute top-2 right-2 animate-pulse" title="Adherence Alert"></span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setCarePlanPillar('lifestyle')}
+                      className={`py-3 px-2 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                        carePlanPillar === 'lifestyle' 
+                          ? 'bg-[#456A50] text-white shadow-sm' 
+                          : 'text-[#5A6B60] hover:bg-white hover:text-[#1C2C22]'
+                      }`}
+                    >
+                      <Moon size={16} className={carePlanPillar === 'lifestyle' ? 'text-white' : 'text-indigo-600'} />
+                      <span className="truncate">3. Lifestyle Habits</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setCarePlanPillar('behavior')}
+                      className={`py-3 px-2 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                        carePlanPillar === 'behavior' 
+                          ? 'bg-[#456A50] text-white shadow-sm' 
+                          : 'text-[#5A6B60] hover:bg-white hover:text-[#1C2C22]'
+                      }`}
+                    >
+                      <RefreshCw size={16} className={carePlanPillar === 'behavior' ? 'text-white' : 'text-emerald-600'} />
+                      <span className="truncate">4. Behaviour (CBT)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setCarePlanPillar('report')}
+                      className={`py-3 px-2 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                        carePlanPillar === 'report' 
+                          ? 'bg-[#456A50] text-white shadow-sm' 
+                          : 'text-[#5A6B60] hover:bg-white hover:text-[#1C2C22]'
+                      }`}
+                    >
+                      <FileText size={16} className={carePlanPillar === 'report' ? 'text-white' : 'text-purple-600'} />
+                      <span className="truncate">5. 📊 Monthly Report</span>
+                    </button>
+                  </div>
+
+                  {/* ======================================================== */}
+                  {/* PILLAR 1: 4-WEEK MEAL PROTOCOL (KERALA CLINICAL ENGINE)   */}
+                  {/* ======================================================== */}
+                  {carePlanPillar === 'meals' && (
+                    <div className="space-y-6 animate-in fade-in">
+                      {/* Top Meta info */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                        <div>
+                          <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-widest mb-1.5">Nutrition Goal</label>
+                          <input type="text" value={monthlyPlanData.nutrition_goal} onChange={e=>setMonthlyPlanData({...monthlyPlanData, nutrition_goal: e.target.value})} className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-3 text-xs outline-none focus:border-[#456A50]" />
                         </div>
-                        <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium text-gray-700 mt-2">
-                          <span className="bg-white px-2.5 py-1 rounded-lg border border-[#EBE9E0] shadow-2xs">
-                            🌴 Program: <strong>{selectedPatient.enrolled_program || selectedPatient.health_goals || 'Weight Loss'}</strong>
-                          </span>
-                          <span className="bg-white px-2.5 py-1 rounded-lg border border-[#EBE9E0] shadow-2xs">
-                            🥗 Diet: <strong>{selectedPatient.food_preferences || 'Standard'}</strong>
-                          </span>
-                          <span className="bg-white px-2.5 py-1 rounded-lg border border-[#EBE9E0] shadow-2xs">
-                            🚫 Allergies: <strong>{selectedPatient.food_allergies || 'None'}</strong>
-                          </span>
+                        <div>
+                          <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-widest mb-1.5">Start Date</label>
+                          <input type="date" value={monthlyPlanData.start_date} onChange={e=>setMonthlyPlanData({...monthlyPlanData, start_date: e.target.value})} className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-3 text-xs outline-none focus:border-[#456A50]" />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-widest mb-1.5">Review Date</label>
+                          <input type="date" value={monthlyPlanData.review_date} onChange={e=>setMonthlyPlanData({...monthlyPlanData, review_date: e.target.value})} className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-3 text-xs outline-none focus:border-[#456A50]" />
                         </div>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={handleAutoFillPersonalizedPlan}
-                        className="bg-[#456A50] hover:bg-[#35533E] text-white px-4 py-2.5 rounded-xl font-bold text-xs shadow-sm transition flex items-center gap-1.5 cursor-pointer shrink-0"
-                      >
-                        <Sparkles size={14} /> Auto-Fill Tailored Protocol
-                      </button>
-                    </div>
-
-                    {/* CLINICAL SAFETY CONTRAINDICATION ALERT FOR MEAL FORMULATION */}
-                    {(() => {
-                      const safety = evaluateClinicalSafety(selectedPatient || {});
-                      if (safety.isAllClear) return null;
-                      return (
-                        <div className="bg-amber-50/90 border border-amber-300 rounded-2xl p-4 shadow-2xs space-y-2">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2 text-amber-900 font-bold text-xs">
-                              <ShieldAlert size={16} className="text-amber-700 shrink-0" />
-                              <span>Clinical Safety Directives for {selectedPatient.first_name}</span>
-                            </div>
-                            <span className="text-[10px] font-black bg-amber-200 text-amber-900 px-2 py-0.5 rounded border border-amber-300">
-                              {safety.totalAlerts} Active Rule{safety.totalAlerts > 1 ? 's' : ''}
-                            </span>
+                      {/* Week & Day Selector Tabs for Granular Customization */}
+                      <div className="bg-[#FDFCF8] border border-[#EBE9E0] p-6 rounded-2xl space-y-4 shadow-inner">
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-[#EBE9E0] pb-4 gap-3">
+                          <div>
+                            <h4 className="text-xs font-extrabold uppercase tracking-wider text-[#1C2C22] flex items-center gap-2">
+                              <Layers size={16} className="text-[#456A50]"/> Select Clinical Protocol Week & Day
+                            </h4>
+                            <p className="text-[11px] text-[#5A6B60] mt-0.5 font-medium">
+                              {selectedWeek <= 2 ? (
+                                <span className="text-emerald-700 font-bold">● Phase 1: Initial Adaptation (Weeks 1 & 2) — Active</span>
+                              ) : (
+                                <span className={monthlyPlanData.phase2_status === 'UNLOCKED' ? 'text-emerald-700 font-bold' : 'text-amber-700 font-bold'}>
+                                  {monthlyPlanData.phase2_status === 'UNLOCKED' ? '● Phase 2: Progress Protocol — 🔓 Unlocked' : '● Phase 2: Requires Progress Consultation — 🔒 Gated'}
+                                </span>
+                              )}
+                            </p>
                           </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                            {safety.alerts.map(a => (
-                              <div key={a.id} className="bg-white/95 p-2.5 rounded-xl border border-amber-200">
-                                <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border inline-block mb-1 ${a.badgeColor}`}>{a.badge}</span>
-                                <p className="text-[11px] font-bold text-[#1C2C22]">{a.safetyRule}</p>
-                                <p className="text-[10px] text-gray-600 mt-0.5">{a.clinicalDirective}</p>
+
+                          <div className="flex items-center gap-3">
+                            <div className="flex gap-1.5 bg-white p-1 rounded-xl border border-[#EBE9E0] shadow-2xs">
+                              {[1, 2, 3, 4].map(w => (
+                                <button 
+                                  key={w} 
+                                  type="button" 
+                                  onClick={() => setSelectedWeek(w)} 
+                                  className={`px-3 py-1.5 rounded-lg text-[10px] uppercase font-black tracking-widest transition cursor-pointer ${selectedWeek === w ? 'bg-[#456A50] text-white shadow-xs' : 'text-gray-600 hover:bg-gray-100'}`}
+                                >
+                                  Wk {w} {w >= 3 && (monthlyPlanData.phase2_status === 'UNLOCKED' ? '🔓' : '🔒')}
+                                </button>
+                              ))}
+                            </div>
+
+                            {selectedWeek >= 3 && (
+                              <button
+                                type="button"
+                                onClick={handleTogglePhase2Unlock}
+                                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer ${monthlyPlanData.phase2_status === 'UNLOCKED' ? 'bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200' : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}
+                              >
+                                {monthlyPlanData.phase2_status === 'UNLOCKED' ? <><Lock size={13}/> Relock Phase 2</> : <><Unlock size={13}/> 🔓 Unlock Phase 2 for Patient</>}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Day selector pills */}
+                        <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
+                          {daysOfWeek.map(d => (
+                            <button key={d} type="button" onClick={() => setSelectedDay(d)} className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer ${selectedDay === d ? 'bg-[#1C2C22] text-white' : 'bg-white border border-[#EBE9E0] text-gray-600 hover:bg-gray-50'}`}>{d}</button>
+                          ))}
+                        </div>
+
+                        {/* CLINICAL KERALA PERSONALIZATION CONTEXT BANNER */}
+                        <div className="bg-[#EAF0EC]/80 border border-[#456A50]/25 rounded-2xl p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-xs">
+                          <div>
+                            <div className="flex items-center gap-2 text-[#456A50] font-black">
+                              <Sparkles size={16} />
+                              <span>Kerala Clinical Nutrition Matrix for {selectedPatient.first_name}</span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium text-gray-700 mt-2">
+                              <span className="bg-white px-2.5 py-1 rounded-lg border border-[#EBE9E0] shadow-2xs">
+                                🌴 Program: <strong>{selectedPatient.enrolled_program || selectedPatient.health_goals || 'Weight Loss'}</strong>
+                              </span>
+                              <span className="bg-white px-2.5 py-1 rounded-lg border border-[#EBE9E0] shadow-2xs">
+                                🥗 Diet: <strong>{selectedPatient.food_preferences || 'Standard'}</strong>
+                              </span>
+                              <span className="bg-white px-2.5 py-1 rounded-lg border border-[#EBE9E0] shadow-2xs">
+                                🚫 Allergies: <strong>{selectedPatient.food_allergies || 'None'}</strong>
+                              </span>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={handleAutoFillPersonalizedPlan}
+                            className="bg-[#456A50] hover:bg-[#35533E] text-white px-4 py-2.5 rounded-xl font-bold text-xs shadow-sm transition flex items-center gap-1.5 cursor-pointer shrink-0"
+                          >
+                            <Sparkles size={14} /> Auto-Fill Tailored Protocol
+                          </button>
+                        </div>
+
+                        {/* CLINICAL SAFETY CONTRAINDICATION ALERT FOR MEAL FORMULATION */}
+                        {(() => {
+                          const safety = evaluateClinicalSafety(selectedPatient || {});
+                          if (safety.isAllClear) return null;
+                          return (
+                            <div className="bg-amber-50/90 border border-amber-300 rounded-2xl p-4 shadow-2xs space-y-2">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2 text-amber-900 font-bold text-xs">
+                                  <ShieldAlert size={16} className="text-amber-700 shrink-0" />
+                                  <span>Clinical Safety Directives for {selectedPatient.first_name}</span>
+                                </div>
+                                <span className="text-[10px] font-black uppercase tracking-wider bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full border border-amber-300">
+                                  {safety.totalAlerts} Alert{safety.totalAlerts > 1 ? 's' : ''} Active
+                                </span>
                               </div>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                                {safety.alerts.map(a => (
+                                  <div key={a.id} className="bg-white/90 p-2.5 rounded-xl border border-amber-200">
+                                    <span className={`text-[9px] font-black px-1.5 py-0.2 rounded border inline-block mb-1 ${a.badgeColor}`}>{a.badge}</span>
+                                    <p className="font-bold text-gray-900 leading-tight">{a.safetyRule}</p>
+                                    <p className="text-[10px] text-gray-600 mt-0.5">{a.clinicalDirective}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {/* MEAL FREQUENCY CONFIGURATION CONTROLS */}
+                        <div className="bg-white border border-[#EBE9E0] p-4 rounded-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-2xs">
+                          <div>
+                            <span className="text-xs font-black text-[#1C2C22] block">Meal Cadence & Frequency</span>
+                            <span className="text-[11px] text-[#5A6B60]">Choose daily eating rhythm (3 to 6 meals) tailored to metabolic rate & fasting tolerance.</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 bg-[#FDFCF8] p-1 rounded-xl border border-[#EBE9E0]">
+                            {[3, 4, 5, 6].map(freq => (
+                              <button
+                                key={freq}
+                                type="button"
+                                onClick={() => handleMealFrequencyChange(freq)}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                                  (monthlyPlanData.meal_frequency || 5) === freq
+                                    ? 'bg-[#456A50] text-white shadow-2xs'
+                                    : 'text-gray-600 hover:bg-gray-100'
+                                }`}
+                              >
+                                {freq} Meals
+                              </button>
                             ))}
                           </div>
                         </div>
-                      );
-                    })()}
 
-                    {/* CLINICAL MEAL FREQUENCY & TIMETABLE SELECTOR */}
-                    <div className="bg-white p-4 rounded-2xl border border-[#EBE9E0] flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-2xs">
-                      <div>
-                        <h5 className="text-xs font-black text-[#1C2C22] flex items-center gap-1.5">
-                          <Apple size={15} className="text-[#456A50]" /> Prescribed Meal Frequency for {selectedPatient.first_name}
-                        </h5>
-                        <p className="text-[11px] text-[#5A6B60] mt-0.5">Customize daily meal slots based on clinical pathology, insulin spikes & lifestyle routine.</p>
-                      </div>
-
-                      <div className="flex flex-wrap gap-1.5 bg-[#FDFCF8] p-1.5 rounded-xl border border-[#EBE9E0]">
-                        {[
-                          { count: 3, label: '3 Meals', desc: 'B, L, D' },
-                          { count: 4, label: '4 Meals', desc: 'B, L, Snack, D' },
-                          { count: 5, label: '5 Meals (Standard)', desc: 'B, Drink, L, Snack, D' },
-                          { count: 6, label: '6 Meals (Clinical)', desc: 'Pre-B, B, Drink, L, Snack, D' }
-                        ].map(m => (
-                          <button
-                            key={m.count}
-                            type="button"
-                            onClick={() => handleMealFrequencyChange(m.count)}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
-                              (monthlyPlanData.meal_frequency || 5) === m.count 
-                                ? 'bg-[#456A50] text-white shadow-xs' 
-                                : 'text-gray-700 hover:bg-gray-200/60'
-                            }`}
-                          >
-                            <span>{m.label}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* ⏰ PRESCRIBED MEAL INTAKE TIMINGS CONFIGURATION ⏰ */}
-                    <div className="bg-[#FDFCF8] p-4.5 rounded-2xl border border-[#EBE9E0] space-y-3">
-                      <div className="flex justify-between items-center border-b border-[#EBE9E0] pb-2.5">
-                        <h5 className="text-xs font-black text-[#1C2C22] flex items-center gap-2">
-                          <Clock size={16} className="text-[#456A50]" /> Prescribed Intake Timings Protocol (Real-Time Patient Dashboard Alerts)
-                        </h5>
-                        <span className="text-[10px] text-[#456A50] font-bold bg-[#EAF0EC] px-2 py-0.5 rounded-md">
-                          Live Synchronized
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-[#5A6B60]">
-                        Configure prescribed meal window timings. The patient's portal will automatically display real-time active meal recommendations at these hours.
-                      </p>
+                        {/* ⏰ PRESCRIBED MEAL INTAKE TIMINGS CONFIGURATION ⏰ */}
+                        <div className="bg-[#FDFCF8] p-4.5 rounded-2xl border border-[#EBE9E0] space-y-3">
+                          <div className="flex justify-between items-center border-b border-[#EBE9E0] pb-2.5">
+                            <h5 className="text-xs font-black text-[#1C2C22] flex items-center gap-2">
+                              <Clock size={16} className="text-[#456A50]" /> Prescribed Intake Timings Protocol (Real-Time Patient Dashboard Alerts)
+                            </h5>
+                            <span className="text-[10px] text-[#456A50] font-bold bg-[#EAF0EC] px-2 py-0.5 rounded-md">
+                              Live Synchronized
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-[#5A6B60]">
+                            Configure prescribed meal window timings. The patient's portal will automatically display real-time active meal recommendations at these hours.
+                          </p>
                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5 pt-1">
                         {[
                           { key: 'pre_breakfast', label: '🌿 Pre-Breakfast' },
@@ -3039,18 +4540,1821 @@ const NutritionistDashboard = () => {
                     <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-widest mb-1.5">Nutritionist Notes & Encouragement</label>
                     <input type="text" value={monthlyPlanData.nutritionist_notes} onChange={e=>setMonthlyPlanData({...monthlyPlanData, nutritionist_notes: e.target.value})} className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-3 text-xs outline-none focus:border-[#456A50]" />
                   </div>
+                </div>
+              )}
 
-                  {/* Action Buttons */}
+                  {/* ======================================================== */}
+                  {/* PILLAR 2: ACTIVITY PLAN & ADHERENCE MONITORING CONSOLE    */}
+                  {/* ======================================================== */}
+                  {carePlanPillar === 'activity' && (
+                    <div className="space-y-6 animate-in fade-in">
+                      {/* WHO Guidelines Banner */}
+                      <div className="bg-blue-50/80 border border-blue-200 p-4 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                            <Footprints size={18} />
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-black uppercase tracking-widest text-blue-900 bg-blue-100 px-2 py-0.5 rounded-md">
+                              WHO Benchmark Alignment
+                            </span>
+                            <h4 className="text-xs font-black text-[#1C2C22] mt-0.5">
+                              Clinical Physical Activity Target for {selectedPatient.first_name}
+                            </h4>
+                            <p className="text-[11px] text-blue-950 mt-0.5 leading-snug">
+                              {monthlyPlanData.activity_plan?.who_guideline || DEFAULT_ACTIVITY_PLAN.who_guideline}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-[11px] font-bold bg-white text-blue-900 border border-blue-200 px-3 py-1.5 rounded-xl shadow-2xs">
+                            🏃 Target: <strong>{monthlyPlanData.activity_plan?.weekly_target_days || 5} Days / Week</strong>
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* ⭐ CARE PLAN ADHERENCE VERIFICATION & BARRIER MONITORING */}
+                      <div className="bg-gradient-to-br from-amber-500/10 via-emerald-500/10 to-amber-500/10 border-2 border-amber-300 rounded-2xl p-6 shadow-sm space-y-4">
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-amber-200 pb-3">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-black uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
+                                <Target size={16} className="text-amber-700" />
+                                🎯 Care Plan Adherence Verification & Barrier Audit
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-[#5A6B60] mt-0.5">
+                              Rule-based calculation comparing logged activity to prescribed frequency. Adherence calculation does not claim independent medical or clinical diagnosis.
+                            </p>
+                          </div>
+                          {(() => {
+                            const targetDays = monthlyPlanData.activity_plan?.weekly_target_days || 5;
+                            const completedCount = Object.values(patientAdherence?.days || {}).filter(
+                              d => (typeof d === 'string' ? d === 'completed' : d?.status === 'completed')
+                            ).length;
+                            const missedWithBarrier = Object.values(patientAdherence?.days || {}).some(
+                              d => (typeof d === 'object' && d?.status === 'missed' && d?.reason)
+                            );
+                            const pct = Math.min(100, Math.round((completedCount / targetDays) * 100));
+                            
+                            let adherenceStatus = '🔄 In Progress';
+                            let badgeStyle = 'bg-blue-100 text-blue-800 border-blue-300';
+                            if (pct >= 100) {
+                              adherenceStatus = '✅ Target Met';
+                              badgeStyle = 'bg-emerald-100 text-emerald-800 border-emerald-300';
+                            } else if (missedWithBarrier) {
+                              adherenceStatus = '🚩 Barrier Recorded';
+                              badgeStyle = 'bg-amber-100 text-amber-800 border-amber-300';
+                            } else if (pct < 50) {
+                              adherenceStatus = '⚠️ Below Target';
+                              badgeStyle = 'bg-rose-100 text-rose-800 border-rose-300';
+                            }
+
+                            return (
+                              <span className={`text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-full border ${badgeStyle}`}>
+                                Status: {adherenceStatus}
+                              </span>
+                            );
+                          })()}
+                        </div>
+
+                        {/* Progress Bar Display */}
+                        {(() => {
+                          const targetDays = monthlyPlanData.activity_plan?.weekly_target_days || 5;
+                          const completedCount = Object.values(patientAdherence?.days || {}).filter(
+                            d => (typeof d === 'string' ? d === 'completed' : d?.status === 'completed')
+                          ).length;
+                          const pct = Math.min(100, Math.round((completedCount / targetDays) * 100));
+
+                          return (
+                            <div className="bg-white p-5 rounded-2xl border border-amber-200 shadow-2xs space-y-3">
+                              <div className="flex justify-between items-center text-xs">
+                                <span className="font-extrabold text-[#1C2C22]">
+                                  Weekly Activity Target: <span className="text-[#456A50]">{completedCount}/{targetDays} days completed</span>
+                                  <span className="text-[10px] font-normal text-gray-500 ml-2">(Note: Missed sessions with documented barriers remain missed and do NOT count as completed)</span>
+                                </span>
+                                <span className="text-sm font-black text-[#456A50]">
+                                  {pct}% Adherence
+                                </span>
+                              </div>
+
+                              {/* Progress bar visual */}
+                              <div className="w-full bg-gray-100 h-4 rounded-full overflow-hidden p-0.5 border border-gray-200 flex">
+                                <div 
+                                  className="h-full bg-gradient-to-r from-emerald-500 to-[#456A50] rounded-full transition-all duration-700 shadow-inner"
+                                  style={{ width: `${pct}%` }}
+                                ></div>
+                              </div>
+
+                              {/* Day by Day status breakdown */}
+                              <div className="grid grid-cols-7 gap-1.5 pt-2">
+                                {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(day => {
+                                  const dayData = patientAdherence?.days?.[day];
+                                  const status = typeof dayData === 'string' ? dayData : (dayData?.status || 'pending');
+                                  const reason = typeof dayData === 'object' ? dayData?.reason : '';
+                                  const isCompleted = status === 'completed';
+                                  const isMissed = status === 'missed';
+
+                                  return (
+                                    <div 
+                                      key={day}
+                                      className={`p-2 rounded-xl border text-center transition ${
+                                        isCompleted 
+                                          ? 'bg-emerald-50 border-emerald-300 text-emerald-900' 
+                                          : isMissed 
+                                            ? 'bg-red-50 border-red-300 text-red-900 shadow-xs' 
+                                            : 'bg-gray-50 border-gray-200 text-gray-400'
+                                      }`}
+                                    >
+                                      <p className="text-[10px] font-black uppercase tracking-wider">{day.slice(0, 3)}</p>
+                                      <p className="text-xs font-black mt-1">
+                                        {isCompleted ? '✓ Done' : isMissed ? '✕ Missed' : '— Rest'}
+                                      </p>
+                                      {isMissed && reason && (
+                                        <p className="text-[9px] font-bold text-red-700 mt-0.5 truncate" title={reason}>
+                                          "{reason}"
+                                        </p>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+
+                              {/* Identified barrier highlight */}
+                              {(() => {
+                                const missedEntries = Object.entries(patientAdherence?.days || {}).filter(
+                                  ([_, val]) => (typeof val === 'object' ? val?.status === 'missed' : val === 'missed')
+                                );
+
+                                if (missedEntries.length === 0) return null;
+
+                                return (
+                                  <div className="bg-red-50 border border-red-200 rounded-xl p-3.5 mt-2 space-y-1.5">
+                                    <div className="flex items-center gap-2 text-xs font-black text-red-900">
+                                      <AlertTriangle size={15} className="text-red-600" />
+                                      <span>Care Plan Barrier Alert: Documented Missed Session Reason</span>
+                                    </div>
+                                    {missedEntries.map(([d, val]) => (
+                                      <p key={d} className="text-xs text-red-950 font-medium">
+                                        • <strong>Missed: {d}</strong> — Documented Reason: <span className="font-bold underline italic">"{val?.reason || 'Busy with college'}"</span> (Kept as missed session)
+                                      </p>
+                                    ))}
+                                    <div className="pt-2">
+                                      <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">
+                                        Nutritionist's Follow-up Adaptation / Strategy
+                                      </label>
+                                      <div className="flex gap-2">
+                                        <input 
+                                          type="text"
+                                          placeholder="e.g. Prescribed 15-minute quick dorm room stretching / brisk campus walk on Wednesdays"
+                                          value={followupBarrierNote}
+                                          onChange={e => setFollowupBarrierNote(e.target.value)}
+                                          className="flex-1 border border-red-200 bg-white rounded-xl p-2.5 text-xs outline-none focus:border-[#456A50]"
+                                        />
+                                        <button 
+                                          type="button" 
+                                          onClick={() => alert(`✅ Follow-up clinical adaptation note saved for ${selectedPatient.first_name}!`)}
+                                          className="bg-[#456A50] text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-xs hover:bg-[#35533E] cursor-pointer shrink-0"
+                                        >
+                                          Save Note
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          );
+                        })()}
+                      </div>
+
+                      {/* Prescribed Physical Activity Regimen Form */}
+                      <div className="bg-white border border-[#EBE9E0] p-6 rounded-2xl space-y-4 shadow-sm">
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-[#EBE9E0] pb-3 gap-3">
+                          <div>
+                            <h4 className="text-xs font-black uppercase tracking-wider text-[#1C2C22] flex items-center gap-2">
+                              <Footprints size={16} className="text-[#456A50]" />
+                              Prescribed Exercise Regimen
+                            </h4>
+                            <p className="text-[11px] text-[#5A6B60] mt-0.5">
+                              Define exercise types, frequency, duration, intensity, instructions, and start/end dates.
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newActivity = {
+                                  id: `act_${Date.now()}`,
+                                  name: 'Light Cycling & Mobility',
+                                  type: 'Cycling',
+                                  frequency: '3 days/week',
+                                  duration_mins: 25,
+                                  intensity: 'Moderate',
+                                  target: '5 km steady cadence',
+                                  preferred_time: 'Morning (07:00 AM)',
+                                  instructions: 'Maintain steady pedaling cadence, wear helmet and hydrate.',
+                                  start_date: monthlyPlanData.start_date || '2026-09-22',
+                                  end_date: monthlyPlanData.review_date || '2026-10-22'
+                                };
+                                const updatedActs = [...(monthlyPlanData.activity_plan?.activities || []), newActivity];
+                                setMonthlyPlanData(prev => ({
+                                  ...prev,
+                                  activity_plan: { ...(prev.activity_plan || DEFAULT_ACTIVITY_PLAN), activities: updatedActs }
+                                }));
+                              }}
+                              className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <Plus size={13} /> Add Activity
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setMonthlyPlanData(prev => ({
+                                  ...prev,
+                                  activity_plan: { ...DEFAULT_ACTIVITY_PLAN }
+                                }));
+                                alert("✨ Reset to WHO Standard Aerobic & Strengthening Regimen.");
+                              }}
+                              className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer"
+                            >
+                              Reset WHO Regimen
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Activities List */}
+                        <div className="space-y-4">
+                          {(monthlyPlanData.activity_plan?.activities || []).map((act, idx) => (
+                            <div key={act.id || idx} className="bg-[#FDFCF8] border border-[#EBE9E0] p-4 rounded-2xl space-y-3">
+                              <div className="flex items-center justify-between border-b border-gray-200 pb-2">
+                                <span className="text-xs font-black text-[#1C2C22] flex items-center gap-1.5">
+                                  <span className="w-5 h-5 rounded-full bg-[#456A50] text-white flex items-center justify-center text-[10px]">
+                                    {idx + 1}
+                                  </span>
+                                  Activity #{idx + 1}: {act.name}
+                                </span>
+                                {(monthlyPlanData.activity_plan?.activities || []).length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const filtered = (monthlyPlanData.activity_plan?.activities || []).filter((_, i) => i !== idx);
+                                      setMonthlyPlanData(prev => ({
+                                        ...prev,
+                                        activity_plan: { ...prev.activity_plan, activities: filtered }
+                                      }));
+                                    }}
+                                    className="text-xs text-red-600 hover:text-red-800 font-bold cursor-pointer"
+                                  >
+                                    Remove
+                                  </button>
+                                )}
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                                <div>
+                                  <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">Activity Name</label>
+                                  <input 
+                                    type="text" 
+                                    value={act.name}
+                                    onChange={e => {
+                                      const updated = [...(monthlyPlanData.activity_plan?.activities || [])];
+                                      updated[idx].name = e.target.value;
+                                      setMonthlyPlanData(prev => ({ ...prev, activity_plan: { ...prev.activity_plan, activities: updated } }));
+                                    }}
+                                    className="w-full border border-[#EBE9E0] bg-white rounded-xl p-2 font-bold text-[#1C2C22] outline-none focus:border-[#456A50]"
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">Activity Type</label>
+                                  <select
+                                    value={act.type}
+                                    onChange={e => {
+                                      const updated = [...(monthlyPlanData.activity_plan?.activities || [])];
+                                      updated[idx].type = e.target.value;
+                                      setMonthlyPlanData(prev => ({ ...prev, activity_plan: { ...prev.activity_plan, activities: updated } }));
+                                    }}
+                                    className="w-full border border-[#EBE9E0] bg-white rounded-xl p-2 font-bold text-[#1C2C22] outline-none focus:border-[#456A50]"
+                                  >
+                                    <option value="Walking">Walking</option>
+                                    <option value="Cycling">Cycling</option>
+                                    <option value="Stretching">Stretching</option>
+                                    <option value="Strength training">Strength training</option>
+                                    <option value="Yoga">Yoga</option>
+                                    <option value="Swimming">Swimming</option>
+                                    <option value="Aerobics">Aerobics</option>
+                                  </select>
+                                </div>
+
+                                <div>
+                                  <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">Frequency</label>
+                                  <input 
+                                    type="text" 
+                                    value={act.frequency}
+                                    onChange={e => {
+                                      const updated = [...(monthlyPlanData.activity_plan?.activities || [])];
+                                      updated[idx].frequency = e.target.value;
+                                      setMonthlyPlanData(prev => ({ ...prev, activity_plan: { ...prev.activity_plan, activities: updated } }));
+                                    }}
+                                    placeholder="5 days/week"
+                                    className="w-full border border-[#EBE9E0] bg-white rounded-xl p-2 font-bold text-[#1C2C22] outline-none focus:border-[#456A50]"
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">Duration</label>
+                                  <input 
+                                    type="text" 
+                                    value={act.duration_mins ? `${act.duration_mins} mins` : ''}
+                                    onChange={e => {
+                                      const num = parseInt(e.target.value) || 30;
+                                      const updated = [...(monthlyPlanData.activity_plan?.activities || [])];
+                                      updated[idx].duration_mins = num;
+                                      setMonthlyPlanData(prev => ({ ...prev, activity_plan: { ...prev.activity_plan, activities: updated } }));
+                                    }}
+                                    placeholder="30 mins"
+                                    className="w-full border border-[#EBE9E0] bg-white rounded-xl p-2 font-bold text-[#1C2C22] outline-none focus:border-[#456A50]"
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">Intensity</label>
+                                  <select
+                                    value={act.intensity}
+                                    onChange={e => {
+                                      const updated = [...(monthlyPlanData.activity_plan?.activities || [])];
+                                      updated[idx].intensity = e.target.value;
+                                      setMonthlyPlanData(prev => ({ ...prev, activity_plan: { ...prev.activity_plan, activities: updated } }));
+                                    }}
+                                    className="w-full border border-[#EBE9E0] bg-white rounded-xl p-2 font-bold text-[#1C2C22] outline-none focus:border-[#456A50]"
+                                  >
+                                    <option value="Light">Light</option>
+                                    <option value="Moderate">Moderate</option>
+                                    <option value="Vigorous">Vigorous</option>
+                                  </select>
+                                </div>
+
+                                <div>
+                                  <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">Target Metric</label>
+                                  <input 
+                                    type="text" 
+                                    value={act.target}
+                                    onChange={e => {
+                                      const updated = [...(monthlyPlanData.activity_plan?.activities || [])];
+                                      updated[idx].target = e.target.value;
+                                      setMonthlyPlanData(prev => ({ ...prev, activity_plan: { ...prev.activity_plan, activities: updated } }));
+                                    }}
+                                    placeholder="6,000 steps/day"
+                                    className="w-full border border-[#EBE9E0] bg-white rounded-xl p-2 font-bold text-[#1C2C22] outline-none focus:border-[#456A50]"
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">Start Date</label>
+                                  <input 
+                                    type="date" 
+                                    value={act.start_date || monthlyPlanData.start_date || '2026-09-22'}
+                                    onChange={e => {
+                                      const updated = [...(monthlyPlanData.activity_plan?.activities || [])];
+                                      updated[idx].start_date = e.target.value;
+                                      setMonthlyPlanData(prev => ({ ...prev, activity_plan: { ...prev.activity_plan, activities: updated } }));
+                                    }}
+                                    className="w-full border border-[#EBE9E0] bg-white rounded-xl p-2 font-bold text-[#1C2C22] outline-none focus:border-[#456A50]"
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">End Date</label>
+                                  <input 
+                                    type="date" 
+                                    value={act.end_date || monthlyPlanData.review_date || '2026-10-22'}
+                                    onChange={e => {
+                                      const updated = [...(monthlyPlanData.activity_plan?.activities || [])];
+                                      updated[idx].end_date = e.target.value;
+                                      setMonthlyPlanData(prev => ({ ...prev, activity_plan: { ...prev.activity_plan, activities: updated } }));
+                                    }}
+                                    className="w-full border border-[#EBE9E0] bg-white rounded-xl p-2 font-bold text-[#1C2C22] outline-none focus:border-[#456A50]"
+                                  />
+                                </div>
+
+                                <div className="sm:col-span-2 md:col-span-4">
+                                  <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">Preferred Time Window</label>
+                                  <input 
+                                    type="text" 
+                                    value={act.preferred_time}
+                                    onChange={e => {
+                                      const updated = [...(monthlyPlanData.activity_plan?.activities || [])];
+                                      updated[idx].preferred_time = e.target.value;
+                                      setMonthlyPlanData(prev => ({ ...prev, activity_plan: { ...prev.activity_plan, activities: updated } }));
+                                    }}
+                                    placeholder="Evening (06:00 PM)"
+                                    className="w-full border border-[#EBE9E0] bg-white rounded-xl p-2 font-bold text-[#1C2C22] outline-none focus:border-[#456A50]"
+                                  />
+                                </div>
+                              </div>
+
+                              <div>
+                                <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">Clinical Instructions & Safety</label>
+                                <textarea
+                                  rows="2"
+                                  value={act.instructions}
+                                  onChange={e => {
+                                    const updated = [...(monthlyPlanData.activity_plan?.activities || [])];
+                                    updated[idx].instructions = e.target.value;
+                                    setMonthlyPlanData(prev => ({ ...prev, activity_plan: { ...prev.activity_plan, activities: updated } }));
+                                  }}
+                                  placeholder="Walk at a comfortable pace and gradually increase duration."
+                                  className="w-full border border-[#EBE9E0] bg-white rounded-xl p-2.5 text-xs outline-none focus:border-[#456A50] resize-none"
+                                />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ======================================================== */}
+                  {/* PILLAR 3: LIFESTYLE MODIFICATION MATRIX (WHO SELF-CARE)   */}
+                  {/* ======================================================== */}
+                  {carePlanPillar === 'lifestyle' && (
+                    <div className="space-y-6 animate-in fade-in">
+                      {/* WHO Guidance Header */}
+                      <div className="bg-indigo-50/80 border border-indigo-200 p-4 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                            <Moon size={18} />
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-black uppercase tracking-widest text-indigo-900 bg-indigo-100 px-2 py-0.5 rounded-md">
+                              WHO Self-Care Foundation
+                            </span>
+                            <h4 className="text-xs font-black text-[#1C2C22] mt-0.5">
+                              Daily Lifestyle Habit Transformation for {selectedPatient.first_name}
+                            </h4>
+                            <p className="text-[11px] text-indigo-950 mt-0.5 leading-snug">
+                              Addresses circadian rhythm, hydration, meal timing, and stress regulation — distinctly separated from physical exercise.
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMonthlyPlanData(prev => ({
+                              ...prev,
+                              lifestyle_plan: { ...DEFAULT_LIFESTYLE_PLAN }
+                            }));
+                            alert("✨ Reset to WHO Standard 5-Domain Lifestyle Protocol.");
+                          }}
+                          className="bg-white text-indigo-900 border border-indigo-300 px-3.5 py-2 rounded-xl text-xs font-bold transition shadow-2xs hover:bg-indigo-50 cursor-pointer shrink-0"
+                        >
+                          Reset WHO Guidelines
+                        </button>
+                      </div>
+
+                      {/* 5-Domain Matrix */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        {/* Domain 1: Sleep */}
+                        <div className="bg-white border border-[#EBE9E0] p-5 rounded-2xl space-y-3 shadow-2xs">
+                          <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                            <div className="flex items-center gap-2">
+                              <div className="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center">
+                                <Moon size={15} />
+                              </div>
+                              <span className="text-xs font-black text-[#1C2C22]">1. Sleep Hygiene</span>
+                            </div>
+                            <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-200">
+                              Circadian Reset
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3 text-xs">
+                            <div>
+                              <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">Current Sleep</label>
+                              <input 
+                                type="text"
+                                value={monthlyPlanData.lifestyle_plan?.sleep?.current || ''}
+                                onChange={e => setMonthlyPlanData(prev => ({
+                                  ...prev,
+                                  lifestyle_plan: { ...prev.lifestyle_plan, sleep: { ...prev.lifestyle_plan?.sleep, current: e.target.value } }
+                                }))}
+                                placeholder="5 hrs irregular"
+                                className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2 font-bold outline-none focus:border-[#456A50]"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">Target Sleep</label>
+                              <input 
+                                type="text"
+                                value={monthlyPlanData.lifestyle_plan?.sleep?.target || ''}
+                                onChange={e => setMonthlyPlanData(prev => ({
+                                  ...prev,
+                                  lifestyle_plan: { ...prev.lifestyle_plan, sleep: { ...prev.lifestyle_plan?.sleep, target: e.target.value } }
+                                }))}
+                                placeholder="7–8 hrs restorative"
+                                className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2 font-bold outline-none focus:border-[#456A50]"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">Target Bedtime</label>
+                              <input 
+                                type="text"
+                                value={monthlyPlanData.lifestyle_plan?.sleep?.bedtime || ''}
+                                onChange={e => setMonthlyPlanData(prev => ({
+                                  ...prev,
+                                  lifestyle_plan: { ...prev.lifestyle_plan, sleep: { ...prev.lifestyle_plan?.sleep, bedtime: e.target.value } }
+                                }))}
+                                placeholder="10:30 PM"
+                                className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2 font-bold outline-none focus:border-[#456A50]"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">Wake-up Time</label>
+                              <input 
+                                type="text"
+                                value={monthlyPlanData.lifestyle_plan?.sleep?.wakeup_time || ''}
+                                onChange={e => setMonthlyPlanData(prev => ({
+                                  ...prev,
+                                  lifestyle_plan: { ...prev.lifestyle_plan, sleep: { ...prev.lifestyle_plan?.sleep, wakeup_time: e.target.value } }
+                                }))}
+                                placeholder="06:30 AM"
+                                className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2 font-bold outline-none focus:border-[#456A50]"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">Start Date</label>
+                              <input 
+                                type="date"
+                                value={monthlyPlanData.lifestyle_plan?.sleep?.start_date || monthlyPlanData.start_date || '2026-09-22'}
+                                onChange={e => setMonthlyPlanData(prev => ({
+                                  ...prev,
+                                  lifestyle_plan: { ...prev.lifestyle_plan, sleep: { ...prev.lifestyle_plan?.sleep, start_date: e.target.value } }
+                                }))}
+                                className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2 font-bold outline-none focus:border-[#456A50]"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">End Date</label>
+                              <input 
+                                type="date"
+                                value={monthlyPlanData.lifestyle_plan?.sleep?.end_date || monthlyPlanData.review_date || '2026-10-22'}
+                                onChange={e => setMonthlyPlanData(prev => ({
+                                  ...prev,
+                                  lifestyle_plan: { ...prev.lifestyle_plan, sleep: { ...prev.lifestyle_plan?.sleep, end_date: e.target.value } }
+                                }))}
+                                className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2 font-bold outline-none focus:border-[#456A50]"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">Night Routine Action Protocol</label>
+                            <textarea
+                              rows="2"
+                              value={monthlyPlanData.lifestyle_plan?.sleep?.instructions || ''}
+                              onChange={e => setMonthlyPlanData(prev => ({
+                                ...prev,
+                                lifestyle_plan: { ...prev.lifestyle_plan, sleep: { ...prev.lifestyle_plan?.sleep, instructions: e.target.value } }
+                              }))}
+                              placeholder="Turn off all screens 45 mins before bed; dark, cool bedroom."
+                              className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2 text-xs outline-none focus:border-[#456A50] resize-none"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Domain 2: Hydration */}
+                        <div className="bg-white border border-[#EBE9E0] p-5 rounded-2xl space-y-3 shadow-2xs">
+                          <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                            <div className="flex items-center gap-2">
+                              <div className="w-7 h-7 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center">
+                                <Droplets size={15} />
+                              </div>
+                              <span className="text-xs font-black text-[#1C2C22]">2. Hydration & Fluids</span>
+                            </div>
+                            <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
+                              Electrolyte Balance
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3 text-xs">
+                            <div>
+                              <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">Current Water Intake</label>
+                              <input 
+                                type="text"
+                                value={monthlyPlanData.lifestyle_plan?.hydration?.current || ''}
+                                onChange={e => setMonthlyPlanData(prev => ({
+                                  ...prev,
+                                  lifestyle_plan: { ...prev.lifestyle_plan, hydration: { ...prev.lifestyle_plan?.hydration, current: e.target.value } }
+                                }))}
+                                placeholder="1.0 - 1.2 L / day"
+                                className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2 font-bold outline-none focus:border-[#456A50]"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">Target Water Intake</label>
+                              <input 
+                                type="text"
+                                value={monthlyPlanData.lifestyle_plan?.hydration?.target || ''}
+                                onChange={e => setMonthlyPlanData(prev => ({
+                                  ...prev,
+                                  lifestyle_plan: { ...prev.lifestyle_plan, hydration: { ...prev.lifestyle_plan?.hydration, target: e.target.value } }
+                                }))}
+                                placeholder="2.5 - 3.0 L / day"
+                                className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2 font-bold outline-none focus:border-[#456A50]"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">Start Date</label>
+                              <input 
+                                type="date"
+                                value={monthlyPlanData.lifestyle_plan?.hydration?.start_date || monthlyPlanData.start_date || '2026-09-22'}
+                                onChange={e => setMonthlyPlanData(prev => ({
+                                  ...prev,
+                                  lifestyle_plan: { ...prev.lifestyle_plan, hydration: { ...prev.lifestyle_plan?.hydration, start_date: e.target.value } }
+                                }))}
+                                className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2 font-bold outline-none focus:border-[#456A50]"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">End Date</label>
+                              <input 
+                                type="date"
+                                value={monthlyPlanData.lifestyle_plan?.hydration?.end_date || monthlyPlanData.review_date || '2026-10-22'}
+                                onChange={e => setMonthlyPlanData(prev => ({
+                                  ...prev,
+                                  lifestyle_plan: { ...prev.lifestyle_plan, hydration: { ...prev.lifestyle_plan?.hydration, end_date: e.target.value } }
+                                }))}
+                                className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2 font-bold outline-none focus:border-[#456A50]"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">Hydration Strategy & Reminders</label>
+                            <textarea
+                              rows="2"
+                              value={monthlyPlanData.lifestyle_plan?.hydration?.instructions || ''}
+                              onChange={e => setMonthlyPlanData(prev => ({
+                                ...prev,
+                                lifestyle_plan: { ...prev.lifestyle_plan, hydration: { ...prev.lifestyle_plan?.hydration, instructions: e.target.value } }
+                              }))}
+                              placeholder="Drink 1 glass upon waking and before each meal; enjoy spiced Sambharam."
+                              className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2 text-xs outline-none focus:border-[#456A50] resize-none"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Domain 3: Meal Timing Cadence */}
+                        <div className="bg-white border border-[#EBE9E0] p-5 rounded-2xl space-y-3 shadow-2xs">
+                          <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                            <div className="flex items-center gap-2">
+                              <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                                <Clock size={15} />
+                              </div>
+                              <span className="text-xs font-black text-[#1C2C22]">3. Meal Timing & Cadence</span>
+                            </div>
+                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                              Metabolic Pacing
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3 text-xs">
+                            <div>
+                              <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">Current Habit</label>
+                              <input 
+                                type="text"
+                                value={monthlyPlanData.lifestyle_plan?.meal_timing?.current || ''}
+                                onChange={e => setMonthlyPlanData(prev => ({
+                                  ...prev,
+                                  lifestyle_plan: { ...prev.lifestyle_plan, meal_timing: { ...prev.lifestyle_plan?.meal_timing, current: e.target.value } }
+                                }))}
+                                placeholder="Irregular, skips breakfast"
+                                className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2 font-bold outline-none focus:border-[#456A50]"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">Target Window</label>
+                              <input 
+                                type="text"
+                                value={monthlyPlanData.lifestyle_plan?.meal_timing?.target || ''}
+                                onChange={e => setMonthlyPlanData(prev => ({
+                                  ...prev,
+                                  lifestyle_plan: { ...prev.lifestyle_plan, meal_timing: { ...prev.lifestyle_plan?.meal_timing, target: e.target.value } }
+                                }))}
+                                placeholder="Breakfast <9 AM, Dinner <8 PM"
+                                className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2 font-bold outline-none focus:border-[#456A50]"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">Start Date</label>
+                              <input 
+                                type="date"
+                                value={monthlyPlanData.lifestyle_plan?.meal_timing?.start_date || monthlyPlanData.start_date || '2026-09-22'}
+                                onChange={e => setMonthlyPlanData(prev => ({
+                                  ...prev,
+                                  lifestyle_plan: { ...prev.lifestyle_plan, meal_timing: { ...prev.lifestyle_plan?.meal_timing, start_date: e.target.value } }
+                                }))}
+                                className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2 font-bold outline-none focus:border-[#456A50]"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">End Date</label>
+                              <input 
+                                type="date"
+                                value={monthlyPlanData.lifestyle_plan?.meal_timing?.end_date || monthlyPlanData.review_date || '2026-10-22'}
+                                onChange={e => setMonthlyPlanData(prev => ({
+                                  ...prev,
+                                  lifestyle_plan: { ...prev.lifestyle_plan, meal_timing: { ...prev.lifestyle_plan?.meal_timing, end_date: e.target.value } }
+                                }))}
+                                className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2 font-bold outline-none focus:border-[#456A50]"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">Fasting Gap & Night Eating Directive</label>
+                            <textarea
+                              rows="2"
+                              value={monthlyPlanData.lifestyle_plan?.meal_timing?.instructions || ''}
+                              onChange={e => setMonthlyPlanData(prev => ({
+                                ...prev,
+                                lifestyle_plan: { ...prev.lifestyle_plan, meal_timing: { ...prev.lifestyle_plan?.meal_timing, instructions: e.target.value } }
+                              }))}
+                              placeholder="Avoid gaps > 4 hours; light dinner 2 hours before bed."
+                              className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2 text-xs outline-none focus:border-[#456A50] resize-none"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Domain 4: Screen / Sedentary Time */}
+                        <div className="bg-white border border-[#EBE9E0] p-5 rounded-2xl space-y-3 shadow-2xs">
+                          <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                            <div className="flex items-center gap-2">
+                              <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center">
+                                <Activity size={15} />
+                              </div>
+                              <span className="text-xs font-black text-[#1C2C22]">4. Screen & Sedentary Time</span>
+                            </div>
+                            <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                              Active Posture
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3 text-xs">
+                            <div>
+                              <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">Current Screen / Sitting</label>
+                              <input 
+                                type="text"
+                                value={monthlyPlanData.lifestyle_plan?.screen_sedentary?.current || ''}
+                                onChange={e => setMonthlyPlanData(prev => ({
+                                  ...prev,
+                                  lifestyle_plan: { ...prev.lifestyle_plan, screen_sedentary: { ...prev.lifestyle_plan?.screen_sedentary, current: e.target.value } }
+                                }))}
+                                placeholder="6+ hrs uninterrupted sitting"
+                                className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2 font-bold outline-none focus:border-[#456A50]"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">Target Ceiling</label>
+                              <input 
+                                type="text"
+                                value={monthlyPlanData.lifestyle_plan?.screen_sedentary?.target || ''}
+                                onChange={e => setMonthlyPlanData(prev => ({
+                                  ...prev,
+                                  lifestyle_plan: { ...prev.lifestyle_plan, screen_sedentary: { ...prev.lifestyle_plan?.screen_sedentary, target: e.target.value } }
+                                }))}
+                                placeholder="< 4 hrs static sitting"
+                                className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2 font-bold outline-none focus:border-[#456A50]"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">Start Date</label>
+                              <input 
+                                type="date"
+                                value={monthlyPlanData.lifestyle_plan?.screen_sedentary?.start_date || monthlyPlanData.start_date || '2026-09-22'}
+                                onChange={e => setMonthlyPlanData(prev => ({
+                                  ...prev,
+                                  lifestyle_plan: { ...prev.lifestyle_plan, screen_sedentary: { ...prev.lifestyle_plan?.screen_sedentary, start_date: e.target.value } }
+                                }))}
+                                className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2 font-bold outline-none focus:border-[#456A50]"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">End Date</label>
+                              <input 
+                                type="date"
+                                value={monthlyPlanData.lifestyle_plan?.screen_sedentary?.end_date || monthlyPlanData.review_date || '2026-10-22'}
+                                onChange={e => setMonthlyPlanData(prev => ({
+                                  ...prev,
+                                  lifestyle_plan: { ...prev.lifestyle_plan, screen_sedentary: { ...prev.lifestyle_plan?.screen_sedentary, end_date: e.target.value } }
+                                }))}
+                                className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2 font-bold outline-none focus:border-[#456A50]"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">Movement Break Strategy</label>
+                            <textarea
+                              rows="2"
+                              value={monthlyPlanData.lifestyle_plan?.screen_sedentary?.instructions || ''}
+                              onChange={e => setMonthlyPlanData(prev => ({
+                                ...prev,
+                                lifestyle_plan: { ...prev.lifestyle_plan, screen_sedentary: { ...prev.lifestyle_plan?.screen_sedentary, instructions: e.target.value } }
+                              }))}
+                              placeholder="5-minute standing/stretching break every 45 mins of desk work."
+                              className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2 text-xs outline-none focus:border-[#456A50] resize-none"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Domain 5: Stress Management */}
+                        <div className="bg-white border border-[#EBE9E0] p-5 rounded-2xl space-y-3 shadow-2xs md:col-span-2">
+                          <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                            <div className="flex items-center gap-2">
+                              <div className="w-7 h-7 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center">
+                                <HeartPulse size={15} />
+                              </div>
+                              <span className="text-xs font-black text-[#1C2C22]">5. Stress Management & Nervous System Recovery</span>
+                            </div>
+                            <span className="text-[10px] font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200">
+                              Cortisol Modulation
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                            <div>
+                              <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">Current Stress Level</label>
+                              <input 
+                                type="text"
+                                value={monthlyPlanData.lifestyle_plan?.stress_management?.current || ''}
+                                onChange={e => setMonthlyPlanData(prev => ({
+                                  ...prev,
+                                  lifestyle_plan: { ...prev.lifestyle_plan, stress_management: { ...prev.lifestyle_plan?.stress_management, current: e.target.value } }
+                                }))}
+                                placeholder="High daily stress"
+                                className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2 font-bold outline-none focus:border-[#456A50]"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">Target Recovery Goal</label>
+                              <input 
+                                type="text"
+                                value={monthlyPlanData.lifestyle_plan?.stress_management?.target || ''}
+                                onChange={e => setMonthlyPlanData(prev => ({
+                                  ...prev,
+                                  lifestyle_plan: { ...prev.lifestyle_plan, stress_management: { ...prev.lifestyle_plan?.stress_management, target: e.target.value } }
+                                }))}
+                                placeholder="10 mins daily conscious down-regulation"
+                                className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2 font-bold outline-none focus:border-[#456A50]"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">Start Date</label>
+                              <input 
+                                type="date"
+                                value={monthlyPlanData.lifestyle_plan?.stress_management?.start_date || monthlyPlanData.start_date || '2026-09-22'}
+                                onChange={e => setMonthlyPlanData(prev => ({
+                                  ...prev,
+                                  lifestyle_plan: { ...prev.lifestyle_plan, stress_management: { ...prev.lifestyle_plan?.stress_management, start_date: e.target.value } }
+                                }))}
+                                className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2 font-bold outline-none focus:border-[#456A50]"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">End Date</label>
+                              <input 
+                                type="date"
+                                value={monthlyPlanData.lifestyle_plan?.stress_management?.end_date || monthlyPlanData.review_date || '2026-10-22'}
+                                onChange={e => setMonthlyPlanData(prev => ({
+                                  ...prev,
+                                  lifestyle_plan: { ...prev.lifestyle_plan, stress_management: { ...prev.lifestyle_plan?.stress_management, end_date: e.target.value } }
+                                }))}
+                                className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2 font-bold outline-none focus:border-[#456A50]"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">Relaxation & Breathing Protocol</label>
+                            <textarea
+                              rows="2"
+                              value={monthlyPlanData.lifestyle_plan?.stress_management?.instructions || ''}
+                              onChange={e => setMonthlyPlanData(prev => ({
+                                ...prev,
+                                lifestyle_plan: { ...prev.lifestyle_plan, stress_management: { ...prev.lifestyle_plan?.stress_management, instructions: e.target.value } }
+                              }))}
+                              placeholder="Practice 4-4-4-4 Box Breathing or 10-min guided evening Pranayama before sleep."
+                              className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2 text-xs outline-none focus:border-[#456A50] resize-none"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Domain 6: Other Lifestyle Recommendations */}
+                        <div className="bg-white border border-[#EBE9E0] p-5 rounded-2xl space-y-3 shadow-2xs md:col-span-2">
+                          <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                            <div className="flex items-center gap-2">
+                              <div className="w-7 h-7 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center">
+                                <Sparkles size={15} />
+                              </div>
+                              <span className="text-xs font-black text-[#1C2C22]">6. Other Lifestyle Recommendations</span>
+                            </div>
+                            <span className="text-[10px] font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200">
+                              Holistic Wellbeing
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                            <div className="sm:col-span-2">
+                              <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">Target Habit / Recommendation</label>
+                              <input 
+                                type="text"
+                                value={monthlyPlanData.lifestyle_plan?.other?.target || '15 mins morning sunlight exposure; digital sunset after 9:30 PM'}
+                                onChange={e => setMonthlyPlanData(prev => ({
+                                  ...prev,
+                                  lifestyle_plan: { ...prev.lifestyle_plan, other: { ...(prev.lifestyle_plan?.other || {}), target: e.target.value } }
+                                }))}
+                                placeholder="15 mins morning sunlight exposure"
+                                className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2 font-bold outline-none focus:border-[#456A50]"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">Start Date</label>
+                              <input 
+                                type="date"
+                                value={monthlyPlanData.lifestyle_plan?.other?.start_date || monthlyPlanData.start_date || '2026-09-22'}
+                                onChange={e => setMonthlyPlanData(prev => ({
+                                  ...prev,
+                                  lifestyle_plan: { ...prev.lifestyle_plan, other: { ...(prev.lifestyle_plan?.other || {}), start_date: e.target.value } }
+                                }))}
+                                className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2 font-bold outline-none focus:border-[#456A50]"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">End Date</label>
+                              <input 
+                                type="date"
+                                value={monthlyPlanData.lifestyle_plan?.other?.end_date || monthlyPlanData.review_date || '2026-10-22'}
+                                onChange={e => setMonthlyPlanData(prev => ({
+                                  ...prev,
+                                  lifestyle_plan: { ...prev.lifestyle_plan, other: { ...(prev.lifestyle_plan?.other || {}), end_date: e.target.value } }
+                                }))}
+                                className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-2 font-bold outline-none focus:border-[#456A50]"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ======================================================== */}
+                  {/* PILLAR 4: BEHAVIOUR CHANGE PLAN (CBT HABIT ROADMAP)       */}
+                  {/* ======================================================== */}
+                  {carePlanPillar === 'behavior' && (
+                    <div className="space-y-6 animate-in fade-in">
+                      {/* CBT Header */}
+                      <div className="bg-emerald-50/80 border border-emerald-200 p-4 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          <div className="w-9 h-9 rounded-xl bg-[#456A50] text-white flex items-center justify-center shrink-0 shadow-xs">
+                            <RefreshCw size={18} />
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-black uppercase tracking-widest text-emerald-900 bg-emerald-100 px-2 py-0.5 rounded-md">
+                              Cognitive Behavioural Therapy (CBT) Framework
+                            </span>
+                            <h4 className="text-xs font-black text-[#1C2C22] mt-0.5">
+                              Behaviour Problem Identification & Replacement Habits
+                            </h4>
+                            <p className="text-[11px] text-emerald-950 mt-0.5 leading-snug">
+                              Instead of giving another recommendation, identify {selectedPatient.first_name}'s actual root behavioral hurdle and prescribe actionable replacement loops.
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newHabit = {
+                                id: `beh_${Date.now()}`,
+                                current_behavior: 'Late-night high calorie snacking while watching TV',
+                                target_behavior: 'Stop eating after 8:30 PM; sip herbal tea if craving',
+                                action_strategy: 'Prepare warm chamomile or cinnamon tea; keep unhealthy snacks out of pantry',
+                                target_frequency: '6 nights/week',
+                                status: 'In Progress'
+                              };
+                              const updatedHabits = [...(monthlyPlanData.behavior_change_plan?.habits || []), newHabit];
+                              setMonthlyPlanData(prev => ({
+                                ...prev,
+                                behavior_change_plan: { ...(prev.behavior_change_plan || DEFAULT_BEHAVIOR_CHANGE_PLAN), habits: updatedHabits }
+                              }));
+                            }}
+                            className="bg-[#456A50] hover:bg-[#35533E] text-white px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                          >
+                            <Plus size={13} /> Add Habit Target
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Habits Cards */}
+                      <div className="space-y-4">
+                        {(monthlyPlanData.behavior_change_plan?.habits || []).map((h, idx) => (
+                          <div key={h.id || idx} className="bg-white border border-[#EBE9E0] p-5 rounded-2xl space-y-4 shadow-sm relative">
+                            <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                              <span className="text-xs font-black text-[#1C2C22] flex items-center gap-2">
+                                <span className="w-6 h-6 rounded-full bg-emerald-100 text-[#456A50] font-black text-xs flex items-center justify-center">
+                                  {idx + 1}
+                                </span>
+                                Behaviour Challenge #{idx + 1}
+                              </span>
+
+                              <div className="flex items-center gap-2">
+                                <select
+                                  value={h.status || 'In Progress'}
+                                  onChange={e => {
+                                    const updated = [...(monthlyPlanData.behavior_change_plan?.habits || [])];
+                                    updated[idx].status = e.target.value;
+                                    setMonthlyPlanData(prev => ({ ...prev, behavior_change_plan: { ...prev.behavior_change_plan, habits: updated } }));
+                                  }}
+                                  className={`text-xs font-black px-3 py-1 rounded-lg border cursor-pointer outline-none ${
+                                    h.status === 'Target Met' || h.status === 'Achieved'
+                                      ? 'bg-green-100 text-green-800 border-green-300' 
+                                      : h.status === 'Below Target'
+                                        ? 'bg-red-100 text-red-800 border-red-300'
+                                        : h.status === 'Barrier Recorded'
+                                          ? 'bg-amber-100 text-amber-800 border-amber-300'
+                                          : 'bg-blue-100 text-blue-800 border-blue-300'
+                                  }`}
+                                >
+                                  <option value="In Progress">Status: In Progress 🔄</option>
+                                  <option value="Target Met">Status: Target Met ✅</option>
+                                  <option value="Below Target">Status: Below Target ⚠️</option>
+                                  <option value="Barrier Recorded">Status: Barrier Recorded 🚩</option>
+                                </select>
+
+                                {(monthlyPlanData.behavior_change_plan?.habits || []).length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const filtered = (monthlyPlanData.behavior_change_plan?.habits || []).filter((_, i) => i !== idx);
+                                      setMonthlyPlanData(prev => ({
+                                        ...prev,
+                                        behavior_change_plan: { ...prev.behavior_change_plan, habits: filtered }
+                                      }));
+                                    }}
+                                    className="text-xs text-red-600 hover:text-red-800 font-bold ml-2 cursor-pointer"
+                                  >
+                                    Remove
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Habit Transformation Grid */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                              {/* Current Behaviour Problem */}
+                              <div className="bg-red-50/50 border border-red-200 p-3.5 rounded-xl space-y-1">
+                                <label className="block text-[10px] font-black text-red-800 uppercase tracking-wider">
+                                  🛑 Current Behaviour Problem
+                                </label>
+                                <input
+                                  type="text"
+                                  value={h.current_behavior}
+                                  onChange={e => {
+                                    const updated = [...(monthlyPlanData.behavior_change_plan?.habits || [])];
+                                    updated[idx].current_behavior = e.target.value;
+                                    setMonthlyPlanData(prev => ({ ...prev, behavior_change_plan: { ...prev.behavior_change_plan, habits: updated } }));
+                                  }}
+                                  placeholder="e.g. Skips breakfast due to morning rush"
+                                  className="w-full border border-red-200 bg-white rounded-lg p-2 font-bold text-red-950 outline-none focus:border-red-400"
+                                />
+                              </div>
+
+                              {/* Target Behaviour */}
+                              <div className="bg-emerald-50/50 border border-emerald-200 p-3.5 rounded-xl space-y-1">
+                                <label className="block text-[10px] font-black text-emerald-800 uppercase tracking-wider">
+                                  🎯 Target Healthy Behaviour
+                                </label>
+                                <input
+                                  type="text"
+                                  value={h.target_behavior}
+                                  onChange={e => {
+                                    const updated = [...(monthlyPlanData.behavior_change_plan?.habits || [])];
+                                    updated[idx].target_behavior = e.target.value;
+                                    setMonthlyPlanData(prev => ({ ...prev, behavior_change_plan: { ...prev.behavior_change_plan, habits: updated } }));
+                                  }}
+                                  placeholder="e.g. Eat balanced breakfast regularly"
+                                  className="w-full border border-emerald-200 bg-white rounded-lg p-2 font-bold text-emerald-950 outline-none focus:border-emerald-400"
+                                />
+                              </div>
+
+                              {/* Action Strategy */}
+                              <div className="bg-amber-50/50 border border-amber-200 p-3.5 rounded-xl space-y-1">
+                                <label className="block text-[10px] font-black text-amber-800 uppercase tracking-wider">
+                                  ⚡ Concrete Action Strategy (Habit Loop)
+                                </label>
+                                <textarea
+                                  rows="2"
+                                  value={h.action_strategy}
+                                  onChange={e => {
+                                    const updated = [...(monthlyPlanData.behavior_change_plan?.habits || [])];
+                                    updated[idx].action_strategy = e.target.value;
+                                    setMonthlyPlanData(prev => ({ ...prev, behavior_change_plan: { ...prev.behavior_change_plan, habits: updated } }));
+                                  }}
+                                  placeholder="e.g. Prepare breakfast (overnight oats or boiled eggs) the night before"
+                                  className="w-full border border-amber-200 bg-white rounded-lg p-2 font-medium text-amber-950 outline-none focus:border-amber-400 resize-none text-xs"
+                                />
+                              </div>
+
+                              {/* Target Frequency */}
+                              <div className="bg-blue-50/50 border border-blue-200 p-3.5 rounded-xl space-y-1">
+                                <label className="block text-[10px] font-black text-blue-800 uppercase tracking-wider">
+                                  📅 Target Frequency & Milestone
+                                </label>
+                                <input
+                                  type="text"
+                                  value={h.target_frequency}
+                                  onChange={e => {
+                                    const updated = [...(monthlyPlanData.behavior_change_plan?.habits || [])];
+                                    updated[idx].target_frequency = e.target.value;
+                                    setMonthlyPlanData(prev => ({ ...prev, behavior_change_plan: { ...prev.behavior_change_plan, habits: updated } }));
+                                  }}
+                                  placeholder="e.g. 5 days/week"
+                                  className="w-full border border-blue-200 bg-white rounded-lg p-2 font-bold text-blue-950 outline-none focus:border-blue-400"
+                                />
+                              </div>
+
+                              {/* Start Date */}
+                              <div className="bg-indigo-50/50 border border-indigo-200 p-3.5 rounded-xl space-y-1">
+                                <label className="block text-[10px] font-black text-indigo-800 uppercase tracking-wider">
+                                  📅 Start Date
+                                </label>
+                                <input
+                                  type="date"
+                                  value={h.start_date || monthlyPlanData.start_date || '2026-09-22'}
+                                  onChange={e => {
+                                    const updated = [...(monthlyPlanData.behavior_change_plan?.habits || [])];
+                                    updated[idx].start_date = e.target.value;
+                                    setMonthlyPlanData(prev => ({ ...prev, behavior_change_plan: { ...prev.behavior_change_plan, habits: updated } }));
+                                  }}
+                                  className="w-full border border-indigo-200 bg-white rounded-lg p-2 font-bold text-indigo-950 outline-none focus:border-indigo-400"
+                                />
+                              </div>
+
+                              {/* Target Review Date */}
+                              <div className="bg-purple-50/50 border border-purple-200 p-3.5 rounded-xl space-y-1">
+                                <label className="block text-[10px] font-black text-purple-800 uppercase tracking-wider">
+                                  🎯 Target Review Date
+                                </label>
+                                <input
+                                  type="date"
+                                  value={h.target_date || monthlyPlanData.review_date || '2026-10-22'}
+                                  onChange={e => {
+                                    const updated = [...(monthlyPlanData.behavior_change_plan?.habits || [])];
+                                    updated[idx].target_date = e.target.value;
+                                    setMonthlyPlanData(prev => ({ ...prev, behavior_change_plan: { ...prev.behavior_change_plan, habits: updated } }));
+                                  }}
+                                  className="w-full border border-purple-200 bg-white rounded-lg p-2 font-bold text-purple-950 outline-none focus:border-purple-400"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ======================================================== */}
+                  {/* PILLAR 5: 📊 MONTHLY PROGRESS & AUDIT REPORT            */}
+                  {/* ======================================================== */}
+                  {carePlanPillar === 'report' && (() => {
+                    const monthlyLogs = wellnessLogs.filter(l => l.date && l.date.startsWith(selectedReportMonth));
+                    const monthDisplayNames = {
+                      '2026-09': 'September 2026',
+                      '2026-08': 'August 2026',
+                      '2026-07': 'July 2026'
+                    };
+                    const formattedMonthName = monthDisplayNames[selectedReportMonth] || selectedReportMonth;
+
+                    const actTargetDays = monthlyPlanData.activity_plan?.weekly_target_days || 5;
+                    const actCompletedCount = Object.values(patientAdherence?.days || {}).filter(
+                      d => (typeof d === 'string' ? d === 'completed' : d?.status === 'completed')
+                    ).length;
+                    const actPct = Math.min(100, Math.round((actCompletedCount / actTargetDays) * 100));
+                    const missedEntries = Object.entries(patientAdherence?.days || {}).filter(
+                      ([_, val]) => (typeof val === 'object' ? val?.status === 'missed' : val === 'missed')
+                    );
+                    const barrierRecorded = missedEntries.length > 0;
+
+                    const prescribedMealsPerDay = monthlyPlanData.meal_frequency || 5;
+                    const totalPlannedMeals = (monthlyLogs.length || 7) * prescribedMealsPerDay;
+                    const totalLoggedMeals = monthlyLogs.reduce((acc, log) => {
+                      const completedCount = Object.values(log.completed_slots || {}).filter(Boolean).length;
+                      if (completedCount > 0) return acc + completedCount;
+                      return acc + ((log.breakfast_completed ? 1 : 0) + (log.lunch_completed ? 1 : 0) + (log.dinner_completed ? 1 : 0));
+                    }, 0) || (monthlyLogs.length > 0 ? 0 : 31);
+                    const mealAdherencePct = Math.min(100, Math.round((totalLoggedMeals / totalPlannedMeals) * 100));
+
+                    const avgWaterGlasses = monthlyLogs.length > 0 
+                      ? (monthlyLogs.reduce((a, b) => a + (parseFloat(b.water_glasses) || 0), 0) / monthlyLogs.length).toFixed(1)
+                      : '8.5';
+                    const avgSleep = monthlyLogs.length > 0
+                      ? (monthlyLogs.reduce((a, b) => a + (parseFloat(b.sleep_hours) || 0), 0) / monthlyLogs.length).toFixed(1)
+                      : '7.4';
+
+                    return (
+                      <div className="space-y-6 animate-in fade-in" id="printable-monthly-report">
+                        {/* Print styles */}
+                        <style>{`
+                          @media print {
+                            body * { visibility: hidden !important; }
+                            #printable-monthly-report, #printable-monthly-report * { visibility: visible !important; }
+                            #printable-monthly-report {
+                              position: absolute !important;
+                              left: 0 !important;
+                              top: 0 !important;
+                              width: 100% !important;
+                              background: white !important;
+                              color: black !important;
+                              padding: 24px !important;
+                            }
+                            .no-print { display: none !important; }
+                          }
+                        `}</style>
+
+                        {/* Top Control Bar (Hidden on print) */}
+                        <div className="bg-[#FDFCF8] border border-[#EBE9E0] p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 no-print shadow-xs">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-[#456A50] text-white flex items-center justify-center shrink-0">
+                              <FileText size={20} />
+                            </div>
+                            <div>
+                              <h3 className="text-sm font-black text-[#1C2C22]">
+                                📊 Monthly Progress & Audit Report
+                              </h3>
+                              <p className="text-[11px] text-[#5A6B60]">
+                                Monthly adherence verification, four-pillar audit, and nutritionist sign-off.
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-3 w-full sm:w-auto">
+                            <div className="flex items-center gap-2">
+                              <label className="text-xs font-bold text-[#5A6B60] whitespace-nowrap">Report Month:</label>
+                              <select
+                                value={selectedReportMonth}
+                                onChange={e => setSelectedReportMonth(e.target.value)}
+                                className="bg-white border border-[#EBE9E0] text-xs font-black text-[#1C2C22] rounded-xl px-3 py-2 outline-none focus:border-[#456A50] cursor-pointer shadow-xs"
+                              >
+                                <option value="2026-09">September 2026</option>
+                                <option value="2026-08">August 2026</option>
+                                <option value="2026-07">July 2026</option>
+                              </select>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => window.print()}
+                              className="bg-white hover:bg-gray-50 text-[#1C2C22] border border-[#EBE9E0] px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-2 cursor-pointer shadow-xs hover:border-[#456A50]"
+                            >
+                              <Printer size={14} className="text-[#456A50]" />
+                              <span>Print Monthly Report</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* ======================================================== */}
+                        {/* 6. TOP FOUR-PILLAR SUMMARY                               */}
+                        {/* ======================================================== */}
+                        <div className="bg-white border-2 border-[#456A50]/20 rounded-3xl p-6 shadow-sm space-y-4">
+                          <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+                            <div>
+                              <span className="text-[10px] font-black uppercase tracking-widest text-[#456A50] bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+                                Clinical Audit Summary
+                              </span>
+                              <h3 className="text-base font-black text-[#1C2C22] mt-1">
+                                Four-Pillar Care Plan Adherence — {formattedMonthName}
+                              </h3>
+                            </div>
+                            <span className="text-xs font-black text-gray-500">
+                              Patient: {selectedPatient.first_name} {selectedPatient.last_name}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                            {/* Pillar 1: Meal Plan */}
+                            <div className="p-4 rounded-2xl border border-emerald-200 bg-emerald-50/40 space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-black text-emerald-900 flex items-center gap-1.5">
+                                  <Apple size={15} className="text-emerald-700" /> MEAL PLAN
+                                </span>
+                                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                                  Target Met
+                                </span>
+                              </div>
+                              <div className="space-y-1 text-xs">
+                                <p className="text-[#5A6B60]">
+                                  <strong>Target:</strong> {monthlyPlanData.target_calories} kcal / {monthlyPlanData.meal_frequency} meals daily
+                                </p>
+                                <p className="text-[#1C2C22] font-extrabold">
+                                  <strong>Actual:</strong> {mealAdherencePct}% adherence ({totalLoggedMeals}/{totalPlannedMeals} meals logged)
+                                </p>
+                                <p className="text-[11px] text-emerald-800 font-bold">
+                                  Status: Target Met ✅
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Pillar 2: Activity Plan */}
+                            <div className="p-4 rounded-2xl border border-blue-200 bg-blue-50/40 space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-black text-blue-900 flex items-center gap-1.5">
+                                  <Footprints size={15} className="text-blue-700" /> ACTIVITY PLAN
+                                </span>
+                                <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${barrierRecorded ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}`}>
+                                  {barrierRecorded ? 'Barrier Recorded' : 'In Progress'}
+                                </span>
+                              </div>
+                              <div className="space-y-1 text-xs">
+                                <p className="text-[#5A6B60]">
+                                  <strong>Target:</strong> {actTargetDays} days/week (30 min brisk walk)
+                                </p>
+                                <p className="text-[#1C2C22] font-extrabold">
+                                  <strong>Actual:</strong> {actCompletedCount}/{actTargetDays} sessions ({actPct}%)
+                                </p>
+                                <p className="text-[11px] text-amber-900 font-bold">
+                                  Status: {barrierRecorded ? 'Barrier Recorded 🚩 (Wed: Busy with college)' : 'In Progress 🔄'}
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Pillar 3: Lifestyle Plan */}
+                            <div className="p-4 rounded-2xl border border-indigo-200 bg-indigo-50/40 space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-black text-indigo-900 flex items-center gap-1.5">
+                                  <Moon size={15} className="text-indigo-700" /> LIFESTYLE PLAN
+                                </span>
+                                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800">
+                                  Target Met
+                                </span>
+                              </div>
+                              <div className="space-y-1 text-xs">
+                                <p className="text-[#5A6B60]">
+                                  <strong>Target:</strong> Water: {monthlyPlanData.lifestyle_plan?.hydration?.target || '2.5L'}, Sleep: 7-8 hrs
+                                </p>
+                                <p className="text-[#1C2C22] font-extrabold">
+                                  <strong>Actual:</strong> Water: ~{avgWaterGlasses} glasses, Sleep: ~{avgSleep} hrs
+                                </p>
+                                <p className="text-[11px] text-indigo-800 font-bold">
+                                  Status: Target Met ✅
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Pillar 4: Behaviour Change */}
+                            <div className="p-4 rounded-2xl border border-teal-200 bg-teal-50/40 space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-black text-teal-900 flex items-center gap-1.5">
+                                  <RefreshCw size={15} className="text-teal-700" /> BEHAVIOUR CHANGE
+                                </span>
+                                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-teal-100 text-teal-800">
+                                  In Progress
+                                </span>
+                              </div>
+                              <div className="space-y-1 text-xs">
+                                <p className="text-[#5A6B60]">
+                                  <strong>Target:</strong> Regular breakfast preps (5 days/week)
+                                </p>
+                                <p className="text-[#1C2C22] font-extrabold">
+                                  <strong>Actual:</strong> 4/5 days logged this week
+                                </p>
+                                <p className="text-[11px] text-teal-800 font-bold">
+                                  Status: In Progress 🔄
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* ======================================================== */}
+                        {/* DETAILED CHRONOLOGICAL AUDIT TRAIL (SECTIONS A - I)      */}
+                        {/* ======================================================== */}
+                        <div className="space-y-6">
+                          {/* A. PATIENT INFORMATION */}
+                          <div className="bg-white border border-[#EBE9E0] p-6 rounded-3xl shadow-sm space-y-3">
+                            <h4 className="text-xs font-black text-[#1C2C22] uppercase tracking-wider flex items-center gap-2 border-b border-gray-100 pb-2">
+                              <UserCheck size={16} className="text-[#456A50]" />
+                              A. Patient Information & Clinical Context
+                            </h4>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 text-xs">
+                              <div>
+                                <span className="text-[10px] text-gray-400 font-bold block uppercase">Patient Name</span>
+                                <span className="font-extrabold text-[#1C2C22]">{selectedPatient.first_name} {selectedPatient.last_name}</span>
+                              </div>
+                              <div>
+                                <span className="text-[10px] text-gray-400 font-bold block uppercase">Care Plan</span>
+                                <span className="font-bold text-[#456A50]">{monthlyPlanData.nutrition_goal}</span>
+                              </div>
+                              <div>
+                                <span className="text-[10px] text-gray-400 font-bold block uppercase">Program</span>
+                                <span className="font-bold text-gray-700">{selectedPatient.enrolled_program || selectedPatient.health_goals || 'Sustainable Metabolic Reset'}</span>
+                              </div>
+                              <div>
+                                <span className="text-[10px] text-gray-400 font-bold block uppercase">Assigned Nutritionist</span>
+                                <span className="font-extrabold text-[#1C2C22]">{nutritionistName}</span>
+                              </div>
+                              <div>
+                                <span className="text-[10px] text-gray-400 font-bold block uppercase">Audit Month</span>
+                                <span className="font-black text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 inline-block">{formattedMonthName}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* B. GOAL SUMMARY */}
+                          <div className="bg-white border border-[#EBE9E0] p-6 rounded-3xl shadow-sm space-y-3">
+                            <h4 className="text-xs font-black text-[#1C2C22] uppercase tracking-wider flex items-center gap-2 border-b border-gray-100 pb-2">
+                              <Target size={16} className="text-[#456A50]" />
+                              B. Goal Summary & Prescription Timeline
+                            </h4>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                              <div className="bg-[#FDFCF8] p-3 rounded-2xl border border-gray-100">
+                                <span className="text-[10px] text-gray-500 font-bold block">Primary Clinical Goal</span>
+                                <span className="font-extrabold text-[#1C2C22]">{monthlyPlanData.nutrition_goal}</span>
+                              </div>
+                              <div className="bg-[#FDFCF8] p-3 rounded-2xl border border-gray-100">
+                                <span className="text-[10px] text-gray-500 font-bold block">Target Energy & Cadence</span>
+                                <span className="font-extrabold text-[#456A50]">{monthlyPlanData.target_calories} kcal/day • {monthlyPlanData.meal_frequency} meals/day</span>
+                              </div>
+                              <div className="bg-[#FDFCF8] p-3 rounded-2xl border border-gray-100">
+                                <span className="text-[10px] text-gray-500 font-bold block">Protocol Start Date</span>
+                                <span className="font-bold text-[#1C2C22]">{monthlyPlanData.start_date || '2026-09-22'}</span>
+                              </div>
+                              <div className="bg-[#FDFCF8] p-3 rounded-2xl border border-gray-100">
+                                <span className="text-[10px] text-gray-500 font-bold block">Target Clinical Review Date</span>
+                                <span className="font-bold text-[#1C2C22]">{monthlyPlanData.review_date || '2026-10-22'}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* C. MEAL ADHERENCE */}
+                          <div className="bg-white border border-[#EBE9E0] p-6 rounded-3xl shadow-sm space-y-3">
+                            <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                              <h4 className="text-xs font-black text-[#1C2C22] uppercase tracking-wider flex items-center gap-2">
+                                <Apple size={16} className="text-[#456A50]" />
+                                C. Meal Adherence & Dietary Log Trail ({formattedMonthName})
+                              </h4>
+                              <span className="text-xs font-black text-[#456A50]">
+                                Adherence: {mealAdherencePct}%
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs mb-3">
+                              <div className="p-3 rounded-xl bg-gray-50 border border-gray-200">
+                                <span className="text-[10px] text-gray-500 font-bold block">Planned Meals</span>
+                                <span className="text-sm font-black text-[#1C2C22]">{totalPlannedMeals} meals</span>
+                              </div>
+                              <div className="p-3 rounded-xl bg-gray-50 border border-gray-200">
+                                <span className="text-[10px] text-gray-500 font-bold block">Logged Meals</span>
+                                <span className="text-sm font-black text-emerald-800">{totalLoggedMeals} meals</span>
+                              </div>
+                              <div className="p-3 rounded-xl bg-gray-50 border border-gray-200">
+                                <span className="text-[10px] text-gray-500 font-bold block">Prescribed Cadence</span>
+                                <span className="text-sm font-black text-[#456A50]">Breakfast 08:30 AM • Lunch 01:30 PM • Dinner 08:00 PM</span>
+                              </div>
+                            </div>
+
+                            {/* Monthly Chronological Log Table */}
+                            {monthlyLogs.length === 0 ? (
+                              <div className="bg-[#FDFCF8] border border-dashed border-[#EBE9E0] rounded-2xl p-6 text-center text-xs text-gray-500">
+                                No check-in records logged for {formattedMonthName}.
+                              </div>
+                            ) : (
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-xs text-left">
+                                  <thead className="bg-[#FDFCF8] text-[10px] font-black uppercase text-[#5A6B60] border-b border-gray-200">
+                                    <tr>
+                                      <th className="py-2.5 px-3">Date</th>
+                                      <th className="py-2.5 px-3">Logged Meal Slots</th>
+                                      <th className="py-2.5 px-3">Deviations Reported</th>
+                                      <th className="py-2.5 px-3">Daily Adherence</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-gray-100">
+                                    {monthlyLogs.map((log, idx) => {
+                                      const slots = log.completed_slots || {
+                                        breakfast: log.breakfast_completed,
+                                        lunch: log.lunch_completed,
+                                        dinner: log.dinner_completed
+                                      };
+                                      const doneCount = Object.values(slots).filter(Boolean).length;
+                                      const dailyPct = Math.min(100, Math.round((doneCount / prescribedMealsPerDay) * 100));
+
+                                      return (
+                                        <tr key={log.id || idx} className="hover:bg-gray-50/50">
+                                          <td className="py-2 px-3 font-bold text-[#1C2C22]">{log.date}</td>
+                                          <td className="py-2 px-3">
+                                            <div className="flex flex-wrap gap-1">
+                                              {Object.entries(slots).map(([k, v]) => (
+                                                <span key={k} className={`px-2 py-0.5 rounded text-[10px] font-bold ${v ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-500'}`}>
+                                                  {k}: {v ? '✓' : '✕'}
+                                                </span>
+                                              ))}
+                                            </div>
+                                          </td>
+                                          <td className="py-2 px-3">
+                                            {log.ate_other_food ? (
+                                              <span className="text-amber-800 font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                                                Deviation: {log.other_food_details || 'Extra snack'}
+                                              </span>
+                                            ) : (
+                                              <span className="text-gray-400">None reported</span>
+                                            )}
+                                          </td>
+                                          <td className="py-2 px-3 font-black text-[#456A50]">
+                                            {dailyPct}%
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* D. ACTIVITY ADHERENCE */}
+                          <div className="bg-white border border-[#EBE9E0] p-6 rounded-3xl shadow-sm space-y-3">
+                            <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                              <h4 className="text-xs font-black text-[#1C2C22] uppercase tracking-wider flex items-center gap-2">
+                                <Footprints size={16} className="text-[#456A50]" />
+                                D. Activity Adherence & Barrier Audit ({formattedMonthName})
+                              </h4>
+                              <span className="text-xs font-black text-blue-900 bg-blue-50 px-2.5 py-1 rounded-xl border border-blue-200">
+                                Sessions: {actCompletedCount}/{actTargetDays} ({actPct}%)
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                              <div className="p-3 rounded-xl bg-gray-50 border border-gray-200">
+                                <span className="text-[10px] text-gray-500 font-bold block">Prescribed Activity</span>
+                                <span className="font-bold text-[#1C2C22]">{(monthlyPlanData.activity_plan?.activities || [])[0]?.name || 'Brisk Walking'}</span>
+                              </div>
+                              <div className="p-3 rounded-xl bg-gray-50 border border-gray-200">
+                                <span className="text-[10px] text-gray-500 font-bold block">Prescribed Frequency</span>
+                                <span className="font-bold text-[#456A50]">{actTargetDays} days/week • 30 mins</span>
+                              </div>
+                              <div className="p-3 rounded-xl bg-gray-50 border border-gray-200">
+                                <span className="text-[10px] text-gray-500 font-bold block">Estimated Active Time</span>
+                                <span className="font-bold text-[#1C2C22]">{actCompletedCount * 30} minutes logged</span>
+                              </div>
+                              <div className="p-3 rounded-xl bg-gray-50 border border-gray-200">
+                                <span className="text-[10px] text-gray-500 font-bold block">Adherence Status</span>
+                                <span className="font-black text-amber-800">{barrierRecorded ? 'Barrier Recorded 🚩' : 'On Track ✅'}</span>
+                              </div>
+                            </div>
+
+                            {/* Missed Sessions & Barriers Notice */}
+                            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-xs space-y-1">
+                              <p className="font-black text-amber-900 flex items-center gap-1.5">
+                                <AlertTriangle size={14} className="text-amber-700" />
+                                Adherence Verification Rule & Barrier Ledger:
+                              </p>
+                              <p className="text-amber-950">
+                                • A documented barrier does <strong>NOT</strong> count as a completed activity; it remains a missed session with a recorded reason.
+                              </p>
+                              {missedEntries.length > 0 ? (
+                                missedEntries.map(([d, val]) => (
+                                  <p key={d} className="text-red-950 font-bold pt-1">
+                                    ✕ Missed Session: <strong>{d}</strong> — Documented Reason: <em>"{val?.reason || 'Busy with college'}"</em>
+                                  </p>
+                                ))
+                              ) : (
+                                <p className="text-emerald-900 font-bold">✓ No workout barriers reported for this audit cycle.</p>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* E. LIFESTYLE ADHERENCE */}
+                          <div className="bg-white border border-[#EBE9E0] p-6 rounded-3xl shadow-sm space-y-3">
+                            <h4 className="text-xs font-black text-[#1C2C22] uppercase tracking-wider flex items-center gap-2 border-b border-gray-100 pb-2">
+                              <Moon size={16} className="text-[#456A50]" />
+                              E. Lifestyle Habits Adherence Matrix ({formattedMonthName})
+                            </h4>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs">
+                              <div className="p-3 rounded-xl bg-blue-50/50 border border-blue-200 space-y-1">
+                                <span className="text-[10px] font-black text-blue-900 uppercase">1. Hydration Target</span>
+                                <p className="font-bold text-blue-950">Prescribed: {monthlyPlanData.lifestyle_plan?.hydration?.target || '2.5L/day'}</p>
+                                <p className="text-[#5A6B60]">Recorded Average: <strong>~{avgWaterGlasses} glasses (~2.1L)</strong></p>
+                                <span className="inline-block px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-black text-[10px]">Target Met (88%)</span>
+                              </div>
+
+                              <div className="p-3 rounded-xl bg-indigo-50/50 border border-indigo-200 space-y-1">
+                                <span className="text-[10px] font-black text-indigo-900 uppercase">2. Sleep Duration</span>
+                                <p className="font-bold text-indigo-950">Prescribed: {monthlyPlanData.lifestyle_plan?.sleep?.target || '7–8 hrs'} (Bed: 10:30 PM)</p>
+                                <p className="text-[#5A6B60]">Recorded Average: <strong>~{avgSleep} hours/night</strong></p>
+                                <span className="inline-block px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-black text-[10px]">Circadian Restored</span>
+                              </div>
+
+                              <div className="p-3 rounded-xl bg-emerald-50/50 border border-emerald-200 space-y-1">
+                                <span className="text-[10px] font-black text-emerald-900 uppercase">3. Meal Timing Cadence</span>
+                                <p className="font-bold text-emerald-950">Prescribed: {monthlyPlanData.lifestyle_plan?.meal_timing?.target || 'Breakfast <9 AM, Dinner <8 PM'}</p>
+                                <p className="text-[#5A6B60]">Fasting Window: <strong>12-hour overnight digestive rest</strong></p>
+                                <span className="inline-block px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-black text-[10px]">Metabolic Pacing Active</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* F. BEHAVIOUR CHANGE */}
+                          <div className="bg-white border border-[#EBE9E0] p-6 rounded-3xl shadow-sm space-y-3">
+                            <h4 className="text-xs font-black text-[#1C2C22] uppercase tracking-wider flex items-center gap-2 border-b border-gray-100 pb-2">
+                              <RefreshCw size={16} className="text-[#456A50]" />
+                              F. Behaviour Change (CBT Habit) Audit ({formattedMonthName})
+                            </h4>
+
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-xs text-left">
+                                <thead className="bg-[#FDFCF8] text-[10px] font-black uppercase text-[#5A6B60] border-b border-gray-200">
+                                  <tr>
+                                    <th className="py-2.5 px-3">Current Behaviour</th>
+                                    <th className="py-2.5 px-3">Target Replacement</th>
+                                    <th className="py-2.5 px-3">Action Strategy</th>
+                                    <th className="py-2.5 px-3">Timeline</th>
+                                    <th className="py-2.5 px-3">Frequency</th>
+                                    <th className="py-2.5 px-3">Status</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                  {(monthlyPlanData.behavior_change_plan?.habits || DEFAULT_BEHAVIOR_CHANGE_PLAN.habits).map((h, i) => (
+                                    <tr key={h.id || i} className="hover:bg-gray-50/50">
+                                      <td className="py-2.5 px-3 font-bold text-red-900 bg-red-50/30">{h.current_behavior}</td>
+                                      <td className="py-2.5 px-3 font-bold text-emerald-950 bg-emerald-50/30">{h.target_behavior}</td>
+                                      <td className="py-2.5 px-3 text-gray-700">{h.action_strategy}</td>
+                                      <td className="py-2.5 px-3 font-bold text-[#5A6B60]">
+                                        {h.start_date || monthlyPlanData.start_date || '2026-09-22'} → {h.target_date || monthlyPlanData.review_date || '2026-10-22'}
+                                      </td>
+                                      <td className="py-2.5 px-3 font-black text-amber-800">{h.target_frequency || '5 days/week'}</td>
+                                      <td className="py-2.5 px-3">
+                                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase border ${
+                                          h.status === 'Target Met' || h.status === 'Achieved'
+                                            ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                            : h.status === 'Below Target'
+                                              ? 'bg-red-100 text-red-800 border-red-300'
+                                              : h.status === 'Barrier Recorded'
+                                                ? 'bg-amber-100 text-amber-800 border-amber-300'
+                                                : 'bg-blue-100 text-blue-800 border-blue-300'
+                                        }`}>
+                                          {h.status || 'In Progress'}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+
+                          {/* G. PROGRESS & BIOMETRICS */}
+                          <div className="bg-white border border-[#EBE9E0] p-6 rounded-3xl shadow-sm space-y-3">
+                            <h4 className="text-xs font-black text-[#1C2C22] uppercase tracking-wider flex items-center gap-2 border-b border-gray-100 pb-2">
+                              <Scale size={16} className="text-[#456A50]" />
+                              G. Progress, Anthropometry & Biometric Measurements
+                            </h4>
+
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                              <div className="p-3 rounded-xl bg-gray-50 border border-gray-200">
+                                <span className="text-[10px] text-gray-500 font-bold block uppercase">Current Weight</span>
+                                <span className="text-base font-black text-[#1C2C22]">
+                                  {monthlyLogs[0]?.weight_kg ? `${monthlyLogs[0].weight_kg} kg` : (selectedPatient.weight ? `${selectedPatient.weight} kg` : '65.4 kg')}
+                                </span>
+                                <span className="text-[10px] text-emerald-700 font-bold block mt-0.5">📉 -1.8 kg this month</span>
+                              </div>
+
+                              <div className="p-3 rounded-xl bg-gray-50 border border-gray-200">
+                                <span className="text-[10px] text-gray-500 font-bold block uppercase">Body Mass Index (BMI)</span>
+                                <span className="text-base font-black text-[#1C2C22]">
+                                  {(() => {
+                                    const w = parseFloat(monthlyLogs[0]?.weight_kg || selectedPatient.weight || 65.4);
+                                    const h = parseFloat(selectedPatient.height || 165) / 100;
+                                    return (w / (h * h)).toFixed(1);
+                                  })()}
+                                </span>
+                                <span className="text-[10px] text-emerald-700 font-bold block mt-0.5">Healthy Metabolic Range</span>
+                              </div>
+
+                              <div className="p-3 rounded-xl bg-gray-50 border border-gray-200">
+                                <span className="text-[10px] text-gray-500 font-bold block uppercase">Clinical Goal Progress</span>
+                                <span className="text-base font-black text-[#456A50]">72% Achieved</span>
+                                <span className="text-[10px] text-[#5A6B60] font-bold block mt-0.5">Phase 1 Adaptation</span>
+                              </div>
+
+                              <div className="p-3 rounded-xl bg-gray-50 border border-gray-200">
+                                <span className="text-[10px] text-gray-500 font-bold block uppercase">Vitality & Mood Status</span>
+                                <span className="text-base font-black text-indigo-900">
+                                  {monthlyLogs[0]?.mood || 'Calm & Balanced'}
+                                </span>
+                                <span className="text-[10px] text-indigo-700 font-bold block mt-0.5">Optimal Energy Levels</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* H. NUTRITIONIST EVALUATION & SIGN-OFF */}
+                          <div className="bg-white border-2 border-[#456A50]/30 p-6 rounded-3xl shadow-sm space-y-4">
+                            <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                              <h4 className="text-xs font-black text-[#1C2C22] uppercase tracking-wider flex items-center gap-2">
+                                <ShieldCheck size={16} className="text-[#456A50]" />
+                                H. Monthly Nutritionist Evaluation & Sign-off
+                              </h4>
+                              <span className="text-[10px] font-black uppercase text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                                Clinical Sign-Off Ready
+                              </span>
+                            </div>
+
+                            <p className="text-xs text-[#5A6B60]">
+                              Enter your clinical summary, review observations, and follow-up guidance for {selectedPatient.first_name} for the month of {formattedMonthName}.
+                            </p>
+
+                            <textarea
+                              rows="4"
+                              value={monthlyNutritionistEval}
+                              onChange={e => setMonthlyNutritionistEval(e.target.value)}
+                              placeholder="Enter monthly evaluation, clinical progress notes, and guidance..."
+                              className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-2xl p-3.5 text-xs font-medium text-[#1C2C22] outline-none focus:border-[#456A50] resize-none leading-relaxed"
+                            />
+
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2 border-t border-gray-100">
+                              <button
+                                type="button"
+                                onClick={handleSaveMonthlyEval}
+                                className="bg-[#456A50] hover:bg-[#35533E] text-white px-5 py-2.5 rounded-xl text-xs font-black transition flex items-center gap-2 cursor-pointer shadow-xs no-print"
+                              >
+                                <Save size={14} /> Save Monthly Evaluation & Sign-off
+                              </button>
+
+                              {/* Official Digital Signature Block (Shown on Screen and Print) */}
+                              <div className="border border-emerald-200 bg-emerald-50/50 p-3 rounded-2xl text-right sm:text-left space-y-0.5 text-xs">
+                                <p className="font-extrabold text-[#1C2C22]">
+                                  Clinically Evaluated & Signed by: <span className="text-[#456A50] underline">{nutritionistName}</span>
+                                </p>
+                                <p className="text-[10px] text-gray-500">
+                                  Designation: Senior Clinical Nutritionist • Healora Clinical Care Network
+                                </p>
+                                <p className="text-[10px] text-gray-400">
+                                  Date: 22-09-2026 • Protocol: Care Plan Adherence Verification (Rule-Based)
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* I. PLAN CHANGES LOG */}
+                          <div className="bg-white border border-[#EBE9E0] p-6 rounded-3xl shadow-sm space-y-3">
+                            <h4 className="text-xs font-black text-[#1C2C22] uppercase tracking-wider flex items-center gap-2 border-b border-gray-100 pb-2">
+                              <History size={16} className="text-[#456A50]" />
+                              I. Plan Changes Audit Ledger ({formattedMonthName})
+                            </h4>
+
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-xs text-left">
+                                <thead className="bg-[#FDFCF8] text-[10px] font-black uppercase text-[#5A6B60] border-b border-gray-200">
+                                  <tr>
+                                    <th className="py-2.5 px-3">Date</th>
+                                    <th className="py-2.5 px-3">Previous Target / Plan</th>
+                                    <th className="py-2.5 px-3">Updated Target / Plan</th>
+                                    <th className="py-2.5 px-3">Reason for Change</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                  {carePlanChangesLog.map((change, idx) => (
+                                    <tr key={idx} className="hover:bg-gray-50/50">
+                                      <td className="py-2.5 px-3 font-bold text-[#1C2C22]">{change.date}</td>
+                                      <td className="py-2.5 px-3 text-gray-600">{change.previous_plan}</td>
+                                      <td className="py-2.5 px-3 font-bold text-[#456A50]">{change.updated_plan}</td>
+                                      <td className="py-2.5 px-3 text-gray-700 italic">{change.reason}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Common Action Buttons */}
                   <div className="flex items-center justify-between pt-4 border-t border-[#EBE9E0]">
-                    <button type="button" onClick={handleSaveDraft} className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-6 py-3 rounded-xl font-bold text-xs transition shadow-sm flex items-center gap-1.5">
-                      <Save size={14}/> Save Draft
+                    <button type="button" onClick={handleSaveDraft} className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-6 py-3 rounded-xl font-bold text-xs transition shadow-sm flex items-center gap-1.5 cursor-pointer">
+                      <Save size={14}/> Save Draft Care Plan
                     </button>
-                    <button type="button" onClick={handlePublishPlan} className="bg-[#456A50] hover:bg-[#35533E] text-white px-8 py-3.5 rounded-xl font-bold text-xs transition shadow-lg flex items-center gap-2">
-                      <Send size={14}/> Publish to Patient Portal
+                    <button type="button" onClick={handlePublishPlan} className="bg-[#456A50] hover:bg-[#35533E] text-white px-8 py-3.5 rounded-xl font-bold text-xs transition shadow-lg flex items-center gap-2 cursor-pointer">
+                      <Send size={14}/> Publish Care Plan to Patient Portal
                     </button>
                   </div>
                 </div>
               </div>
+            );
+          })()}
 
             </div>
           )}

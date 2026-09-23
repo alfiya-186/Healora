@@ -7,7 +7,7 @@ import {
   CreditCard, Lock, ChevronRight, ChevronLeft, CheckCircle, MessageSquare, Send, Bell, Download, File, User, Key, Flame, AlertCircle, DownloadCloud, Stethoscope, ClipboardList, Star, ShieldAlert,
   Video, ExternalLink, Link2, Clock, Sparkles, Eye, RotateCcw, XCircle, AlertTriangle, Check, RefreshCw,
   Scale, TrendingDown, TrendingUp, Save, Ticket, DoorOpen, Megaphone, Printer,
-  Award, Trophy, Zap, Percent, BadgePercent, Plus
+  Award, Trophy, Zap, Percent, BadgePercent, Plus, Target
 } from 'lucide-react';
 
 import BookingCalendarPicker, { getHolidayOrOffReason } from '../components/BookingCalendarPicker.jsx';
@@ -15,6 +15,7 @@ import TimeSlotPicker, { normalizeTimeTo24H, normalizeTimeToLabel } from '../com
 import { getKeralaPersonalizedOptions, getKeralaMealImage, KERALA_FOOD_IMAGES, CLINICAL_KERALA_UNIVERSAL_RECIPES, getSafeUniversalMeal } from '../utils/keralaNutritionEngine.js';
 import TelehealthVideoRoom from '../components/TelehealthVideoRoom.jsx';
 import { evaluateClinicalSafety, checkMealAllergenConflict, evaluateMealConflicts } from '../utils/clinicalSafetyRules.js';
+import { DEFAULT_ACTIVITY_PLAN, DEFAULT_LIFESTYLE_PLAN, DEFAULT_BEHAVIOR_CHANGE_PLAN } from './NutritionistDashboard.jsx';
 
 export const calculateMetabolicProfile = (profile = {}, gender = 'Female') => {
   const weight = parseFloat(profile.weight_kg) || 60;
@@ -707,6 +708,142 @@ const PatientDashboard = () => {
   const [evaluations, setEvaluations] = useState([]);
   const [patientApptFilter, setPatientApptFilter] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'CANCELLED'
   const [currentTimeTick, setCurrentTimeTick] = useState(Date.now());
+
+  // 🌟 3 CARE PLANS INTERACTIVE STATE (ACTIVITY, LIFESTYLE & BEHAVIOUR) 🌟
+  const [patientCarePlanTab, setPatientCarePlanTab] = useState('meals'); // 'meals' | 'activity' | 'lifestyle' | 'behavior'
+  const [patientActivityAdherence, setPatientActivityAdherence] = useState(() => {
+    try {
+      const saved = localStorage.getItem(`healora_activity_adherence_${userId}`);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {
+      week_number: 1,
+      target_days: 5,
+      days: {
+        Monday: { status: 'completed', reason: '' },
+        Tuesday: { status: 'completed', reason: '' },
+        Wednesday: { status: 'missed', reason: 'Busy with college' },
+        Thursday: { status: 'completed', reason: '' },
+        Friday: { status: 'completed', reason: '' },
+        Saturday: { status: 'pending', reason: '' },
+        Sunday: { status: 'pending', reason: '' }
+      },
+      last_updated: new Date().toISOString()
+    };
+  });
+  const [missedReasonModalDay, setMissedReasonModalDay] = useState(null);
+  const [missedReasonInput, setMissedReasonInput] = useState('');
+
+  // Lifestyle interactive widgets state
+  const [interactiveWaterMl, setInteractiveWaterMl] = useState(() => {
+    try {
+      const saved = localStorage.getItem(`healora_water_today_${userId}`);
+      if (saved) return parseInt(saved, 10);
+    } catch {}
+    return 1750;
+  });
+  const [waterReminderActive, setWaterReminderActive] = useState(true);
+  const [stretchTimerActive, setStretchTimerActive] = useState(false);
+  const [stretchSecondsLeft, setStretchSecondsLeft] = useState(120);
+  const [breathingActive, setBreathingActive] = useState(false);
+  const [breathingPhase, setBreathingPhase] = useState('Inhale'); // 'Inhale' | 'Hold' | 'Exhale' | 'Hold '
+  const [breathingCount, setBreathingCount] = useState(4);
+
+  // Behaviour change reflections & streak
+  const [completedHabits, setCompletedHabits] = useState(() => {
+    try {
+      const saved = localStorage.getItem(`healora_completed_habits_${userId}`);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return { beh_1: true, beh_2: false, beh_3: true };
+  });
+  const [habitCompletionDates, setHabitCompletionDates] = useState(() => {
+    try {
+      const saved = localStorage.getItem(`healora_habit_dates_${userId}`);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {
+      beh_1: ['2026-09-19', '2026-09-20', '2026-09-21', '2026-09-22'],
+      beh_2: ['2026-09-21'],
+      beh_3: ['2026-09-18', '2026-09-19', '2026-09-20', '2026-09-22']
+    };
+  });
+  const [habitReflectionNote, setHabitReflectionNote] = useState(() => {
+    try {
+      const saved = localStorage.getItem(`healora_behavior_reflections_${userId}`);
+      if (saved) return saved;
+    } catch {}
+    return 'Prepped overnight oats on Monday and Tuesday, felt much more alert in my morning classes!';
+  });
+
+  useEffect(() => {
+    let timer = null;
+    if (stretchTimerActive && stretchSecondsLeft > 0) {
+      timer = setInterval(() => {
+        setStretchSecondsLeft(prev => prev - 1);
+      }, 1000);
+    } else if (stretchSecondsLeft === 0) {
+      setStretchTimerActive(false);
+    }
+    return () => clearInterval(timer);
+  }, [stretchTimerActive, stretchSecondsLeft]);
+
+  useEffect(() => {
+    let breathTimer = null;
+    if (breathingActive) {
+      breathTimer = setInterval(() => {
+        setBreathingCount(prev => {
+          if (prev <= 1) {
+            setBreathingPhase(curr => {
+              if (curr === 'Inhale') return 'Hold';
+              if (curr === 'Hold') return 'Exhale';
+              if (curr === 'Exhale') return 'Hold ';
+              return 'Inhale';
+            });
+            return 4;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(breathTimer);
+  }, [breathingActive]);
+
+  const handleUpdateAdherenceDay = (day, status, reason = '') => {
+    const nowIso = new Date().toISOString();
+    const todayDate = nowIso.split('T')[0];
+    const updatedDays = {
+      ...(patientActivityAdherence.days || {}),
+      [day]: { status, reason, recorded_at: nowIso, date: todayDate }
+    };
+    const updated = {
+      ...patientActivityAdherence,
+      days: updatedDays,
+      last_updated: nowIso
+    };
+    setPatientActivityAdherence(updated);
+    localStorage.setItem(`healora_activity_adherence_${userId}`, JSON.stringify(updated));
+    setMissedReasonModalDay(null);
+    setMissedReasonInput('');
+  };
+
+  const handleToggleHabitToday = (habitKey) => {
+    const nowIso = new Date().toISOString();
+    const todayDate = nowIso.split('T')[0];
+    const currentList = habitCompletionDates[habitKey] || [];
+    const isDone = currentList.includes(todayDate);
+    const updatedList = isDone 
+      ? currentList.filter(d => d !== todayDate)
+      : [...currentList, todayDate];
+    
+    const updatedMap = { ...habitCompletionDates, [habitKey]: updatedList };
+    setHabitCompletionDates(updatedMap);
+    localStorage.setItem(`healora_habit_dates_${userId}`, JSON.stringify(updatedMap));
+
+    const updatedCompleted = { ...completedHabits, [habitKey]: !isDone };
+    setCompletedHabits(updatedCompleted);
+    localStorage.setItem(`healora_completed_habits_${userId}`, JSON.stringify(updatedCompleted));
+  };
 
   useEffect(() => {
     const tickInterval = setInterval(() => setCurrentTimeTick(Date.now()), 10000);
@@ -4282,7 +4419,80 @@ const PatientDashboard = () => {
                   </button>
                 </div>
 
-                {/* 🔔 2-WEEK ADAPTATION COMPLETE — PROGRESS CONSULTATION SYSTEM REMINDER */}
+                {/* 🌟 4 CARE PLAN PILLARS SEGMENTED SUB-TABS 🌟 */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 p-1.5 bg-[#FDFCF8] border border-[#EBE9E0] rounded-2xl shadow-inner">
+                  <button
+                    type="button"
+                    onClick={() => setPatientCarePlanTab('meals')}
+                    className={`py-3 px-3 rounded-xl text-xs font-black transition flex items-center justify-center gap-2 cursor-pointer ${
+                      patientCarePlanTab === 'meals' 
+                        ? 'bg-[#456A50] text-white shadow-sm' 
+                        : 'text-[#5A6B60] hover:bg-white hover:text-[#1C2C22]'
+                    }`}
+                  >
+                    <Apple size={16} className={patientCarePlanTab === 'meals' ? 'text-white' : 'text-[#456A50]'} />
+                    <span className="truncate">1. 4-Week Meals</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPatientCarePlanTab('activity')}
+                    className={`py-3 px-3 rounded-xl text-xs font-black transition flex items-center justify-center gap-2 cursor-pointer relative ${
+                      patientCarePlanTab === 'activity' 
+                        ? 'bg-[#456A50] text-white shadow-sm' 
+                        : 'text-[#5A6B60] hover:bg-white hover:text-[#1C2C22]'
+                    }`}
+                  >
+                    <Footprints size={16} className={patientCarePlanTab === 'activity' ? 'text-white' : 'text-blue-600'} />
+                    <span className="truncate">2. Activity & Adherence</span>
+                    {/* Live percentage badge */}
+                    {(() => {
+                      const completedCount = Object.values(patientActivityAdherence?.days || {}).filter(
+                        d => (typeof d === 'string' ? d === 'completed' : d?.status === 'completed')
+                      ).length;
+                      const targetDays = publishedPlan?.activity_plan?.weekly_target_days || 5;
+                      const pct = Math.min(100, Math.round((completedCount / targetDays) * 100));
+                      return (
+                        <span className="text-[9px] font-black bg-emerald-100 text-emerald-900 px-1.5 py-0.5 rounded-md border border-emerald-300">
+                          {pct}%
+                        </span>
+                      );
+                    })()}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPatientCarePlanTab('lifestyle')}
+                    className={`py-3 px-3 rounded-xl text-xs font-black transition flex items-center justify-center gap-2 cursor-pointer ${
+                      patientCarePlanTab === 'lifestyle' 
+                        ? 'bg-[#456A50] text-white shadow-sm' 
+                        : 'text-[#5A6B60] hover:bg-white hover:text-[#1C2C22]'
+                    }`}
+                  >
+                    <Moon size={16} className={patientCarePlanTab === 'lifestyle' ? 'text-white' : 'text-indigo-600'} />
+                    <span className="truncate">3. Lifestyle Plan</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPatientCarePlanTab('behavior')}
+                    className={`py-3 px-3 rounded-xl text-xs font-black transition flex items-center justify-center gap-2 cursor-pointer ${
+                      patientCarePlanTab === 'behavior' 
+                        ? 'bg-[#456A50] text-white shadow-sm' 
+                        : 'text-[#5A6B60] hover:bg-white hover:text-[#1C2C22]'
+                    }`}
+                  >
+                    <RefreshCw size={16} className={patientCarePlanTab === 'behavior' ? 'text-white' : 'text-emerald-600'} />
+                    <span className="truncate">4. Behaviour Change (CBT)</span>
+                  </button>
+                </div>
+
+                {/* ======================================================== */}
+                {/* PILLAR 1: 4-WEEK MEALS & TIMINGS (KERALA ENGINE)         */}
+                {/* ======================================================== */}
+                {patientCarePlanTab === 'meals' && (
+                  <div className="space-y-6 animate-in fade-in">
+                    {/* 🔔 2-WEEK ADAPTATION COMPLETE — PROGRESS CONSULTATION SYSTEM REMINDER */}
                 {(!isPhase2Unlocked && (isPhase1Completed || selectedWeek >= 2)) && (
                   <div className="bg-gradient-to-r from-amber-500/15 via-emerald-500/10 to-amber-500/15 border-2 border-amber-400 rounded-3xl p-5 md:p-6 shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-in fade-in">
                     <div className="flex items-start gap-3.5">
@@ -4674,7 +4884,893 @@ const PatientDashboard = () => {
 
                   </div>
                 </div>
+              </div>
+              )}
 
+              {/* ======================================================== */}
+              {/* PILLAR 2: MY ACTIVITY PLAN & INTERACTIVE ADHERENCE        */}
+              {/* ======================================================== */}
+              {patientCarePlanTab === 'activity' && (
+                <div className="space-y-6 animate-in fade-in">
+                  {/* WHO Benchmark Banner */}
+                  <div className="bg-blue-50/80 border border-blue-200 p-5 rounded-3xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm">
+                    <div className="flex items-start gap-3.5">
+                      <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                        <Footprints size={20} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-black uppercase tracking-widest text-blue-900 bg-blue-100 px-2.5 py-0.5 rounded-full">
+                            WHO Physical Activity Benchmark
+                          </span>
+                        </div>
+                        <h4 className="text-sm font-black text-[#1C2C22] mt-1">
+                          Doctor's Physical Activity Prescription
+                        </h4>
+                        <p className="text-xs text-blue-950 mt-0.5 leading-relaxed max-w-2xl">
+                          {publishedPlan?.activity_plan?.who_guideline || DEFAULT_ACTIVITY_PLAN.who_guideline}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-xs font-black bg-white text-blue-900 border border-blue-200 px-3.5 py-2 rounded-xl shadow-2xs">
+                        Target: {publishedPlan?.activity_plan?.weekly_target_days || 5} Days / Week
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* ⭐ WEEKLY ACTIVITY ADHERENCE MONITORING PANEL */}
+                  {(() => {
+                    const targetDays = publishedPlan?.activity_plan?.weekly_target_days || 5;
+                    const completedCount = Object.values(patientActivityAdherence?.days || {}).filter(
+                      d => (typeof d === 'string' ? d === 'completed' : d?.status === 'completed')
+                    ).length;
+                    const pct = Math.min(100, Math.round((completedCount / targetDays) * 100));
+
+                    const missedDays = Object.entries(patientActivityAdherence?.days || {}).filter(
+                      ([_, val]) => (typeof val === 'object' ? val?.status === 'missed' : val === 'missed')
+                    );
+
+                    return (
+                      <div className="bg-white border border-[#EBE9E0] p-6 rounded-3xl shadow-sm space-y-5">
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-gray-100 pb-4">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <Target size={18} className="text-[#456A50]" />
+                              <h3 className="text-base font-black text-[#1C2C22]">
+                                ⭐ Weekly Activity Adherence Tracker
+                              </h3>
+                            </div>
+                            <p className="text-xs text-[#5A6B60] mt-0.5">
+                              Check off your sessions. If you miss a day, log the reason so Dr. Sarah can help adapt your routine during your next follow-up.
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-black text-[#456A50] bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl">
+                              {completedCount} of {targetDays} Days Done
+                            </span>
+                            <span className="text-xs font-black text-white bg-[#456A50] px-3 py-1.5 rounded-xl shadow-xs">
+                              {pct}% Achieved
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Progress Bar */}
+                        <div className="space-y-1.5">
+                          <div className="flex justify-between items-center text-xs font-bold text-[#5A6B60]">
+                            <span>Weekly Progress</span>
+                            <span>{pct}%</span>
+                          </div>
+                          <div className="w-full bg-gray-100 h-4 rounded-full overflow-hidden p-0.5 border border-gray-200 flex">
+                            <div 
+                              className="h-full bg-gradient-to-r from-emerald-500 to-[#456A50] rounded-full transition-all duration-700 shadow-inner"
+                              style={{ width: `${pct}%` }}
+                            ></div>
+                          </div>
+                        </div>
+
+                        {/* Interactive 7 Days Selector Cards */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2.5 pt-1">
+                          {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(day => {
+                            const dayData = patientActivityAdherence?.days?.[day];
+                            const status = typeof dayData === 'string' ? dayData : (dayData?.status || 'pending');
+                            const reason = typeof dayData === 'object' ? dayData?.reason : '';
+                            const isCompleted = status === 'completed';
+                            const isMissed = status === 'missed';
+
+                            return (
+                              <div
+                                key={day}
+                                className={`p-3 rounded-2xl border flex flex-col justify-between transition shadow-2xs ${
+                                  isCompleted 
+                                    ? 'bg-emerald-50 border-emerald-300' 
+                                    : isMissed 
+                                      ? 'bg-red-50 border-red-300' 
+                                      : 'bg-[#FDFCF8] border-[#EBE9E0]'
+                                }`}
+                              >
+                                <div>
+                                  <div className="flex justify-between items-center mb-1">
+                                    <span className="text-xs font-black text-[#1C2C22] uppercase tracking-wider">{day.slice(0, 3)}</span>
+                                    {isCompleted ? (
+                                      <CheckCircle2 size={14} className="text-emerald-600" />
+                                    ) : isMissed ? (
+                                      <AlertTriangle size={14} className="text-red-600" />
+                                    ) : (
+                                      <span className="w-2.5 h-2.5 rounded-full bg-gray-300"></span>
+                                    )}
+                                  </div>
+                                  <p className={`text-[11px] font-black ${
+                                    isCompleted ? 'text-emerald-800' : isMissed ? 'text-red-800' : 'text-gray-500'
+                                  }`}>
+                                    {isCompleted ? '✓ Completed' : isMissed ? '✕ Missed' : '⚪ Rest / Pend'}
+                                  </p>
+                                  {isMissed && reason && (
+                                    <p className="text-[10px] text-red-900 mt-1 font-bold italic line-clamp-2" title={reason}>
+                                      "{reason}"
+                                    </p>
+                                  )}
+                                </div>
+
+                                <div className="mt-3 pt-2 border-t border-gray-200/60 flex flex-col gap-1 text-[10px]">
+                                  {!isCompleted && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateAdherenceDay(day, 'completed')}
+                                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-1 rounded-lg transition cursor-pointer"
+                                    >
+                                      Done ✓
+                                    </button>
+                                  )}
+                                  {!isMissed && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setMissedReasonModalDay(day);
+                                        setMissedReasonInput(reason || 'Busy with college');
+                                      }}
+                                      className="w-full bg-red-100 hover:bg-red-200 text-red-800 font-bold py-1 rounded-lg transition cursor-pointer"
+                                    >
+                                      Missed ✕
+                                    </button>
+                                  )}
+                                  {(isCompleted || isMissed) && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateAdherenceDay(day, 'pending')}
+                                      className="w-full text-gray-500 hover:text-gray-700 font-semibold py-0.5 text-[9px] cursor-pointer"
+                                    >
+                                      Reset
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Missed Day Barrier Callout */}
+                        {missedDays.length > 0 && (
+                          <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                            <div>
+                              <span className="text-xs font-black text-red-900 flex items-center gap-1.5">
+                                <AlertTriangle size={15} className="text-red-600" />
+                                Patient Reported Workout Barriers
+                              </span>
+                              {missedDays.map(([d, val]) => (
+                                <p key={d} className="text-xs text-red-950 mt-0.5">
+                                  • <strong>{d}</strong>: "{val?.reason || 'Busy with college'}"
+                                </p>
+                              ))}
+                            </div>
+                            <span className="text-[10px] font-bold text-red-800 bg-white px-3 py-1.5 rounded-xl border border-red-200 shrink-0">
+                              Synchronized to Nutritionist Console
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Prescribed Activities Cards */}
+                  <div className="bg-white border border-[#EBE9E0] p-6 rounded-3xl shadow-sm space-y-4">
+                    <div className="flex items-center justify-between border-b border-[#EBE9E0] pb-3">
+                      <div>
+                        <h3 className="text-base font-black text-[#1C2C22] flex items-center gap-2">
+                          <Footprints size={18} className="text-[#456A50]" />
+                          Prescribed Exercise Regimen
+                        </h3>
+                        <p className="text-xs text-[#5A6B60] mt-0.5">
+                          Follow the exact frequency, intensity, and target metrics prescribed by your nutritionist.
+                        </p>
+                      </div>
+                      <span className="text-xs font-bold text-[#456A50] bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-xl">
+                        {(publishedPlan?.activity_plan?.activities || DEFAULT_ACTIVITY_PLAN.activities).length} Prescriptions
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {(publishedPlan?.activity_plan?.activities || DEFAULT_ACTIVITY_PLAN.activities).map((act, i) => (
+                        <div key={act.id || i} className="bg-[#FDFCF8] border border-[#EBE9E0] p-5 rounded-2xl space-y-3 shadow-2xs">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <span className="text-[10px] font-black uppercase tracking-wider bg-blue-100 text-blue-800 px-2 py-0.5 rounded-md">
+                                {act.type || 'Aerobic'}
+                              </span>
+                              <h4 className="text-base font-black text-[#1C2C22] mt-1">{act.name}</h4>
+                            </div>
+                            <span className="text-xs font-black text-[#456A50] bg-white border border-[#EBE9E0] px-2.5 py-1 rounded-xl shadow-2xs">
+                              {act.frequency}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div className="bg-white p-2 rounded-xl border border-gray-100">
+                              <span className="text-[10px] text-gray-500 font-bold block">Duration</span>
+                              <span className="font-black text-[#1C2C22]">{act.duration_mins ? `${act.duration_mins} mins` : '30 mins'}</span>
+                            </div>
+                            <div className="bg-white p-2 rounded-xl border border-gray-100">
+                              <span className="text-[10px] text-gray-500 font-bold block">Intensity</span>
+                              <span className="font-black text-amber-800">{act.intensity || 'Moderate'}</span>
+                            </div>
+                            <div className="bg-white p-2 rounded-xl border border-gray-100">
+                              <span className="text-[10px] text-gray-500 font-bold block">Start Date</span>
+                              <span className="font-bold text-[#1C2C22]">{act.start_date || publishedPlan?.start_date || '2026-09-22'}</span>
+                            </div>
+                            <div className="bg-white p-2 rounded-xl border border-gray-100">
+                              <span className="text-[10px] text-gray-500 font-bold block">End Date</span>
+                              <span className="font-bold text-[#1C2C22]">{act.end_date || publishedPlan?.review_date || '2026-10-22'}</span>
+                            </div>
+                          </div>
+
+                          <div className="bg-white p-3 rounded-xl border border-gray-100 text-xs">
+                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-0.5">Doctor's Guidance:</span>
+                            <p className="text-[#5A6B60] leading-snug">{act.instructions || 'Walk at a comfortable, steady pace and stay well hydrated.'}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ======================================================== */}
+              {/* PILLAR 3: LIFESTYLE MODIFICATION (5 CORE DOMAINS)         */}
+              {/* ======================================================== */}
+              {patientCarePlanTab === 'lifestyle' && (
+                <div className="space-y-6 animate-in fade-in">
+                  {/* WHO Self-Care Foundation Header */}
+                  <div className="bg-indigo-50/80 border border-indigo-200 p-5 rounded-3xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm">
+                    <div className="flex items-start gap-3.5">
+                      <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                        <Moon size={20} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-black uppercase tracking-widest text-indigo-900 bg-indigo-100 px-2.5 py-0.5 rounded-full">
+                            WHO Self-Care Framework
+                          </span>
+                        </div>
+                        <h4 className="text-sm font-black text-[#1C2C22] mt-1">
+                          Daily Lifestyle Habit Modification Plan
+                        </h4>
+                        <p className="text-xs text-indigo-950 mt-0.5 leading-relaxed max-w-2xl">
+                          {publishedPlan?.lifestyle_plan?.who_guideline || DEFAULT_LIFESTYLE_PLAN.who_guideline}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 6 Lifestyle Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    {/* Domain 1: Sleep */}
+                    <div className="bg-white border border-[#EBE9E0] p-6 rounded-3xl shadow-sm space-y-4">
+                      <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center">
+                            <Moon size={16} />
+                          </div>
+                          <h4 className="text-sm font-black text-[#1C2C22]">1. Sleep Hygiene & Circadian Sync</h4>
+                        </div>
+                        <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-full">
+                          Restorative
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3 text-xs">
+                        <div className="bg-[#FDFCF8] p-3 rounded-xl border border-[#EBE9E0]">
+                          <span className="text-[10px] text-gray-500 font-bold block">Current Baseline</span>
+                          <span className="font-bold text-gray-700">{publishedPlan?.lifestyle_plan?.sleep?.current || '5 hrs irregular'}</span>
+                        </div>
+                        <div className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-200">
+                          <span className="text-[10px] text-indigo-700 font-bold block">Prescribed Target</span>
+                          <span className="font-black text-indigo-900">{publishedPlan?.lifestyle_plan?.sleep?.target || '7–8 hrs restorative'}</span>
+                        </div>
+                        <div className="bg-white p-3 rounded-xl border border-gray-100">
+                          <span className="text-[10px] text-gray-500 font-bold block">Bedtime Window</span>
+                          <span className="font-black text-[#1C2C22]">{publishedPlan?.lifestyle_plan?.sleep?.bedtime || '10:30 PM'}</span>
+                        </div>
+                        <div className="bg-white p-3 rounded-xl border border-gray-100">
+                          <span className="text-[10px] text-gray-500 font-bold block">Wake-up Window</span>
+                          <span className="font-black text-[#1C2C22]">{publishedPlan?.lifestyle_plan?.sleep?.wakeup_time || '06:30 AM'}</span>
+                        </div>
+                        <div className="bg-white p-3 rounded-xl border border-gray-100">
+                          <span className="text-[10px] text-gray-500 font-bold block">Start Date</span>
+                          <span className="font-bold text-[#1C2C22]">{publishedPlan?.lifestyle_plan?.sleep?.start_date || publishedPlan?.start_date || '2026-09-22'}</span>
+                        </div>
+                        <div className="bg-white p-3 rounded-xl border border-gray-100">
+                          <span className="text-[10px] text-gray-500 font-bold block">End Date</span>
+                          <span className="font-bold text-[#1C2C22]">{publishedPlan?.lifestyle_plan?.sleep?.end_date || publishedPlan?.review_date || '2026-10-22'}</span>
+                        </div>
+                      </div>
+
+                      <div className="bg-indigo-50/30 p-3.5 rounded-2xl border border-indigo-100 text-xs">
+                        <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider block mb-1">Doctor's Sleep Protocol:</span>
+                        <p className="text-indigo-950 font-medium leading-snug">
+                          {publishedPlan?.lifestyle_plan?.sleep?.instructions || 'Turn off all screens 45 mins before bedtime. Keep bedroom cool, quiet, and pitch dark.'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Domain 2: Hydration */}
+                    <div className="bg-white border border-[#EBE9E0] p-6 rounded-3xl shadow-sm space-y-4">
+                      <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center">
+                            <Droplets size={16} />
+                          </div>
+                          <h4 className="text-sm font-black text-[#1C2C22]">2. Hydration & Fluid Target</h4>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setWaterReminderActive(!waterReminderActive)}
+                          className={`text-[10px] font-black px-2.5 py-1 rounded-full border transition cursor-pointer ${
+                            waterReminderActive ? 'bg-blue-100 text-blue-800 border-blue-300' : 'bg-gray-100 text-gray-600 border-gray-300'
+                          }`}
+                        >
+                          {waterReminderActive ? '🔔 Reminders ON' : '🔕 Muted'}
+                        </button>
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="font-bold text-[#5A6B60]">Today's Intake:</span>
+                          <span className="font-black text-blue-800">
+                            {interactiveWaterMl} / 3,000 mL ({Math.min(100, Math.round((interactiveWaterMl / 3000) * 100))}%)
+                          </span>
+                        </div>
+                        <div className="w-full bg-gray-100 h-3.5 rounded-full overflow-hidden p-0.5 border border-gray-200">
+                          <div 
+                            className="h-full bg-gradient-to-r from-blue-400 to-blue-600 rounded-full transition-all duration-500 shadow-inner"
+                            style={{ width: `${Math.min(100, Math.round((interactiveWaterMl / 3000) * 100))}%` }}
+                          ></div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="bg-[#FDFCF8] p-2.5 rounded-xl border border-[#EBE9E0]">
+                          <span className="text-[10px] text-gray-500 font-bold block">Start Date</span>
+                          <span className="font-bold text-[#1C2C22]">{publishedPlan?.lifestyle_plan?.hydration?.start_date || publishedPlan?.start_date || '2026-09-22'}</span>
+                        </div>
+                        <div className="bg-[#FDFCF8] p-2.5 rounded-xl border border-[#EBE9E0]">
+                          <span className="text-[10px] text-gray-500 font-bold block">End Date</span>
+                          <span className="font-bold text-[#1C2C22]">{publishedPlan?.lifestyle_plan?.hydration?.end_date || publishedPlan?.review_date || '2026-10-22'}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newVol = interactiveWaterMl + 250;
+                            setInteractiveWaterMl(newVol);
+                            localStorage.setItem(`healora_water_today_${userId}`, String(newVol));
+                          }}
+                          className="flex-1 bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 py-2 rounded-xl text-xs font-black transition cursor-pointer"
+                        >
+                          + 250 mL Glass
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newVol = interactiveWaterMl + 500;
+                            setInteractiveWaterMl(newVol);
+                            localStorage.setItem(`healora_water_today_${userId}`, String(newVol));
+                          }}
+                          className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-xl text-xs font-black transition cursor-pointer shadow-xs"
+                        >
+                          + 500 mL Bottle
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setInteractiveWaterMl(0);
+                            localStorage.removeItem(`healora_water_today_${userId}`);
+                          }}
+                          className="px-3 bg-gray-100 hover:bg-gray-200 text-gray-600 py-2 rounded-xl text-xs font-bold transition cursor-pointer"
+                        >
+                          Reset
+                        </button>
+                      </div>
+
+                      <div className="bg-blue-50/30 p-3.5 rounded-2xl border border-blue-100 text-xs">
+                        <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider block mb-1">Prescription:</span>
+                        <p className="text-blue-950 font-medium leading-snug">
+                          {publishedPlan?.lifestyle_plan?.hydration?.instructions || 'Keep a 1L water bottle at desk. Drink 1 glass upon waking and 1 glass before each Kerala meal.'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Domain 3: Meal Timing Cadence */}
+                    <div className="bg-white border border-[#EBE9E0] p-6 rounded-3xl shadow-sm space-y-4">
+                      <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                            <Clock size={16} />
+                          </div>
+                          <h4 className="text-sm font-black text-[#1C2C22]">3. Meal Timing & Cadence Protocol</h4>
+                        </div>
+                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+                          Metabolic Pacing
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2.5 text-center text-xs">
+                        <div className="bg-[#FDFCF8] p-3 rounded-2xl border border-[#EBE9E0]">
+                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Breakfast</span>
+                          <span className="font-black text-[#1C2C22] text-sm mt-1 block">Before 9 AM</span>
+                        </div>
+                        <div className="bg-[#FDFCF8] p-3 rounded-2xl border border-[#EBE9E0]">
+                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Lunch</span>
+                          <span className="font-black text-[#1C2C22] text-sm mt-1 block">1:30 PM</span>
+                        </div>
+                        <div className="bg-[#FDFCF8] p-3 rounded-2xl border border-[#EBE9E0]">
+                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Dinner</span>
+                          <span className="font-black text-[#1C2C22] text-sm mt-1 block">Before 8 PM</span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="bg-[#FDFCF8] p-2.5 rounded-xl border border-[#EBE9E0]">
+                          <span className="text-[10px] text-gray-500 font-bold block">Start Date</span>
+                          <span className="font-bold text-[#1C2C22]">{publishedPlan?.lifestyle_plan?.meal_timing?.start_date || publishedPlan?.start_date || '2026-09-22'}</span>
+                        </div>
+                        <div className="bg-[#FDFCF8] p-2.5 rounded-xl border border-[#EBE9E0]">
+                          <span className="text-[10px] text-gray-500 font-bold block">End Date</span>
+                          <span className="font-bold text-[#1C2C22]">{publishedPlan?.lifestyle_plan?.meal_timing?.end_date || publishedPlan?.review_date || '2026-10-22'}</span>
+                        </div>
+                      </div>
+
+                      <div className="bg-emerald-50/40 p-3.5 rounded-2xl border border-emerald-200 text-xs">
+                        <span className="text-[10px] font-black text-emerald-800 uppercase tracking-wider block mb-1">Clinical Cadence Directive:</span>
+                        <p className="text-emerald-950 font-medium leading-snug">
+                          {publishedPlan?.lifestyle_plan?.meal_timing?.instructions || 'Avoid long fasting gaps (>4 hours) during the day. Avoid heavy foods 2 hours before bed.'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Domain 4: Screen / Sedentary Time */}
+                    <div className="bg-white border border-[#EBE9E0] p-6 rounded-3xl shadow-sm space-y-4">
+                      <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
+                            <Activity size={16} />
+                          </div>
+                          <h4 className="text-sm font-black text-[#1C2C22]">4. Screen & Sedentary Breaks</h4>
+                        </div>
+                        <span className="text-[10px] font-bold text-amber-800 bg-amber-100 border border-amber-300 px-2.5 py-0.5 rounded-full">
+                          Target: &lt; 4 hrs static
+                        </span>
+                      </div>
+
+                      <div className="bg-[#FDFCF8] p-4 rounded-2xl border border-[#EBE9E0] flex items-center justify-between gap-4">
+                        <div>
+                          <span className="text-xs font-black text-[#1C2C22] block">Interactive 2-Min Posture Stretch</span>
+                          <span className="text-[11px] text-[#5A6B60]">Stand, roll shoulders back, do light calf raises.</span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-sm font-black font-mono bg-white px-3 py-1.5 rounded-xl border border-gray-200">
+                            {Math.floor(stretchSecondsLeft / 60)}:{String(stretchSecondsLeft % 60).padStart(2, '0')}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setStretchTimerActive(!stretchTimerActive)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer ${
+                              stretchTimerActive ? 'bg-amber-600 text-white' : 'bg-[#456A50] text-white hover:bg-[#35533E]'
+                            }`}
+                          >
+                            {stretchTimerActive ? 'Pause' : 'Start'}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="bg-[#FDFCF8] p-2.5 rounded-xl border border-[#EBE9E0]">
+                          <span className="text-[10px] text-gray-500 font-bold block">Start Date</span>
+                          <span className="font-bold text-[#1C2C22]">{publishedPlan?.lifestyle_plan?.screen_sedentary?.start_date || publishedPlan?.start_date || '2026-09-22'}</span>
+                        </div>
+                        <div className="bg-[#FDFCF8] p-2.5 rounded-xl border border-[#EBE9E0]">
+                          <span className="text-[10px] text-gray-500 font-bold block">End Date</span>
+                          <span className="font-bold text-[#1C2C22]">{publishedPlan?.lifestyle_plan?.screen_sedentary?.end_date || publishedPlan?.review_date || '2026-10-22'}</span>
+                        </div>
+                      </div>
+
+                      <div className="bg-amber-50/40 p-3.5 rounded-2xl border border-amber-200 text-xs">
+                        <span className="text-[10px] font-black text-amber-800 uppercase tracking-wider block mb-1">Doctor's Instruction:</span>
+                        <p className="text-amber-950 font-medium leading-snug">
+                          {publishedPlan?.lifestyle_plan?.screen_sedentary?.instructions || 'Take a 5-minute standing or movement break for every 45 minutes of continuous desk work.'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Domain 5: Stress Management */}
+                    <div className="bg-white border border-[#EBE9E0] p-6 rounded-3xl shadow-sm space-y-4 md:col-span-2">
+                      <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center">
+                            <HeartPulse size={16} />
+                          </div>
+                          <h4 className="text-sm font-black text-[#1C2C22]">5. Stress Modulation & Conscious Down-Regulation</h4>
+                        </div>
+                        <span className="text-[10px] font-bold text-rose-800 bg-rose-100 border border-rose-300 px-2.5 py-0.5 rounded-full">
+                          Daily 10-Min Target
+                        </span>
+                      </div>
+
+                      <div className="bg-gradient-to-r from-rose-50 via-pink-50 to-rose-50 border border-rose-200 p-5 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4">
+                        <div>
+                          <h5 className="text-xs font-black text-rose-950 uppercase tracking-wider">
+                            Interactive 1-Minute Box Breathing Exercise
+                          </h5>
+                          <p className="text-xs text-rose-900 mt-0.5 max-w-lg leading-relaxed">
+                            {breathingActive ? (
+                              <span className="font-black text-rose-800 text-sm animate-pulse">
+                                Phase: {breathingPhase} ({breathingCount}s)
+                              </span>
+                            ) : (
+                              'Inhale 4s ➔ Hold 4s ➔ Exhale 4s ➔ Hold 4s. Calms the autonomic nervous system and balances cortisol.'
+                            )}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setBreathingActive(!breathingActive)}
+                          className={`px-5 py-2.5 rounded-xl text-xs font-black transition cursor-pointer shadow-xs ${
+                            breathingActive ? 'bg-rose-700 text-white' : 'bg-rose-600 hover:bg-rose-700 text-white'
+                          }`}
+                        >
+                          {breathingActive ? 'Stop Breathing Cycle' : 'Start 1-Min Box Breathing'}
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="bg-[#FDFCF8] p-2.5 rounded-xl border border-[#EBE9E0]">
+                          <span className="text-[10px] text-gray-500 font-bold block">Start Date</span>
+                          <span className="font-bold text-[#1C2C22]">{publishedPlan?.lifestyle_plan?.stress_management?.start_date || publishedPlan?.start_date || '2026-09-22'}</span>
+                        </div>
+                        <div className="bg-[#FDFCF8] p-2.5 rounded-xl border border-[#EBE9E0]">
+                          <span className="text-[10px] text-gray-500 font-bold block">End Date</span>
+                          <span className="font-bold text-[#1C2C22]">{publishedPlan?.lifestyle_plan?.stress_management?.end_date || publishedPlan?.review_date || '2026-10-22'}</span>
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-3.5 rounded-2xl border border-gray-100 text-xs">
+                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Prescribed Relaxation Routine:</span>
+                        <p className="text-[#5A6B60] leading-snug">
+                          {publishedPlan?.lifestyle_plan?.stress_management?.instructions || 'Practice 4-4-4-4 Box Breathing or 10-min guided evening Pranayama before sleep.'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Domain 6: Other Lifestyle Recommendations */}
+                    <div className="bg-white border border-[#EBE9E0] p-6 rounded-3xl shadow-sm space-y-4 md:col-span-2">
+                      <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center">
+                            <Sparkles size={16} />
+                          </div>
+                          <h4 className="text-sm font-black text-[#1C2C22]">6. Other Lifestyle & Environmental Directives</h4>
+                        </div>
+                        <span className="text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full">
+                          {publishedPlan?.lifestyle_plan?.other_recommendations?.frequency || 'Daily'}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                        <div className="bg-[#FDFCF8] p-3 rounded-xl border border-[#EBE9E0]">
+                          <span className="text-[10px] text-gray-500 font-bold block">Target Directive</span>
+                          <span className="font-black text-[#1C2C22]">{publishedPlan?.lifestyle_plan?.other_recommendations?.target || 'Morning Sunlight (15 mins)'}</span>
+                        </div>
+                        <div className="bg-white p-3 rounded-xl border border-gray-100">
+                          <span className="text-[10px] text-gray-500 font-bold block">Start Date</span>
+                          <span className="font-bold text-[#1C2C22]">{publishedPlan?.lifestyle_plan?.other_recommendations?.start_date || publishedPlan?.start_date || '2026-09-22'}</span>
+                        </div>
+                        <div className="bg-white p-3 rounded-xl border border-gray-100">
+                          <span className="text-[10px] text-gray-500 font-bold block">End Date</span>
+                          <span className="font-bold text-[#1C2C22]">{publishedPlan?.lifestyle_plan?.other_recommendations?.end_date || publishedPlan?.review_date || '2026-10-22'}</span>
+                        </div>
+                      </div>
+
+                      <div className="bg-amber-50/40 p-3.5 rounded-2xl border border-amber-200 text-xs">
+                        <span className="text-[10px] font-black text-amber-900 uppercase tracking-wider block mb-1">Nutritionist Recommendation:</span>
+                        <p className="text-amber-950 font-medium leading-snug">
+                          {publishedPlan?.lifestyle_plan?.other_recommendations?.instructions || 'Get 10-15 minutes of direct morning sunlight before 9 AM for circadian rhythm sync and Vitamin D activation.'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ======================================================== */}
+              {/* PILLAR 4: BEHAVIOUR CHANGE ROADMAP (CBT TRANSFORMATION)   */}
+              {/* ======================================================== */}
+              {patientCarePlanTab === 'behavior' && (
+                <div className="space-y-6 animate-in fade-in">
+                  {/* CBT Architecture Banner */}
+                  <div className="bg-emerald-50/80 border border-emerald-200 p-5 rounded-3xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm">
+                    <div className="flex items-start gap-3.5">
+                      <div className="w-10 h-10 rounded-2xl bg-[#456A50] text-white flex items-center justify-center shrink-0 shadow-xs">
+                        <RefreshCw size={20} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-black uppercase tracking-widest text-emerald-900 bg-emerald-100 px-2.5 py-0.5 rounded-full">
+                            Cognitive Behavioural Therapy (CBT) Framework
+                          </span>
+                        </div>
+                        <h4 className="text-sm font-black text-[#1C2C22] mt-1">
+                          My Habit Transformation Roadmap
+                        </h4>
+                        <p className="text-xs text-emerald-950 mt-0.5 leading-relaxed max-w-2xl">
+                          Instead of generic advice, Dr. Sarah has pinpointed your actual behavioral obstacles and structured actionable replacement habits.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Habits Cards */}
+                  <div className="space-y-4">
+                    {(publishedPlan?.behavior_change_plan?.habits || DEFAULT_BEHAVIOR_CHANGE_PLAN.habits).map((h, i) => {
+                      const habitKey = h.id || `beh_${i + 1}`;
+                      const recordedDates = habitCompletionDates[habitKey] || [];
+                      const completedDaysCount = recordedDates.length;
+                      const todayDateStr = new Date().toISOString().split('T')[0];
+                      const isCompletedToday = recordedDates.includes(todayDateStr);
+                      const startDate = h.start_date || publishedPlan?.start_date || '2026-09-22';
+                      const reviewDate = h.target_date || publishedPlan?.review_date || '2026-10-22';
+                      const frequencyTarget = h.target_frequency || '5 days/week';
+
+                      let statusDisplay = '🔄 In Progress';
+                      let statusBadgeClass = 'bg-blue-100 text-blue-800 border-blue-300';
+                      const rawStatus = h.status || (completedDaysCount >= 5 ? 'Target Met' : 'In Progress');
+
+                      if (rawStatus.includes('Met') || rawStatus.includes('Achieved')) {
+                        statusDisplay = '✅ Target Met';
+                        statusBadgeClass = 'bg-emerald-100 text-emerald-800 border-emerald-300';
+                      } else if (rawStatus.includes('Below')) {
+                        statusDisplay = '⚠️ Below Target';
+                        statusBadgeClass = 'bg-red-100 text-red-800 border-red-300';
+                      } else if (rawStatus.includes('Barrier')) {
+                        statusDisplay = '🚩 Barrier Recorded';
+                        statusBadgeClass = 'bg-amber-100 text-amber-800 border-amber-300';
+                      } else {
+                        statusDisplay = '🔄 In Progress';
+                        statusBadgeClass = 'bg-blue-100 text-blue-800 border-blue-300';
+                      }
+
+                      return (
+                        <div key={h.id || i} className="bg-white border border-[#EBE9E0] p-6 rounded-3xl shadow-sm space-y-4">
+                          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-gray-100 pb-3">
+                            <span className="text-xs font-black text-[#1C2C22] flex items-center gap-2">
+                              <span className="w-6 h-6 rounded-full bg-emerald-100 text-[#456A50] font-black text-xs flex items-center justify-center">
+                                {i + 1}
+                              </span>
+                              Habit Transformation #{i + 1}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className={`text-[10px] font-black px-2.5 py-1 rounded-full border ${statusBadgeClass}`}>
+                                {statusDisplay}
+                              </span>
+                              <span className="text-[10px] font-black bg-amber-50 text-amber-900 border border-amber-200 px-2.5 py-1 rounded-full">
+                                🎯 {frequencyTarget}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                            <div className="bg-red-50/60 p-4 rounded-2xl border border-red-200 space-y-1">
+                              <span className="text-[10px] font-black text-red-800 uppercase tracking-wider block">
+                                🛑 Current Problem Behaviour
+                              </span>
+                              <p className="font-bold text-red-950 text-sm leading-snug">
+                                {h.current_behavior}
+                              </p>
+                            </div>
+
+                            <div className="bg-emerald-50/60 p-4 rounded-2xl border border-emerald-200 space-y-1">
+                              <span className="text-[10px] font-black text-emerald-800 uppercase tracking-wider block">
+                                🎯 Target Replacement Habit
+                              </span>
+                              <p className="font-bold text-emerald-950 text-sm leading-snug">
+                                {h.target_behavior}
+                              </p>
+                            </div>
+
+                            <div className="bg-amber-50/60 p-4 rounded-2xl border border-amber-200 space-y-1">
+                              <span className="text-[10px] font-black text-amber-800 uppercase tracking-wider block">
+                                ⚡ Action Strategy (How To Win)
+                              </span>
+                              <p className="font-medium text-amber-950 leading-snug">
+                                {h.action_strategy}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Prescribed Dates & Adherence Metrics */}
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs bg-[#FDFCF8] p-3 rounded-2xl border border-[#EBE9E0]">
+                            <div>
+                              <span className="text-[10px] text-gray-500 font-bold block uppercase tracking-wider">Start Date</span>
+                              <span className="font-bold text-[#1C2C22]">{startDate}</span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-gray-500 font-bold block uppercase tracking-wider">Target Review Date</span>
+                              <span className="font-bold text-[#1C2C22]">{reviewDate}</span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-gray-500 font-bold block uppercase tracking-wider">Frequency Target</span>
+                              <span className="font-black text-[#456A50]">{frequencyTarget}</span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-gray-500 font-bold block uppercase tracking-wider">Completed Days</span>
+                              <span className="font-black text-[#1C2C22]">{completedDaysCount} Days Logged</span>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2 border-t border-gray-100">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-[#5A6B60] font-medium">Daily Streak:</span>
+                              <span className="text-xs font-black text-[#456A50] bg-emerald-50 px-2.5 py-0.5 rounded-lg border border-emerald-200">
+                                🔥 {completedDaysCount} Days Active
+                              </span>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => handleToggleHabitToday(habitKey)}
+                              className={`px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-1.5 cursor-pointer shadow-xs ${
+                                isCompletedToday 
+                                  ? 'bg-emerald-600 text-white hover:bg-emerald-700' 
+                                  : 'bg-[#F4F9F5] hover:bg-emerald-100 text-[#456A50] border border-emerald-300'
+                              }`}
+                            >
+                              <CheckCircle2 size={14} />
+                              {isCompletedToday ? 'Completed Today! ✓' : 'Mark Done Today'}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Patient Reflection & Note for Doctor */}
+                  <div className="bg-white border border-[#EBE9E0] p-6 rounded-3xl shadow-sm space-y-3">
+                    <h4 className="text-xs font-black text-[#1C2C22] uppercase tracking-wider flex items-center gap-2">
+                      <MessageSquare size={15} className="text-[#456A50]" />
+                      My Personal Reflection & Barriers for Dr. Sarah
+                    </h4>
+                    <p className="text-xs text-[#5A6B60]">
+                      Leave a note about what worked well or what was difficult this week. Dr. Sarah reads this during your progress review.
+                    </p>
+                    <textarea
+                      rows="3"
+                      value={habitReflectionNote}
+                      onChange={e => setHabitReflectionNote(e.target.value)}
+                      placeholder="e.g. Prepped breakfast the night before on Mon and Tue, felt much more energetic during early lectures..."
+                      className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-2xl p-3 text-xs outline-none focus:border-[#456A50] resize-none"
+                    />
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          localStorage.setItem(`healora_behavior_reflections_${userId}`, habitReflectionNote);
+                          alert("✅ Your habit reflections have been saved and shared with Dr. Sarah!");
+                        }}
+                        className="bg-[#456A50] hover:bg-[#35533E] text-white px-5 py-2.5 rounded-xl font-bold text-xs transition shadow-sm cursor-pointer"
+                      >
+                        Save Reflection for Nutritionist
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 🌟 LOG MISSED WORKOUT BARRIER MODAL 🌟 */}
+              {missedReasonModalDay && (
+                <div className="fixed inset-0 z-[110] bg-black/50 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
+                  <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl border border-[#EBE9E0] space-y-4">
+                    <div className="flex justify-between items-center border-b border-gray-100 pb-3">
+                      <div>
+                        <span className="text-[10px] font-black uppercase tracking-wider text-red-700 bg-red-100 px-2 py-0.5 rounded-md">
+                          Adherence Feedback Loop
+                        </span>
+                        <h3 className="text-base font-black text-[#1C2C22] mt-1">
+                          Log Barrier for {missedReasonModalDay}
+                        </h3>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setMissedReasonModalDay(null)}
+                        className="p-1.5 rounded-full hover:bg-gray-100 text-gray-500 cursor-pointer"
+                      >
+                        <X size={18} />
+                      </button>
+                    </div>
+
+                    <p className="text-xs text-[#5A6B60] leading-relaxed">
+                      Why did you miss your workout on <strong className="text-[#1C2C22]">{missedReasonModalDay}</strong>? Sharing your obstacle helps your nutritionist provide realistic adaptations during follow-up.
+                    </p>
+
+                    {/* Quick Preset Buttons */}
+                    <div className="space-y-1.5">
+                      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Quick Presets:</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          'No time',
+                          'Tired',
+                          'College/work',
+                          'Did not feel well',
+                          'No place/equipment',
+                          'Other'
+                        ].map(preset => (
+                          <button
+                            key={preset}
+                            type="button"
+                            onClick={() => setMissedReasonInput(preset)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer border ${
+                              missedReasonInput === preset 
+                                ? 'bg-red-50 text-red-900 border-red-300 font-black' 
+                                : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                            }`}
+                          >
+                            {preset}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-[#5A6B60] uppercase tracking-wider mb-1">
+                        Custom Reason / Explanation
+                      </label>
+                      <input
+                        type="text"
+                        value={missedReasonInput}
+                        onChange={e => setMissedReasonInput(e.target.value)}
+                        placeholder="e.g. Busy with college exams"
+                        className="w-full border border-[#EBE9E0] bg-[#FDFCF8] rounded-xl p-3 text-xs outline-none focus:border-red-400 font-medium"
+                      />
+                    </div>
+
+                    <div className="flex gap-2 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setMissedReasonModalDay(null)}
+                        className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateAdherenceDay(missedReasonModalDay, 'missed', missedReasonInput || 'College/work')}
+                        className="flex-1 bg-red-600 hover:bg-red-700 text-white py-2.5 rounded-xl text-xs font-black transition cursor-pointer shadow-md"
+                      >
+                        Save & Sync Barrier
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
               </div>
             );
           })()}

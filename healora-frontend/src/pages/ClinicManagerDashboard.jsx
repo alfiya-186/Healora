@@ -14,6 +14,29 @@ export const CLINIC_ROOMS = [
   { id: 'ROOM_101', name: 'Doctor Consultation Chamber (In-Clinic)', doctor: 'Dr. Sarah Jenkins (Lead Clinical Nutritionist)', type: 'IN_CLINIC', badge: '🏥 Doctor Consultation Chamber' }
 ];
 
+export const playClinicChime = () => {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const notes = [523.25, 659.25, 783.99, 1046.50]; // Hospital announcement chime (C5, E5, G5, C6)
+    notes.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.18);
+      gain.gain.setValueAtTime(0.25, ctx.currentTime + idx * 0.18);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + idx * 0.18 + 0.4);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(ctx.currentTime + idx * 0.18);
+      osc.stop(ctx.currentTime + idx * 0.18 + 0.45);
+    });
+  } catch (e) {
+    console.warn("Clinic announcement chime error", e);
+  }
+};
+
 export const printClinicTokenSlip = (appt, patientInfo = {}) => {
   const tokenNum = appt.token_number || `TK-${101 + ((appt.id || 1) % 50)}`;
   const pName = patientInfo.name || appt.patient_name || (typeof appt.patient === 'string' ? appt.patient : 'Patient');
@@ -300,6 +323,17 @@ const ClinicManagerDashboard = () => {
     
     return () => clearInterval(interval);
   }, [managerId]);
+
+  useEffect(() => {
+    const handleStorageChange = () => {
+      const cachedAppts = JSON.parse(localStorage.getItem('healora_all_appointments')) || [];
+      if (cachedAppts.length > 0) {
+        setAppointments(cachedAppts);
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
 
   useEffect(() => {
     if (activeTab === 'notifications' && chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -788,13 +822,26 @@ const ClinicManagerDashboard = () => {
     const isoToday = now.toISOString().split('T')[0];
     const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     
-    const todays = appointments.filter(a => (a.date === isoToday || a.date === localToday) && a.status !== 'CANCELLED');
-    todays.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+    const todays = appointments.filter(a => {
+      if (a.status === 'CANCELLED') return false;
+      const isToday = (a.date === isoToday || a.date === localToday);
+      const isOffline = a.mode === 'OFFLINE';
+      return isToday || isOffline;
+    });
+
+    // Stable clinical sort: CALLED first -> IN_CONSULTATION -> WAITING -> COMPLETED
+    const statusOrder = { 'CALLED': 1, 'IN_CONSULTATION': 2, 'WAITING': 3, 'COMPLETED': 4 };
+    todays.sort((a, b) => {
+      const orderA = statusOrder[a.queue_status] || (a.status === 'COMPLETED' ? 4 : 3);
+      const orderB = statusOrder[b.queue_status] || (b.status === 'COMPLETED' ? 4 : 3);
+      if (orderA !== orderB) return orderA - orderB;
+      return (a.time || '').localeCompare(b.time || '');
+    });
 
     return todays.map((appt, idx) => {
-      const tokenNum = appt.token_number || `TK-${101 + idx}`;
+      const tokenNum = appt.token_number || `TK-${101 + ((appt.id || (idx + 1)) % 50)}`;
       const defaultRoom = appt.allocated_room || (appt.mode === 'ONLINE' ? 'In-App Telehealth Video Suite' : 'Doctor Consultation Chamber (Ground Floor, Room 101)');
-      const qStatus = appt.queue_status || 'WAITING';
+      const qStatus = appt.queue_status || (appt.status === 'COMPLETED' ? 'COMPLETED' : 'WAITING');
 
       return {
         ...appt,
@@ -849,8 +896,9 @@ const ClinicManagerDashboard = () => {
           ...(newStatus === 'CALLED' ? { token_called_at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) } : {})
         };
 
-        // Live notification dispatch
+        // Live notification & audio chime dispatch
         if (newStatus === 'CALLED') {
+          playClinicChime();
           sendNotificationToUser(
             a.patient,
             "🎟️ YOUR TOKEN HAS BEEN CALLED!",

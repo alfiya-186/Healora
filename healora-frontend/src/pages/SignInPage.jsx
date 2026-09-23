@@ -21,39 +21,6 @@ const SignInPage = () => {
   const [showForgotModal, setShowForgotModal] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotLoading, setForgotLoading] = useState(false);
-  // 🌟 QUICK 1-CLICK DEMO LOGIN HANDLER 🌟
-  const quickRoleLogin = async (demoEmail, demoPassword) => {
-    setEmail(demoEmail);
-    setPassword(demoPassword);
-    setErrorMsg('');
-    setIsLoading(true);
-
-    try {
-      const response = await fetch('/api/login/', {
-        method: 'POST',
-        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: demoEmail.toLowerCase().trim(), password: demoPassword }),
-      });
-      const data = await response.json().catch(() => null);
-      if (response.ok && data) {
-        localStorage.setItem('access_token', data.access);
-        localStorage.setItem('user_role', data.role);
-        localStorage.setItem('user_name', data.first_name || 'User');
-        localStorage.setItem('user_id', data.id); 
-        
-        if (data.role === 'ADMIN') navigate('/admin-dashboard', { replace: true });
-        else if (data.role === 'MANAGER') navigate('/manager-dashboard', { replace: true });
-        else if (data.role === 'NUTRITIONIST') navigate('/nutritionist-dashboard', { replace: true });
-        else navigate('/patient-dashboard', { replace: true });
-      } else {
-        setErrorMsg('Authentication failed for selected demo role.');
-      }
-    } catch (e) {
-      setErrorMsg('Cannot connect to Django API backend.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -193,65 +160,6 @@ const SignInPage = () => {
             <p className="text-[#5A6B60] text-sm mt-1">Sign in to your clinical portal.</p>
           </div>
           
-          {/* 🌟 1-CLICK QUICK ROLE LOGIN CAROUSEL / BUTTONS 🌟 */}
-          <div className="bg-[#F4F7F5] border border-[#DCE4DE] p-3 rounded-2xl shadow-2xs">
-            <p className="text-[10px] font-black uppercase text-[#456A50] tracking-wider mb-2 text-center flex items-center justify-center gap-1.5">
-              <span>⚡</span> Quick 1-Click Demo Portals
-            </p>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => quickRoleLogin('sarah@gmail.com', 'Sarah@123')}
-                disabled={isLoading || isGoogleLoading}
-                className="bg-white hover:bg-emerald-50 border border-[#D5DDD7] hover:border-emerald-500 p-2 rounded-xl text-[11px] font-bold text-[#1C2C22] flex items-center gap-1.5 transition shadow-2xs cursor-pointer text-left"
-              >
-                <span className="text-base">🩺</span>
-                <div className="truncate">
-                  <span className="block font-bold text-[#1C2C22] leading-tight">Dr. Sarah</span>
-                  <span className="text-[9px] text-[#5A6B60] font-normal">Nutritionist</span>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => quickRoleLogin('amna@gmail.com', 'Amna@123')}
-                disabled={isLoading || isGoogleLoading}
-                className="bg-white hover:bg-emerald-50 border border-[#D5DDD7] hover:border-emerald-500 p-2 rounded-xl text-[11px] font-bold text-[#1C2C22] flex items-center gap-1.5 transition shadow-2xs cursor-pointer text-left"
-              >
-                <span className="text-base">👤</span>
-                <div className="truncate">
-                  <span className="block font-bold text-[#1C2C22] leading-tight">Amna</span>
-                  <span className="text-[9px] text-[#5A6B60] font-normal">Patient</span>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => quickRoleLogin('aliz@gmail.com', 'Aliz@123')}
-                disabled={isLoading || isGoogleLoading}
-                className="bg-white hover:bg-emerald-50 border border-[#D5DDD7] hover:border-emerald-500 p-2 rounded-xl text-[11px] font-bold text-[#1C2C22] flex items-center gap-1.5 transition shadow-2xs cursor-pointer text-left"
-              >
-                <span className="text-base">🏥</span>
-                <div className="truncate">
-                  <span className="block font-bold text-[#1C2C22] leading-tight">Aliz</span>
-                  <span className="text-[9px] text-[#5A6B60] font-normal">Clinic Manager</span>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => quickRoleLogin('admin@gmail.com', 'Admin@123')}
-                disabled={isLoading || isGoogleLoading}
-                className="bg-white hover:bg-emerald-50 border border-[#D5DDD7] hover:border-emerald-500 p-2 rounded-xl text-[11px] font-bold text-[#1C2C22] flex items-center gap-1.5 transition shadow-2xs cursor-pointer text-left"
-              >
-                <span className="text-base">⚙️</span>
-                <div className="truncate">
-                  <span className="block font-bold text-[#1C2C22] leading-tight">System</span>
-                  <span className="text-[9px] text-[#5A6B60] font-normal">Administrator</span>
-                </div>
-              </button>
-            </div>
-          </div>
 
           {errorMsg && (
             <div className="p-3 bg-red-50 text-red-800 text-xs font-semibold rounded-xl border border-red-200">
