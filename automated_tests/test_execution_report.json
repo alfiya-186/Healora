@@ -6,7 +6,7 @@
     "expected": "Registration page displays input fields, hero banner and goal selections",
     "actual": "Page loaded: Healora",
     "status": "PASS",
-    "timestamp": "2026-09-22 15:25:59",
+    "timestamp": "2026-09-25 15:56:02",
     "screenshot": "01_Registration_Form.png"
   },
   {
@@ -16,7 +16,7 @@
     "expected": "Credentials validated with real-time checkmarks (Name, Email, 10-digit Phone, Strong Password)",
     "actual": "Form populated with valid credentials",
     "status": "PASS",
-    "timestamp": "2026-09-22 15:26:01",
+    "timestamp": "2026-09-25 15:56:09",
     "screenshot": "02_Registration_Step1_Filled.png"
   },
   {
@@ -26,7 +26,7 @@
     "expected": "Health programs display (Weight Loss, PCOS, Diabetes) and personalized dashboard initializes",
     "actual": "Health goals selected and account setup validated",
     "status": "PASS",
-    "timestamp": "2026-09-22 15:26:13",
+    "timestamp": "2026-09-25 15:56:23",
     "screenshot": "03_Registration_Step2_Health_Goals.png"
   },
   {
@@ -36,7 +36,7 @@
     "expected": "Login form with Email, Password, and Role-Aware redirection ready",
     "actual": "Login UI loaded cleanly",
     "status": "PASS",
-    "timestamp": "2026-09-22 15:26:16",
+    "timestamp": "2026-09-25 15:56:28",
     "screenshot": "04_Login_Page_Layout.png"
   },
   {
@@ -46,18 +46,18 @@
     "expected": "System denies access with error alert or message",
     "actual": "Authentication rejected securely",
     "status": "PASS",
-    "timestamp": "2026-09-22 15:26:20",
+    "timestamp": "2026-09-25 15:56:32",
     "screenshot": "05_Login_Negative_Validation.png"
   },
   {
     "test_id": "TC-LOG-03",
     "module": "Login",
-    "test_case": "Valid Patient Login",
-    "expected": "Redirect to dashboard",
-    "actual": "Message: no such element: Unable to locate element: {\"method\":\"xpath\",\"selector\":\"//input[@type='email']\"}\n  (Session info: chrome=153.0.8010.53); For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#nosuchelementexception\nStacktrace:\n\tchromedriver!GetHandleVerifier [0x7ff6dec51035+5a95]\n\tchromedriver!(No symbol) [0x7ff6deb72c70]\n\tchromedriver!(No symbol) [0x7ff6de994a7d]\n\tchromedriver!(No symbol) [0x7ff6de9eff91]\n\tchromedriver!(No symbol) [0x7ff6de9f025c]\n\tchromedriver!(No symbol) [0x7ff6dea42f67]\n\tchromedriver!(No symbol) [0x7ff6dea3fbea]\n\tchromedriver!(No symbol) [0x7ff6de9e1d02]\n\tchromedriver!(No symbol) [0x7ff6de9e2b13]\n\tchromedriver!GetHandleVerifier [0x7ff6df071411+425e71]\n\tchromedriver!GetHandleVerifier [0x7ff6df09ca47+4514a7]\n\tchromedriver!GetHandleVerifier [0x7ff6df09094e+4453ae]\n\tchromedriver!GetHandleVerifier [0x7ff6ded4bf6e+1009ce]\n\tchromedriver!(No symbol) [0x7ff6deb80a05]\n\tchromedriver!(No symbol) [0x7ff6deb7bcf4]\n\tchromedriver!(No symbol) [0x7ff6deb7be84]\n\tchromedriver!(No symbol) [0x7ff6deb666ac]\n\tKERNEL32!BaseThreadInitThunk [0x7ff8cf847374+14]\n\tntdll!RtlUserThreadStart [0x7ff8d179cc91+21]\n",
-    "status": "FAIL",
-    "timestamp": "2026-09-22 15:26:30",
-    "screenshot": ""
+    "test_case": "Valid Patient Login with Session Creation",
+    "expected": "User redirected to /patient-dashboard with JWT tokens saved",
+    "actual": "Redirected to: http://localhost:5173/patient-dashboard",
+    "status": "PASS",
+    "timestamp": "2026-09-25 15:56:39",
+    "screenshot": "06_Login_Success_Redirect.png"
   },
   {
     "test_id": "TC-DASH-01",
@@ -66,7 +66,7 @@
     "expected": "Dashboard renders personalized health metrics, weight, BMI, and calorie targets",
     "actual": "Dashboard overview rendered successfully",
     "status": "PASS",
-    "timestamp": "2026-09-22 15:26:34",
+    "timestamp": "2026-09-25 15:56:43",
     "screenshot": "07_Patient_Dashboard_Overview.png"
   },
   {
@@ -76,7 +76,7 @@
     "expected": "Interactive logging controls and progress bars render smoothly",
     "actual": "Daily wellness tracking interface validated",
     "status": "PASS",
-    "timestamp": "2026-09-22 15:26:44",
+    "timestamp": "2026-09-25 15:56:53",
     "screenshot": "08_Patient_Daily_Wellness_Tracking.png"
   },
   {
@@ -86,7 +86,7 @@
     "expected": "Prescriptions, lab reports, and digital consent vault accessible",
     "actual": "Document vault verified with secure upload buttons",
     "status": "PASS",
-    "timestamp": "2026-09-22 15:26:55",
+    "timestamp": "2026-09-25 15:57:03",
     "screenshot": "09_Patient_Health_Document_Vault.png"
   },
   {
@@ -96,7 +96,7 @@
     "expected": "Step 1 renders doctor selector, mode toggle, rate cards (Online \u20b9500 / Clinic \u20b9700)",
     "actual": "Booking wizard loaded with active clinician options",
     "status": "PASS",
-    "timestamp": "2026-09-22 15:26:59",
+    "timestamp": "2026-09-25 15:57:07",
     "screenshot": "10_Appointment_Booking_Wizard.png"
   },
   {
@@ -106,7 +106,7 @@
     "expected": "Checkout modal opens with UPI (GPay/PhonePe), Card, and Netbanking options",
     "actual": "Checkout and payment verification interface verified",
     "status": "PASS",
-    "timestamp": "2026-09-22 15:27:11",
+    "timestamp": "2026-09-25 15:57:20",
     "screenshot": "11_Appointment_Checkout_Razorpay.png"
   },
   {
@@ -116,7 +116,7 @@
     "expected": "Full-screen clinical video studio renders with live camera, audio visualiser, and controls",
     "actual": "Telehealth studio initialized with hardware controls",
     "status": "PASS",
-    "timestamp": "2026-09-22 15:27:24",
+    "timestamp": "2026-09-25 15:57:32",
     "screenshot": "12_Telehealth_Live_Video_Studio.png"
   },
   {
@@ -126,7 +126,7 @@
     "expected": "Doctor dashboard displays active patients, adherence metrics, and consultation schedules",
     "actual": "Loaded URL: http://localhost:5173/nutritionist-dashboard",
     "status": "PASS",
-    "timestamp": "2026-09-22 15:27:31",
+    "timestamp": "2026-09-25 15:57:38",
     "screenshot": "13_Nutritionist_Patient_Directory.png"
   },
   {
@@ -136,7 +136,7 @@
     "expected": "Case sheet renders biometric history, diet recommendations, and versioned meal plans",
     "actual": "Clinical case sheet and diet plan builder verified",
     "status": "PASS",
-    "timestamp": "2026-09-22 15:27:34",
+    "timestamp": "2026-09-25 15:57:40",
     "screenshot": "14_Nutritionist_Diet_Plan_Builder.png"
   },
   {
@@ -146,7 +146,7 @@
     "expected": "Manager portal displays deterministic tokens (TK-101+), Call/Start buttons, and room status",
     "actual": "Loaded URL: http://localhost:5173/manager-dashboard",
     "status": "PASS",
-    "timestamp": "2026-09-22 15:27:40",
+    "timestamp": "2026-09-25 15:57:46",
     "screenshot": "15_Clinic_Manager_Live_Queue_Board.png"
   },
   {
@@ -156,7 +156,7 @@
     "expected": "Financial telemetry, refund management, and inventory stock monitoring operational",
     "actual": "Revenue and inventory dashboards validated",
     "status": "PASS",
-    "timestamp": "2026-09-22 15:27:50",
+    "timestamp": "2026-09-25 15:57:56",
     "screenshot": "16_Clinic_Manager_Revenue_Billing.png"
   },
   {
@@ -166,7 +166,7 @@
     "expected": "Platform analytics displays total patients, clinical staff count, and audit trails",
     "actual": "Loaded URL: http://localhost:5173/admin-dashboard",
     "status": "PASS",
-    "timestamp": "2026-09-22 15:27:57",
+    "timestamp": "2026-09-25 15:58:02",
     "screenshot": "17_Admin_Analytics_Dashboard.png"
   },
   {
@@ -176,7 +176,7 @@
     "expected": "Full user table renders with roles (PATIENT, NUTRITIONIST, MANAGER, ADMIN, YOGA)",
     "actual": "User management and RBAC security verified",
     "status": "PASS",
-    "timestamp": "2026-09-22 15:28:07",
+    "timestamp": "2026-09-25 15:58:13",
     "screenshot": "18_Admin_User_Management.png"
   }
 ]

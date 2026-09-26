@@ -158,9 +158,11 @@ def run_tests():
             pwd_field = driver.find_element(By.XPATH, "//input[@type='password']")
             submit_btn = driver.find_element(By.XPATH, "//button[@type='submit']")
 
-            email_field.clear()
+            email_field.send_keys(Keys.CONTROL + "a")
+            email_field.send_keys(Keys.BACKSPACE)
             email_field.send_keys("alf@gmail.com")
-            pwd_field.clear()
+            pwd_field.send_keys(Keys.CONTROL + "a")
+            pwd_field.send_keys(Keys.BACKSPACE)
             pwd_field.send_keys("WrongPassword999!")
             submit_btn.click()
             time.sleep(2)
@@ -178,13 +180,18 @@ def run_tests():
 
         # TC-LOG-03: Positive Authentication Test - Patient Login
         try:
+            driver.get(f"{BASE_URL}/signin")
+            time.sleep(2)
+
             email_field = driver.find_element(By.XPATH, "//input[@type='email']")
             pwd_field = driver.find_element(By.XPATH, "//input[@type='password']")
             submit_btn = driver.find_element(By.XPATH, "//button[@type='submit']")
 
-            email_field.clear()
+            email_field.send_keys(Keys.CONTROL + "a")
+            email_field.send_keys(Keys.BACKSPACE)
             email_field.send_keys("alf@gmail.com")
-            pwd_field.clear()
+            pwd_field.send_keys(Keys.CONTROL + "a")
+            pwd_field.send_keys(Keys.BACKSPACE)
             pwd_field.send_keys("Test@1234")
             submit_btn.click()
             time.sleep(3)
