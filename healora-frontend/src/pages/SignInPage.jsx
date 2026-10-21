@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Mail, Lock, ShieldCheck, Eye, EyeOff, ArrowLeft, Leaf, Activity, CheckCircle, X, UserPlus, ArrowRight } from 'lucide-react';
 
@@ -9,6 +9,12 @@ const SignInPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  // Clear credentials on mount to prevent browser auto-filling saved data on load
+  useEffect(() => {
+    setEmail('');
+    setPassword('');
+  }, []);
   
   // Google SSO Modal States
   const [showGoogleModal, setShowGoogleModal] = useState(false);
@@ -167,10 +173,10 @@ const SignInPage = () => {
             </div>
           )}
           
-          <form onSubmit={handleLogin} className="space-y-4" autoComplete="on">
+          <form onSubmit={handleLogin} className="space-y-4" autoComplete="off">
             <div>
               <div className="flex justify-between items-center mb-1">
-                <label htmlFor="email" className="block text-xs font-semibold text-[#1C2C22]">Email Address</label>
+                <label className="block text-xs font-semibold text-[#1C2C22]">Email Address</label>
                 {email.length > 0 && (
                   <span className={`text-[10px] font-bold ${
                     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) 
@@ -198,8 +204,6 @@ const SignInPage = () => {
                         : 'text-amber-700'
                 }`} size={16} />
                 <input 
-                  id="email"
-                  name="email"
                   type="email" 
                   required 
                   value={email} 
@@ -214,7 +218,7 @@ const SignInPage = () => {
                           : 'border-amber-400 bg-amber-50/20 focus:border-amber-500 text-amber-900'
                   }`} 
                   placeholder="name@example.com" 
-                  autoComplete="username email" 
+                  autoComplete="off" 
                 />
               </div>
               {email.length > 0 && !email.includes('@') && (
@@ -236,7 +240,7 @@ const SignInPage = () => {
             
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label htmlFor="password" className="block text-xs font-semibold text-[#1C2C22]">Password</label>
+                <label className="block text-xs font-semibold text-[#1C2C22]">Password</label>
                 <button 
                   type="button" 
                   onClick={() => { setForgotEmail(email); setForgotSuccess(false); setShowForgotModal(true); }}
@@ -250,8 +254,6 @@ const SignInPage = () => {
                   password.length === 0 ? 'text-[#5A6B60]' : password.length >= 8 ? 'text-emerald-700' : 'text-amber-700'
                 }`} size={16} />
                 <input 
-                  id="password"
-                  name="password"
                   type={showPassword ? "text" : "password"} 
                   required 
                   value={password} 
@@ -264,7 +266,7 @@ const SignInPage = () => {
                         : 'border-amber-400 bg-amber-50/20 focus:border-amber-500'
                   }`} 
                   placeholder="••••••••" 
-                  autoComplete="current-password" 
+                  autoComplete="new-password" 
                 />
                 <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-3 text-[#5A6B60] cursor-pointer">
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}

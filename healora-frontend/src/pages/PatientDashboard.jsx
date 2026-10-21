@@ -7,7 +7,8 @@ import {
   CreditCard, Lock, ChevronRight, ChevronLeft, CheckCircle, MessageSquare, Send, Bell, Download, File, User, Key, Flame, AlertCircle, DownloadCloud, Stethoscope, ClipboardList, Star, ShieldAlert,
   Video, ExternalLink, Link2, Clock, Sparkles, Eye, RotateCcw, XCircle, AlertTriangle, Check, RefreshCw,
   Scale, TrendingDown, TrendingUp, Save, Ticket, DoorOpen, Megaphone, Printer,
-  Award, Trophy, Zap, Percent, BadgePercent, Plus, Target
+  Award, Trophy, Zap, Percent, BadgePercent, Plus, Target,
+  Folder, FolderOpen, ChevronDown, ChevronUp
 } from 'lucide-react';
 
 import BookingCalendarPicker, { getHolidayOrOffReason } from '../components/BookingCalendarPicker.jsx';
@@ -1393,6 +1394,7 @@ const PatientDashboard = () => {
 
   // --- 5. PATIENT CLINICAL HEALTH HISTORY & LONGITUDINAL TRENDS ---
   const [patientHistoryTab, setPatientHistoryTab] = useState('daily_weekly'); // 'daily_weekly' | 'weight' | 'lifestyle' | 'food'
+  const [isPatientDailyLogsFolderOpen, setIsPatientDailyLogsFolderOpen] = useState(false);
   const [newPatientWeight, setNewPatientWeight] = useState('');
   const [newPatientWeightDate, setNewPatientWeightDate] = useState(new Date().toISOString().split('T')[0]);
   const [newPatientWeightNotes, setNewPatientWeightNotes] = useState('');
@@ -6548,48 +6550,101 @@ const PatientDashboard = () => {
                   </div>
                 </div>
 
-                <div className="space-y-3">
-                  {wellnessLogs.length === 0 ? (
-                    <div className="bg-[#FDFCF8] border border-dashed border-[#EBE9E0] rounded-2xl p-10 text-center">
-                      <Clock size={36} className="mx-auto text-gray-300 mb-2" />
-                      <p className="text-sm font-bold text-gray-600">No Daily Records Submitted Yet</p>
-                      <p className="text-xs text-gray-400 mt-1">Submit your daily report under Wellness Tracking to build your health timeline.</p>
-                    </div>
-                  ) : (
-                    wellnessLogs.map(log => {
-                      const slots = log.completed_slots || {
-                        breakfast: log.breakfast_completed,
-                        lunch: log.lunch_completed,
-                        dinner: log.dinner_completed
-                      };
-                      return (
-                        <div key={log.id} className="bg-[#FDFCF8] border border-[#EBE9E0] rounded-2xl p-4 sm:p-5 shadow-2xs space-y-3">
-                          <div className="flex justify-between items-center border-b border-gray-200/60 pb-2.5">
-                            <span className="font-black text-xs text-[#1C2C22]">📅 {log.date}</span>
-                            <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${log.ate_other_food ? 'bg-red-50 text-red-700 border-red-200' : 'bg-emerald-50 text-emerald-800 border-emerald-200'}`}>
-                              {log.ate_other_food ? '⚠️ Off-Plan Logged' : '✓ Plan Followed'}
-                            </span>
-                          </div>
-                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
-                            {Object.entries(slots).map(([slot, done]) => (
-                              <div key={slot} className={`p-2 rounded-xl border flex items-center justify-between ${done ? 'bg-emerald-50 text-emerald-900 border-emerald-200 font-bold' : 'bg-white text-gray-400 border-gray-200'}`}>
-                                <span className="capitalize">{slot.replace('_', ' ')}</span>
-                                <span>{done ? '✓ Eaten' : '✕ Missed'}</span>
-                              </div>
-                            ))}
-                          </div>
-                          <div className="flex flex-wrap items-center gap-3 text-xs text-gray-600 bg-white p-3 rounded-xl border border-gray-100 font-medium">
-                            <span>💧 {log.water_glasses || 0} Glasses Water</span>
-                            <span>•</span>
-                            <span>🌙 {log.sleep_hours || 0} Hours Sleep</span>
-                            <span>•</span>
-                            <span>🏃 {log.physical_activity || 'Routine'}</span>
-                            <span>•</span>
-                            <span>⚡ Mood: {log.mood || 'Normal'}</span>
-                          </div>
+                {/* Day-by-Day Detailed Log Cards: Encapsulated Single Folder Card */}
+                <div className="bg-[#FAF8F2] border-2 border-[#D9D3C1] rounded-3xl p-4 sm:p-5 shadow-xs transition-all">
+                  {/* Folder Card Tab / Header */}
+                  <div 
+                    onClick={() => setIsPatientDailyLogsFolderOpen(!isPatientDailyLogsFolderOpen)}
+                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer select-none bg-white p-4 rounded-2xl border border-[#E4DEC9] hover:border-[#456A50] hover:shadow-sm transition"
+                  >
+                    <div className="flex items-center gap-3.5">
+                      <div className="w-11 h-11 rounded-2xl bg-[#EAF0EC] text-[#456A50] flex items-center justify-center shrink-0 border border-[#456A50]/20 shadow-2xs">
+                        {isPatientDailyLogsFolderOpen ? <FolderOpen size={22} className="text-[#456A50]" /> : <Folder size={22} className="text-[#456A50]" />}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-black text-[#1C2C22] tracking-tight">Daily Adherence & Check-in Dossier</h4>
+                          <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-[#EAF0EC] text-[#456A50] border border-[#456A50]/20">
+                            {wellnessLogs.length} Records
+                          </span>
                         </div>
-                      );
-                    })
+                        <p className="text-xs text-gray-500 font-medium mt-0.5">
+                          {isPatientDailyLogsFolderOpen 
+                            ? 'Folder is open. Scroll inside this container to inspect your records.' 
+                            : 'Folder card collapsed to keep your timeline fast and lag-free. Click to open and inspect past days.'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 self-end sm:self-auto">
+                      <span className="text-xs font-bold text-[#456A50] bg-[#F4F6F4] px-3.5 py-1.5 rounded-xl border border-[#456A50]/20 flex items-center gap-1.5 hover:bg-[#EAF0EC] transition">
+                        {isPatientDailyLogsFolderOpen ? (
+                          <><span>Close Folder</span><ChevronUp size={16} /></>
+                        ) : (
+                          <><span>Open Folder ({wellnessLogs.length})</span><ChevronDown size={16} /></>
+                        )}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Folder Body: Scrollable Dossier when Open */}
+                  {isPatientDailyLogsFolderOpen && (
+                    <div className="mt-4 pt-3 border-t border-[#E4DEC9]/60">
+                      <div className="flex items-center justify-between text-xs text-gray-500 font-bold px-1 mb-3">
+                        <span>Showing {wellnessLogs.length} Check-in Days (Scrollable Dossier)</span>
+                        <button 
+                          type="button" 
+                          onClick={() => setIsPatientDailyLogsFolderOpen(false)}
+                          className="text-[11px] text-[#456A50] hover:underline flex items-center gap-1 font-bold"
+                        >
+                          <ChevronUp size={13}/> Collapse Folder
+                        </button>
+                      </div>
+
+                      <div className="max-h-[580px] overflow-y-auto pr-1 space-y-3.5 custom-scrollbar">
+                        {wellnessLogs.length === 0 ? (
+                          <div className="bg-white border border-dashed border-[#EBE9E0] rounded-2xl p-10 text-center">
+                            <Clock size={36} className="mx-auto text-gray-300 mb-2" />
+                            <p className="text-sm font-bold text-gray-600">No Daily Records Submitted Yet</p>
+                            <p className="text-xs text-gray-400 mt-1">Submit your daily report under Wellness Tracking to build your health timeline.</p>
+                          </div>
+                        ) : (
+                          wellnessLogs.map(log => {
+                            const slots = log.completed_slots || {
+                              breakfast: log.breakfast_completed,
+                              lunch: log.lunch_completed,
+                              dinner: log.dinner_completed
+                            };
+                            return (
+                              <div key={log.id} className="bg-white border border-[#EBE9E0] rounded-2xl p-4 sm:p-5 shadow-2xs space-y-3">
+                                <div className="flex justify-between items-center border-b border-gray-200/60 pb-2.5">
+                                  <span className="font-black text-xs text-[#1C2C22]">📅 {log.date}</span>
+                                  <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${log.ate_other_food ? 'bg-red-50 text-red-700 border-red-200' : 'bg-emerald-50 text-emerald-800 border-emerald-200'}`}>
+                                    {log.ate_other_food ? '⚠️ Off-Plan Logged' : '✓ Plan Followed'}
+                                  </span>
+                                </div>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+                                  {Object.entries(slots).map(([slot, done]) => (
+                                    <div key={slot} className={`p-2 rounded-xl border flex items-center justify-between ${done ? 'bg-emerald-50 text-emerald-900 border-emerald-200 font-bold' : 'bg-white text-gray-400 border-gray-200'}`}>
+                                      <span className="capitalize">{slot.replace('_', ' ')}</span>
+                                      <span>{done ? '✓ Eaten' : '✕ Missed'}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                                <div className="flex flex-wrap items-center gap-3 text-xs text-gray-600 bg-[#FDFCF8] p-3 rounded-xl border border-gray-100 font-medium">
+                                  <span>💧 {log.water_glasses || 0} Glasses Water</span>
+                                  <span>•</span>
+                                  <span>🌙 {log.sleep_hours || 0} Hours Sleep</span>
+                                  <span>•</span>
+                                  <span>🏃 {log.physical_activity || 'Routine'}</span>
+                                  <span>•</span>
+                                  <span>⚡ Mood: {log.mood || 'Normal'}</span>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>
