@@ -12,13 +12,31 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 import os
 from pathlib import Path
+from django.core.exceptions import ImproperlyConfigured
+import dj_database_url
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Detect whether running in a hosted production environment
+is_production = bool(
+    os.environ.get('RENDER')
+    or os.environ.get('RENDER_EXTERNAL_HOSTNAME')
+    or os.environ.get('DATABASE_URL')
+    or os.environ.get('ENVIRONMENT') == 'production'
+    or os.environ.get('DJANGO_ENV') == 'production'
+    or os.environ.get('DEBUG', '').lower() in ('false', '0', 'f', 'no')
+)
+
 try:
     from dotenv import load_dotenv
-    load_dotenv(BASE_DIR / '.env')
+    env_file = BASE_DIR / '.env'
+    if env_file.exists():
+        # In development, load .env to configure local environment.
+        # In production, hosting platform environment variables take precedence (override=False).
+        load_dotenv(env_file, override=not is_production)
+    else:
+        load_dotenv()
 except ImportError:
     pass
 
@@ -26,13 +44,49 @@ except ImportError:
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-dqs64cfeu%k89%_=%$n+db+5gdmbfw)h4zp3@@6wxkbq2!vnp='
-
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+debug_env = os.environ.get('DEBUG', 'True').strip()
+if debug_env.lower() in ('false', '0', 'f', 'no'):
+    DEBUG = False
+elif debug_env.lower() in ('true', '1', 't', 'yes'):
+    DEBUG = True
+else:
+    DEBUG = not is_production
 
-ALLOWED_HOSTS = ['*']  # The star means it accepts requests from any local port
+# SECURITY WARNING: keep the secret key used in production secret!
+DEV_FALLBACK_SECRET_KEY = 'django-insecure-dqs64cfeu%k89%_=%$n+db+5gdmbfw)h4zp3@@6wxkbq2!vnp='
+raw_secret_key = os.environ.get('SECRET_KEY')
+
+if not raw_secret_key:
+    if DEBUG:
+        SECRET_KEY = DEV_FALLBACK_SECRET_KEY
+    else:
+        raise ImproperlyConfigured(
+            'The SECRET_KEY environment variable must be set in production when DEBUG=False.'
+        )
+else:
+    SECRET_KEY = raw_secret_key.strip()
+    if not DEBUG:
+        if SECRET_KEY == DEV_FALLBACK_SECRET_KEY or SECRET_KEY.startswith('django-insecure-'):
+            raise ImproperlyConfigured(
+                'The development fallback SECRET_KEY cannot be used in production (DEBUG=False). Provide a secure SECRET_KEY in the environment.'
+            )
+        if len(SECRET_KEY) < 32:
+            raise ImproperlyConfigured(
+                'The production SECRET_KEY must be a strong, random secret with at least 32 characters.'
+            )
+
+allowed_hosts_env = os.environ.get('ALLOWED_HOSTS')
+if allowed_hosts_env:
+    ALLOWED_HOSTS = [host.strip() for host in allowed_hosts_env.split(',') if host.strip()]
+elif DEBUG:
+    ALLOWED_HOSTS = ['*']
+else:
+    ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+
+render_external_hostname = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
+if render_external_hostname and render_external_hostname not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(render_external_hostname)
 
 
 # Application definition
@@ -53,6 +107,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'corsheaders.middleware.CorsMiddleware',  # THIS MUST BE EXACTLY HERE
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -84,16 +139,27 @@ WSGI_APPLICATION = 'healora_backend.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('DB_NAME', 'postgres'),
-        'USER': os.environ.get('DB_USER', 'postgres'),
-        'PASSWORD': os.environ.get('DB_PASSWORD', 'alfz'),
-        'HOST': os.environ.get('DB_HOST', 'localhost'),
-        'PORT': os.environ.get('DB_PORT', '5432'),
+DATABASE_URL = os.environ.get('DATABASE_URL')
+if DATABASE_URL:
+    DATABASES = {
+        'default': dj_database_url.parse(
+            DATABASE_URL,
+            conn_max_age=600,
+            conn_health_checks=True,
+            ssl_require=True,
+        )
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.environ.get('DB_NAME', 'postgres'),
+            'USER': os.environ.get('DB_USER', 'postgres'),
+            'PASSWORD': os.environ.get('DB_PASSWORD', 'alfz'),
+            'HOST': os.environ.get('DB_HOST', 'localhost'),
+            'PORT': os.environ.get('DB_PORT', '5432'),
+        }
+    }
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
@@ -130,14 +196,54 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+STORAGES = {
+    'default': {
+        'BACKEND': 'django.core.files.storage.FileSystemStorage',
+    },
+    'staticfiles': {
+        'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+    },
+}
 
 
 # Custom User Model
 AUTH_USER_MODEL = 'core.User'
 
-# CORS Settings - Allow Everything for Development (Do not add CORS_ALLOWED_ORIGINS here!)
-CORS_ALLOW_ALL_ORIGINS = True
+# CORS & CSRF Settings
+DEFAULT_LOCAL_ORIGINS = [
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+]
+
+cors_origins_env = os.environ.get('CORS_ALLOWED_ORIGINS')
+if cors_origins_env:
+    CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_origins_env.split(',') if origin.strip()]
+    for origin in DEFAULT_LOCAL_ORIGINS:
+        if origin not in CORS_ALLOWED_ORIGINS:
+            CORS_ALLOWED_ORIGINS.append(origin)
+else:
+    CORS_ALLOWED_ORIGINS = list(DEFAULT_LOCAL_ORIGINS)
+
+CORS_ALLOW_ALL_ORIGINS = DEBUG and not bool(cors_origins_env)
 CORS_ALLOW_CREDENTIALS = True
+
+csrf_origins_env = os.environ.get('CSRF_TRUSTED_ORIGINS')
+if csrf_origins_env:
+    CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in csrf_origins_env.split(',') if origin.strip()]
+    for origin in DEFAULT_LOCAL_ORIGINS:
+        if origin not in CSRF_TRUSTED_ORIGINS:
+            CSRF_TRUSTED_ORIGINS.append(origin)
+else:
+    CSRF_TRUSTED_ORIGINS = list(DEFAULT_LOCAL_ORIGINS)
+
+if render_external_hostname:
+    render_origin = f'https://{render_external_hostname}'
+    if render_origin not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(render_origin)
 
 # Configure Django REST Framework to use JWT Authentication
 REST_FRAMEWORK = {
@@ -145,7 +251,6 @@ REST_FRAMEWORK = {
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     )
 }
-import os
 
 # Media files (Uploaded Lab Reports & Prescriptions)
 MEDIA_URL = '/media/'
