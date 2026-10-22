@@ -1,0 +1,53 @@
+# ==============================================================================
+# HEALORA ROOT .GITIGNORE
+# ==============================================================================
+
+# Environment files and secrets (keep .env.example tracked)
+.env
+.env.*
+*.env
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+
+# Python virtual environments
+venv/
+**/venv/
+env/
+**/env/
+.venv/
+**/.venv/
+
+# Python compiled bytecode and caches
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Frontend dependencies and build outputs
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+dist-ssr/
+*.local
+
+# Django generated static files
+staticfiles/
+**/staticfiles/
+
+# SQLite databases (local development)
+*.sqlite3
+**/*.sqlite3
+
+# Editor and operating system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+
