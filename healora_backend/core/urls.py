@@ -1,6 +1,6 @@
 from django.urls import path
 from .views import (
-    RegisterView, CustomLoginView, 
+    RegisterView, CustomLoginView, PasswordResetRequestView, PasswordResetVerifyView,
     PatientProfileUpdateView, WellnessLogListCreateView, 
     PatientDietPlanView, PatientAppointmentListCreateView, NutritionistListView,
     NutritionistPublishDietPlanView, NutritionistPatientListView, PatientDocumentListCreateView,
@@ -26,6 +26,8 @@ urlpatterns = [
     path('register/', RegisterView.as_view(), name='register'),
     path('login/', CustomLoginView.as_view(), name='login'), 
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('password-reset/request/', PasswordResetRequestView.as_view(), name='password-reset-request'),
+    path('password-reset/verify/', PasswordResetVerifyView.as_view(), name='password-reset-verify'),
     
     # --- PATIENT & NUTRITIONIST ROUTES ---
     path('profile/update/<int:user_id>/', PatientProfileUpdateView.as_view(), name='profile-update'),

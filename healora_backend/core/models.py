@@ -117,3 +117,47 @@ class TelehealthSignal(models.Model):
     def __str__(self):
         return f'Signal {self.signal_type} for Appt #{self.appointment_id} from User #{self.sender_id}'
 
+
+
+class PasswordResetOTP(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='password_reset_otps')
+    otp_hash = models.CharField(max_length=255, blank=True, null=True)
+    otp_code = models.CharField(max_length=6, blank=True, null=True)
+    failed_attempts = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_used = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def is_valid(self):
+        from django.utils import timezone
+        import datetime
+        if self.is_used:
+            return False
+        if self.failed_attempts >= 5:
+            return False
+        return (timezone.now() - self.created_at) < datetime.timedelta(minutes=10)
+
+    def set_otp(self, raw_otp):
+        from django.contrib.auth.hashers import make_password
+        self.otp_hash = make_password(str(raw_otp))
+        self.otp_code = None
+
+    def verify_otp(self, raw_otp):
+        from django.contrib.auth.hashers import check_password
+        if not self.is_valid():
+            return False
+        if not self.otp_hash:
+            match = (self.otp_code == str(raw_otp))
+        else:
+            match = check_password(str(raw_otp), self.otp_hash)
+
+        if not match:
+            self.failed_attempts += 1
+            self.save(update_fields=['failed_attempts'])
+            return False
+        return True
+
+    def __str__(self):
+        return f'OTP for {self.user.email} (id={self.id})'

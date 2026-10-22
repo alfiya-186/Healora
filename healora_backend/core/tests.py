@@ -2,7 +2,9 @@ from django.test import TestCase
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 from rest_framework import status
-from .models import Appointment, PatientProfile, DietPlan, WellnessLog, ClinicHoliday, TelehealthSignal
+from .models import Appointment, PatientProfile, DietPlan, WellnessLog, ClinicHoliday, TelehealthSignal, PasswordResetOTP
+from django.core import mail
+import re
 import datetime
 
 User = get_user_model()
@@ -218,3 +220,115 @@ class HealoraCoreSecurityAndWorkflowTests(TestCase):
         self.assertEqual(appt.status, 'COMPLETED')
         self.assertIn('Clinical Findings: Patient reports improved metabolic energy', appt.health_notes)
         self.assertIn('Prescription: Continue low GI Kerala protocol', appt.health_notes)
+
+    # 7. PASSWORD RESET REAL EMAIL OTP TESTS
+    def test_password_reset_request_sends_email_and_hashes_otp(self):
+        mail.outbox.clear()
+        response = self.client.post('/api/password-reset/request/', {'email': 'patient_a@gmail.com'})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('verification code has been sent', response.data['message'])
+
+        # 1. Verify email was dispatched
+        self.assertEqual(len(mail.outbox), 1)
+        email_msg = mail.outbox[0]
+        self.assertEqual(email_msg.to, ['patient_a@gmail.com'])
+        self.assertIn('Healora', email_msg.subject)
+
+        # 2. Extract code from email body
+        otp_match = re.search(r'\b(\d{6})\b', email_msg.body)
+        self.assertIsNotNone(otp_match, '6-digit OTP not found in email body')
+        raw_otp = otp_match.group(1)
+
+        # 3. Verify OTP is NEVER returned in API response
+        self.assertNotIn(raw_otp, str(response.data))
+        self.assertNotIn('otp', response.data)
+        self.assertNotIn('code', response.data)
+
+        # 4. Verify OTP is hashed in PostgreSQL database
+        otp_record = PasswordResetOTP.objects.filter(user=self.patient_a).latest('created_at')
+        self.assertTrue(otp_record.verify_otp(raw_otp))
+        self.assertNotEqual(otp_record.otp_hash, raw_otp)
+        self.assertIsNone(otp_record.otp_code)
+
+    def test_password_reset_unknown_email_neutral_response(self):
+        mail.outbox.clear()
+        response = self.client.post('/api/password-reset/request/', {'email': 'unknown_person@gmail.com'})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('verification code has been sent', response.data['message'])
+        # Account provisioned and real email sent
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ['unknown_person@gmail.com'])
+
+    def test_password_reset_verify_and_update_password(self):
+        mail.outbox.clear()
+        self.client.post('/api/password-reset/request/', {'email': 'patient_a@gmail.com'})
+        email_msg = mail.outbox[0]
+        raw_otp = re.search(r'\b(\d{6})\b', email_msg.body).group(1)
+
+        # Verify and set new strong password
+        resp_verify = self.client.post('/api/password-reset/verify/', {
+            'email': 'patient_a@gmail.com',
+            'otp_code': raw_otp,
+            'new_password': 'UpdatedPassword@2026'
+        })
+        self.assertEqual(resp_verify.status_code, status.HTTP_200_OK)
+
+        # Confirm old password fails
+        resp_old = self.client.post('/api/login/', {'username': 'patient_a@gmail.com', 'password': 'Test@1234'})
+        self.assertEqual(resp_old.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # Confirm new password succeeds
+        resp_new = self.client.post('/api/login/', {'username': 'patient_a@gmail.com', 'password': 'UpdatedPassword@2026'})
+        self.assertEqual(resp_new.status_code, status.HTTP_200_OK)
+
+    def test_password_reset_invalid_otp_locks_after_failed_attempts(self):
+        mail.outbox.clear()
+        self.client.post('/api/password-reset/request/', {'email': 'patient_a@gmail.com'})
+
+        # Fail 5 times
+        for _ in range(5):
+            resp = self.client.post('/api/password-reset/verify/', {
+                'email': 'patient_a@gmail.com',
+                'otp_code': '000000',
+                'new_password': 'UpdatedPassword@2026'
+            })
+            self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # 6th attempt should be blocked due to lock
+        resp_blocked = self.client.post('/api/password-reset/verify/', {
+            'email': 'patient_a@gmail.com',
+            'otp_code': '000000',
+            'new_password': 'UpdatedPassword@2026'
+        })
+        self.assertEqual(resp_blocked.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_password_reset_cannot_reuse_otp(self):
+        mail.outbox.clear()
+        self.client.post('/api/password-reset/request/', {'email': 'patient_a@gmail.com'})
+        raw_otp = re.search(r'\b(\d{6})\b', mail.outbox[0].body).group(1)
+
+        # First verification succeeds
+        resp1 = self.client.post('/api/password-reset/verify/', {
+            'email': 'patient_a@gmail.com',
+            'otp_code': raw_otp,
+            'new_password': 'ValidPassword1@2026'
+        })
+        self.assertEqual(resp1.status_code, status.HTTP_200_OK)
+
+        # Second verification with same code fails
+        resp2 = self.client.post('/api/password-reset/verify/', {
+            'email': 'patient_a@gmail.com',
+            'otp_code': raw_otp,
+            'new_password': 'ValidPassword2@2026'
+        })
+        self.assertEqual(resp2.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_password_reset_rate_limiting(self):
+        mail.outbox.clear()
+        # 1st request succeeds
+        resp1 = self.client.post('/api/password-reset/request/', {'email': 'patient_a@gmail.com'})
+        self.assertEqual(resp1.status_code, status.HTTP_200_OK)
+
+        # Immediate 2nd request is throttled
+        resp2 = self.client.post('/api/password-reset/request/', {'email': 'patient_a@gmail.com'})
+        self.assertEqual(resp2.status_code, status.HTTP_429_TOO_MANY_REQUESTS)

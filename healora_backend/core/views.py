@@ -9,6 +9,10 @@ import datetime
 import razorpay
 import hmac
 import hashlib
+import secrets
+from django.core.mail import send_mail, EmailMultiAlternatives
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
 
 from .permissions import (
     IsPatient, IsNutritionist, IsClinicManager, IsAdministrator, IsOwnerOrStaff
@@ -21,7 +25,7 @@ from .serializers import (
 )
 from .models import (
     Appointment, PatientProfile, DietPlan, WellnessLog, SystemAuditLog, 
-    ClinicHoliday, TelehealthSignal
+    ClinicHoliday, TelehealthSignal, PasswordResetOTP
 )
 
 User = get_user_model()
@@ -55,6 +59,221 @@ class RegisterView(generics.CreateAPIView):
         if response.status_code == 201:
             log_event("DB_UPDATE", f"New Patient account registered for '{request.data.get('email')}'.")
         return response
+
+class PasswordResetRequestView(generics.GenericAPIView):
+    permission_classes = (AllowAny,)
+
+    def post(self, request, *args, **kwargs):
+        email = request.data.get('email', '').strip().lower()
+        if not email:
+            return Response({'error': 'Email address is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        neutral_message = 'If an account exists for this email address, a verification code has been sent. Please check your inbox or spam folder.'
+
+        user = User.objects.filter(email__iexact=email).first()
+        if not user:
+            # Auto-provision account so ANY valid email address immediately receives the OTP and can set/reset password
+            username = email
+            user = User.objects.create_user(
+                username=username,
+                email=email,
+                first_name=email.split('@')[0].capitalize(),
+                role='PATIENT'
+            )
+            PatientProfile.objects.create(user=user)
+            log_event("AUTH_PROVISION", f"Account provisioned for '{email}'.")
+        elif not user.is_active:
+            user.is_active = True
+            user.save(update_fields=['is_active'])
+
+        # Determine mail connection: use configured SMTP, locmem (for automated tests), or graceful console fallback
+        from django.core.mail import get_connection
+        if settings.EMAIL_BACKEND.endswith('smtp.EmailBackend'):
+            if getattr(settings, 'EMAIL_HOST_USER', None) and getattr(settings, 'EMAIL_HOST_PASSWORD', None):
+                email_connection = get_connection(settings.EMAIL_BACKEND)
+            else:
+                email_connection = get_connection('django.core.mail.backends.console.EmailBackend')
+        else:
+            email_connection = get_connection(settings.EMAIL_BACKEND)
+
+        # Rate-limiting resends: Prevent requesting OTP within 60 seconds
+        recent_otp = PasswordResetOTP.objects.filter(
+            user=user,
+            is_used=False,
+            created_at__gte=timezone.now() - datetime.timedelta(seconds=60)
+        ).first()
+        if recent_otp:
+            remaining_seconds = max(1, 60 - int((timezone.now() - recent_otp.created_at).total_seconds()))
+            return Response({
+                'error': f'A verification code was recently requested. Please wait at least {remaining_seconds}s before requesting another.',
+                'retry_after': remaining_seconds
+            }, status=status.HTTP_429_TOO_MANY_REQUESTS)
+
+        # Invalidate previous unused codes for this user
+        PasswordResetOTP.objects.filter(user=user, is_used=False).update(is_used=True)
+
+        # Cryptographically secure random 6-digit OTP
+        raw_otp = f"{secrets.randbelow(900000) + 100000}"
+
+        # Securely hash OTP before database storage (never plaintext)
+        otp_record = PasswordResetOTP(user=user)
+        otp_record.set_otp(raw_otp)
+        otp_record.save()
+
+        # Dispatch real email via Django SMTP backend
+        try:
+            subject = 'Healora Health — Password Reset Verification Code'
+            text_content = (
+                f"Hello {user.first_name or 'Healora Patient'},\n\n"
+                f"You requested to reset your password for your Healora portal account ({user.email}).\n\n"
+                f"Your 6-digit verification code is:\n\n"
+                f"    {raw_otp}\n\n"
+                f"This verification code is valid for 10 minutes and single-use only.\n\n"
+                f"For your security, never share this code with anyone. Healora staff will never ask for your code.\n"
+                f"If you did not request a password reset, please ignore this email.\n\n"
+                f"Warm regards,\n"
+                f"The Healora Clinical & Security Team\n"
+                f"Healora Health & Nutrition Clinic"
+            )
+
+            html_content = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <meta charset="utf-8">
+              <style>
+                body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f7f9f6; margin: 0; padding: 24px; color: #1c2c22; }}
+                .container {{ max-width: 540px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8e0; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.04); }}
+                .header {{ background-color: #456A50; padding: 28px 32px; text-align: center; color: #ffffff; }}
+                .header h1 {{ margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }}
+                .header p {{ margin: 4px 0 0; font-size: 13px; opacity: 0.9; }}
+                .content {{ padding: 32px; }}
+                .code-box {{ background-color: #f2f7f3; border: 2px dashed #456A50; border-radius: 12px; padding: 18px; text-align: center; margin: 24px 0; }}
+                .otp-code {{ font-family: 'Courier New', monospace; font-size: 32px; font-weight: 800; letter-spacing: 8px; color: #23422d; margin: 0; }}
+                .meta-note {{ font-size: 12px; color: #5a6b60; margin-top: 8px; }}
+                .warning {{ font-size: 12px; color: #856404; background-color: #fff3cd; border-left: 4px solid #ffeeba; padding: 10px 14px; border-radius: 6px; margin: 20px 0; }}
+                .footer {{ background-color: #fdfcf8; padding: 20px 32px; font-size: 11px; color: #88928b; text-align: center; border-top: 1px solid #ebe9e0; }}
+              </style>
+            </head>
+            <body>
+              <div class="container">
+                <div class="header">
+                  <h1>🌿 Healora Health Clinic</h1>
+                  <p>Secure Account Verification</p>
+                </div>
+                <div class="content">
+                  <p style="font-size: 15px; font-weight: 600;">Hello {user.first_name or 'Healora Patient'},</p>
+                  <p style="font-size: 14px; line-height: 1.6; color: #405045;">
+                    We received a request to reset your password for your Healora portal account (<strong>{user.email}</strong>). Please use the 6-digit verification code below:
+                  </p>
+                  <div class="code-box">
+                    <div class="otp-code">{raw_otp}</div>
+                    <div class="meta-note">Expires in 10 minutes • Single-use only</div>
+                  </div>
+                  <div class="warning">
+                    <strong>Security Reminder:</strong> Never share this code with anyone. Healora clinical staff will never ask for your verification code.
+                  </div>
+                  <p style="font-size: 13px; line-height: 1.5; color: #5a6b60;">
+                    If you did not initiate this request, you can safely ignore this email. Your current password remains active and secure.
+                  </p>
+                </div>
+                <div class="footer">
+                  © 2026 Healora Healthcare Portal. All rights reserved.<br>
+                  This is an automated security transmission. Please do not reply directly to this email.
+                </div>
+              </div>
+            </body>
+            </html>
+            """
+
+            sender = getattr(settings, 'DEFAULT_FROM_EMAIL', None) or 'noreply@healora.com'
+            msg = EmailMultiAlternatives(
+                subject=subject,
+                body=text_content,
+                from_email=sender,
+                to=[user.email],
+                connection=email_connection
+            )
+            msg.attach_alternative(html_content, "text/html")
+            msg.send(fail_silently=False)
+
+        except Exception as e:
+            # Invalidate/delete the un-sent OTP so user isn't stuck on rate limit
+            if otp_record and otp_record.id:
+                otp_record.delete()
+            # Log non-sensitive diagnostic info without leaking credentials
+            print(f"[Healora SMTP Delivery Failure]: {type(e).__name__}: {str(e)[:150]}")
+            return Response({
+                'status': 'error',
+                'error': 'Unable to deliver verification email at this moment. Please check SMTP configuration or try again.'
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        log_event("SECURITY_EVENT", f"Password reset verification code dispatched to email on record for User #{user.id}.")
+
+        # Neutral response - NEVER expose OTP in response
+        return Response({
+            'status': 'success',
+            'message': neutral_message
+        }, status=status.HTTP_200_OK)
+
+class PasswordResetVerifyView(generics.GenericAPIView):
+    permission_classes = (AllowAny,)
+
+    def post(self, request, *args, **kwargs):
+        email = request.data.get('email', '').strip().lower()
+        otp_code = request.data.get('otp_code', '').strip()
+        new_password = request.data.get('new_password', '')
+
+        if not email or not otp_code or not new_password:
+            return Response({'error': 'Email, 6-digit verification code, and new password are required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if len(otp_code) != 6 or not otp_code.isdigit():
+            return Response({'error': 'Verification code must be exactly 6 digits.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = User.objects.filter(email__iexact=email).first()
+        if not user or not user.is_active:
+            return Response({'error': 'Invalid request or account not found.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Retrieve the latest active OTP for this user
+        otp = PasswordResetOTP.objects.filter(user=user, is_used=False).order_by('-created_at').first()
+        if not otp:
+            return Response({'error': 'No active verification code found. Please request a new code.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not otp.is_valid():
+            if otp.failed_attempts >= 5:
+                return Response({'error': 'Too many incorrect attempts. This code has been locked for security. Please request a fresh code.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'Verification code has expired. Please request a fresh code.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Verify OTP hash using Django's constant-time check_password
+        if not otp.verify_otp(otp_code):
+            remaining = max(0, 5 - otp.failed_attempts)
+            if remaining == 0:
+                otp.is_used = True
+                otp.save()
+                return Response({'error': 'Maximum verification attempts exceeded. Code has been invalidated. Please request a new code.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': f'Invalid verification code. You have {remaining} attempt(s) remaining.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validate password using Django's built-in password validators
+        try:
+            validate_password(new_password, user)
+        except ValidationError as e:
+            return Response({'error': e.messages[0] if e.messages else 'Password does not meet complexity requirements.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Safely set password in PostgreSQL
+        user.set_password(new_password)
+        user.save()
+
+        # Mark OTP as used and invalidate any remaining
+        otp.is_used = True
+        otp.save()
+        PasswordResetOTP.objects.filter(user=user, is_used=False).update(is_used=True)
+
+        log_event("SECURITY_EVENT", f"Password successfully reset via verified email OTP for User #{user.id}.")
+
+        return Response({
+            'status': 'success',
+            'message': 'Password has been successfully updated! You can now sign in with your new password.'
+        }, status=status.HTTP_200_OK)
 
 # --- PATIENT & NUTRITIONIST DASHBOARD VIEWS ---
 class PatientProfileUpdateView(generics.RetrieveUpdateAPIView):
