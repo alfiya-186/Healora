@@ -824,9 +824,9 @@ const ClinicManagerDashboard = () => {
     
     const todays = appointments.filter(a => {
       if (a.status === 'CANCELLED') return false;
-      const isToday = (a.date === isoToday || a.date === localToday);
-      const isOffline = a.mode === 'OFFLINE';
-      return isToday || isOffline;
+      const apptDate = String(a.date || '').split('T')[0];
+      const isToday = (apptDate === isoToday || apptDate === localToday);
+      return isToday;
     });
 
     // Stable clinical sort: CALLED first -> IN_CONSULTATION -> WAITING -> COMPLETED

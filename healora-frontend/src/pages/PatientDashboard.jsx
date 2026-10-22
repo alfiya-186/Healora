@@ -17,6 +17,7 @@ import { getKeralaPersonalizedOptions, getKeralaMealImage, KERALA_FOOD_IMAGES, C
 import TelehealthVideoRoom from '../components/TelehealthVideoRoom.jsx';
 import { evaluateClinicalSafety, checkMealAllergenConflict, evaluateMealConflicts } from '../utils/clinicalSafetyRules.js';
 import { DEFAULT_ACTIVITY_PLAN, DEFAULT_LIFESTYLE_PLAN, DEFAULT_BEHAVIOR_CHANGE_PLAN } from './NutritionistDashboard.jsx';
+import { secureFetch } from '../utils/apiClient.js';
 
 export const calculateMetabolicProfile = (profile = {}, gender = 'Female') => {
   const weight = parseFloat(profile.weight_kg) || 60;
@@ -1257,9 +1258,8 @@ const PatientDashboard = () => {
 
     // 3. Save to backend if available
     try {
-      fetch(`/api/patient/${userId}/wellness/`, {
+      secureFetch(`/api/patient/${userId}/wellness/`, {
         method: 'POST',
-        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...updatedLog, patient: userId })
       });
     } catch (err) {}
@@ -1604,7 +1604,7 @@ const PatientDashboard = () => {
     const syncLiveAppointmentsAndChats = async () => {
       // 1. Sync appointments strictly for THIS patient
       try {
-        const apptRes = await fetch(`/api/patient/${userId}/appointments/`).catch(() => ({ ok: false }));
+        const apptRes = await secureFetch(`/api/patient/${userId}/appointments/`).catch(() => ({ ok: false }));
         const localAppts = JSON.parse(localStorage.getItem('healora_all_appointments')) || [];
         const myLocalAppts = localAppts.filter(a => a && String(a.patient) === String(userId));
         
@@ -1717,13 +1717,13 @@ const PatientDashboard = () => {
   const fetchData = async () => {
     try {
       const [logRes, dietRes, nutRes, profileRes, docsRes, holidayRes, apptRes] = await Promise.all([
-        fetch(`/api/patient/${userId}/wellness/`).catch(()=>({ok:false})),
-        fetch(`/api/patient/${userId}/diet/`).catch(()=>({ok:false})),
-        fetch(`/api/nutritionists/`).catch(()=>({ok:false})),
-        fetch(`/api/profile/update/${userId}/`).catch(()=>({ok:false})),
-        fetch(`/api/patient/${userId}/documents/`).catch(()=>({ok:false})),
-        fetch('/api/clinic-holidays/').catch(()=>({ok:false})),
-        fetch(`/api/patient/${userId}/appointments/`).catch(()=>({ok:false}))
+        secureFetch(`/api/patient/${userId}/wellness/`).catch(()=>({ok:false})),
+        secureFetch(`/api/patient/${userId}/diet/`).catch(()=>({ok:false})),
+        secureFetch(`/api/nutritionists/`).catch(()=>({ok:false})),
+        secureFetch(`/api/profile/update/${userId}/`).catch(()=>({ok:false})),
+        secureFetch(`/api/patient/${userId}/documents/`).catch(()=>({ok:false})),
+        secureFetch('/api/clinic-holidays/').catch(()=>({ok:false})),
+        secureFetch(`/api/patient/${userId}/appointments/`).catch(()=>({ok:false}))
       ]);
 
       if (holidayRes.ok) {
@@ -1856,7 +1856,7 @@ const PatientDashboard = () => {
   const handleSaveProfile = async (e) => {
     e.preventDefault(); setIsSaving(true);
     try { 
-      await fetch(`/api/profile/update/${userId}/`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(profile) }); 
+      await secureFetch(`/api/profile/update/${userId}/`, { method: 'PATCH', body: JSON.stringify(profile) }); 
       localStorage.setItem(`healora_profile_${userId}`, JSON.stringify(profile));
       alert("✅ Health Profile successfully saved!"); 
     } catch (err) { 
@@ -1996,9 +1996,8 @@ const PatientDashboard = () => {
 
     // Call backend Razorpay refund API
     try {
-      const refRes = await fetch('/api/payments/refund/', {
+      const refRes = await secureFetch('/api/payments/refund/', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           appointment_id: cancellingAppt.id,
           reason: cancelReason
@@ -2075,9 +2074,8 @@ const PatientDashboard = () => {
 
     // 5. Backend sync if available
     try {
-      await fetch(`/api/appointments/${cancellingAppt.id}/`, {
+      await secureFetch(`/api/appointments/${cancellingAppt.id}/`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'CANCELLED', payment_status: 'REFUNDED', refund_id: refundId })
       });
     } catch (e) {}
@@ -2347,9 +2345,8 @@ const PatientDashboard = () => {
       // 1. Create Razorpay order on Django backend
       let orderData = null;
       try {
-        const orderRes = await fetch('/api/payments/create-order/', {
+        const orderRes = await secureFetch('/api/payments/create-order/', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ amount: 500, patient_id: userId })
         });
         if (orderRes.ok) {
@@ -2407,9 +2404,8 @@ const PatientDashboard = () => {
     // 1. Verify payment on backend
     let verifiedAppt = null;
     try {
-      const verifyRes = await fetch('/api/payments/verify-payment/', {
+      const verifyRes = await secureFetch('/api/payments/verify-payment/', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           razorpay_order_id: orderId,
           razorpay_payment_id: paymentId,
@@ -2477,7 +2473,7 @@ const PatientDashboard = () => {
     const globalAppts = JSON.parse(localStorage.getItem('healora_all_appointments')) || []; globalAppts.unshift(newAppointment); localStorage.setItem('healora_all_appointments', JSON.stringify(globalAppts));
     setAppointments([newAppointment, ...appointments]); setShowApptModal(false); setBookingStep(1); setApptForm({ nutritionist: 'AUTO', date: '', time: '', mode: 'ONLINE' }); setPaymentForm({ cardName: '', cardNumber: '', expiry: '', cvv: '' }); setPaymentErrors({});
     alert("✅ Payment Successful! Downloading your receipt..."); generateReceipt(newAppointment);
-    try { await fetch(`/api/patient/${userId}/appointments/`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newAppointment) }); } catch (err) {}
+    try { await secureFetch(`/api/patient/${userId}/appointments/`, { method: 'POST', body: JSON.stringify(newAppointment) }); } catch (err) {}
   };
 
   const handleSendChat = (e) => {
@@ -2517,7 +2513,7 @@ const PatientDashboard = () => {
           setProfilePic(reader.result); 
           const formData = new FormData(); 
           formData.append('profile_image', file); 
-          await fetch(`/api/profile/update/${userId}/`, { method: 'PATCH', body: formData }); 
+          await secureFetch(`/api/profile/update/${userId}/`, { method: 'PATCH', body: formData }); 
         } catch(err) {} 
       };
       reader.readAsDataURL(file);
@@ -2538,7 +2534,7 @@ const PatientDashboard = () => {
       
       const formData = new FormData();
       formData.append('profile_image', '');
-      await fetch(`/api/profile/update/${userId}/`, { method: 'PATCH', body: formData }).catch(() => {});
+      await secureFetch(`/api/profile/update/${userId}/`, { method: 'PATCH', body: formData }).catch(() => {});
       alert("✅ Profile picture removed successfully!");
     } catch (err) {
       setProfilePic(null);
@@ -2585,7 +2581,7 @@ const PatientDashboard = () => {
       const formData = new FormData(); 
       formData.append('file', file); 
       formData.append('document_type', docType);
-      try { fetch(`/api/patient/${userId}/documents/`, { method: 'POST', body: formData }); } catch (err) {}
+      try { secureFetch(`/api/patient/${userId}/documents/`, { method: 'POST', body: formData }); } catch (err) {}
     }
   };
 
@@ -2597,7 +2593,7 @@ const PatientDashboard = () => {
     const allVault = JSON.parse(localStorage.getItem('healora_all_patient_reports')) || {};
     allVault[userId] = updated;
     localStorage.setItem('healora_all_patient_reports', JSON.stringify(allVault));
-    try { fetch(`/api/patient/${userId}/documents/${id}/`, { method: 'DELETE' }); } catch(err) {}
+    try { secureFetch(`/api/patient/${userId}/documents/${id}/`, { method: 'DELETE' }); } catch(err) {}
   };
 
 
@@ -2648,7 +2644,7 @@ const PatientDashboard = () => {
       localStorage.setItem(`healora_notifications_${latestAppt.nutritionist}`, JSON.stringify(nNotifs));
     }
 
-    try { await fetch(`/api/patient/${userId}/wellness/`, { method: 'POST', headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify({ ...logForm, patient: userId }), }); } catch (err) { }
+    try { await secureFetch(`/api/patient/${userId}/wellness/`, { method: 'POST', body: JSON.stringify({ ...logForm, patient: userId }), }); } catch (err) { }
     
     setLogForm(prev => ({ 
       ...prev,

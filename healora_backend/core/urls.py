@@ -7,11 +7,16 @@ from .views import (
     AdminUserListView, AdminAppointmentListView, AdminDeleteUserView, 
     AdminToggleUserStatusView, AdminEditUserView, AdminAuditLogListView,
     ClinicHolidayListCreateView, ClinicHolidayDeleteView, AppointmentUpdateView,
-    RazorpayCreateOrderView, RazorpayVerifyPaymentView, RazorpayRefundPaymentView
+    RazorpayCreateOrderView, RazorpayVerifyPaymentView, RazorpayRefundPaymentView,
+    TelehealthSignalView, TelehealthSaveNotesView
 )
 from rest_framework_simplejwt.views import TokenRefreshView
 
 urlpatterns = [
+    # --- WEBRTC TELEHEALTH VIDEO SIGNALLING & NOTES ROUTES ---
+    path('telehealth/signal/<int:appointment_id>/', TelehealthSignalView.as_view(), name='telehealth-signal'),
+    path('telehealth/notes/<int:appointment_id>/', TelehealthSaveNotesView.as_view(), name='telehealth-save-notes'),
+
     # --- RAZORPAY PAYMENT GATEWAY ROUTES ---
     path('payments/create-order/', RazorpayCreateOrderView.as_view(), name='razorpay-create-order'),
     path('payments/verify-payment/', RazorpayVerifyPaymentView.as_view(), name='razorpay-verify-payment'),

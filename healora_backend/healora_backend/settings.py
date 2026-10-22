@@ -10,7 +10,13 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+import os
 from pathlib import Path
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -80,11 +86,11 @@ WSGI_APPLICATION = 'healora_backend.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'postgres',          # Leave this as postgres
-        'USER': 'postgres',          # Leave this as postgres
-        'PASSWORD': 'alfz',          # <-- Put 'alfz' (or your actual password) HERE!
-        'HOST': 'localhost',         # <-- THIS MUST BE 'localhost'
-        'PORT': '5432',              # Leave this as 5432
+        'NAME': os.environ.get('DB_NAME', 'postgres'),
+        'USER': os.environ.get('DB_USER', 'postgres'),
+        'PASSWORD': os.environ.get('DB_PASSWORD', 'alfz'),
+        'HOST': os.environ.get('DB_HOST', 'localhost'),
+        'PORT': os.environ.get('DB_PORT', '5432'),
     }
 }
 
@@ -148,4 +154,4 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 # Default to standard test keys or read from environment
 RAZORPAY_KEY_ID = os.environ.get('RAZORPAY_KEY_ID', 'rzp_test_5173HealoraKey')
 RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET', 'testSecretHealora2026')
-RAZORPAY_CURRENCY = 'INR'
+RAZORPAY_CURRENCY = 'INR'

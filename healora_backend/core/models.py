@@ -93,4 +93,27 @@ class ClinicHoliday(models.Model):
         unique_together = ('date', 'nutritionist', 'holiday_type')
 
     def __str__(self):
-        return f"{self.date} - {self.get_holiday_type_display()}: {self.reason}"
+        return f"{self.date} - {self.get_holiday_type_display()}: {self.reason}"
+
+
+class TelehealthSignal(models.Model):
+    SIGNAL_TYPES = [
+        ('offer', 'Offer'),
+        ('answer', 'Answer'),
+        ('candidate', 'ICE Candidate'),
+        ('leave', 'Leave Call'),
+        ('chat', 'In-Call Chat'),
+    ]
+
+    appointment = models.ForeignKey(Appointment, on_delete=models.CASCADE, related_name='telehealth_signals')
+    sender = models.ForeignKey(User, on_delete=models.CASCADE)
+    signal_type = models.CharField(max_length=50, choices=SIGNAL_TYPES)
+    payload = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f'Signal {self.signal_type} for Appt #{self.appointment_id} from User #{self.sender_id}'
+

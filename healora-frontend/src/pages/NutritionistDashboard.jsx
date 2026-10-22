@@ -13,6 +13,7 @@ import { getKeralaPersonalizedOptions, getKeralaMealImage, generatePersonalizedK
 import TelehealthVideoRoom from '../components/TelehealthVideoRoom.jsx';
 import { evaluateClinicalSafety, checkMealAllergenConflict, evaluateMealConflicts } from '../utils/clinicalSafetyRules.js';
 import { playClinicChime, printClinicTokenSlip } from './ClinicManagerDashboard.jsx';
+import { secureFetch } from '../utils/apiClient.js';
 
 export const DEFAULT_MEAL_TIMINGS = {
   pre_breakfast: '07:00 AM',
@@ -592,7 +593,7 @@ const NutritionistDashboard = () => {
     let cancelled = false;
     const loadPatients = async () => {
       try {
-        const response = await fetch('/api/nutritionist/patients/');
+        const response = await secureFetch('/api/nutritionist/patients/');
         if (!response.ok) throw new Error('Unable to load patients');
         const data = await response.json();
         
@@ -611,7 +612,7 @@ const NutritionistDashboard = () => {
 
     const syncLiveNutritionistData = async () => {
       try {
-        const apptRes = await fetch('/api/admin-api/appointments/');
+        const apptRes = await secureFetch('/api/admin-api/appointments/');
         if (apptRes.ok) {
           const apptData = await apptRes.json();
           const cachedAppts = JSON.parse(localStorage.getItem('healora_all_appointments')) || [];
@@ -975,9 +976,8 @@ const NutritionistDashboard = () => {
 
     // 2. Call Django backend patch if endpoint active
     try {
-      await fetch(`/api/appointments/${apptId}/`, {
+      await secureFetch(`/api/appointments/${apptId}/`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: JSON.stringify({
           status: 'COMPLETED',
           health_notes: noteText
@@ -1279,9 +1279,8 @@ const NutritionistDashboard = () => {
     };
 
     try {
-      const response = await fetch(`/api/nutritionist/patient/${selectedPatient.id}/publish-diet/`, {
+      const response = await secureFetch(`/api/nutritionist/patient/${selectedPatient.id}/publish-diet/`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: JSON.stringify(payload),
       });
 

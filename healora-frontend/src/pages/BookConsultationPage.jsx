@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import BookingCalendarPicker, { getHolidayOrOffReason } from '../components/BookingCalendarPicker.jsx';
 import TimeSlotPicker, { normalizeTimeTo24H, normalizeTimeToLabel } from '../components/TimeSlotPicker.jsx';
+import { secureFetch } from '../utils/apiClient.js';
 
 const BookConsultationPage = () => {
   const navigate = useNavigate();
@@ -29,8 +30,8 @@ const BookConsultationPage = () => {
     const fetchData = async () => {
       try {
         const [holidaysRes, nutRes] = await Promise.all([
-          fetch('/api/clinic-holidays/').catch(() => ({ ok: false })),
-          fetch('/api/nutritionists/').catch(() => ({ ok: false }))
+          secureFetch('/api/clinic-holidays/').catch(() => ({ ok: false })),
+          secureFetch('/api/nutritionists/').catch(() => ({ ok: false }))
         ]);
 
         if (holidaysRes.ok) {
@@ -117,9 +118,8 @@ const BookConsultationPage = () => {
         discount_code: hasLoyaltyDiscount ? 'WELLNESS5' : null
       };
 
-      const response = await fetch(`/api/patient/${userId}/appointments/`, {
+      const response = await secureFetch(`/api/patient/${userId}/appointments/`, {
         method: 'POST',
-        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 

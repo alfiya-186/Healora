@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { secureFetch } from "../utils/apiClient";
 import {
   Activity, Users, UserCog, Building2, CalendarDays, ClipboardList,
   FileText, ShieldCheck, Search, Plus, Trash2, Ban, CheckCircle,
@@ -94,9 +95,9 @@ const AdminDashboard = () => {
       const localAudit = JSON.parse(localStorage.getItem('healora_audit_logs')) || [];
       
       const [u, a, l] = await Promise.all([
-        fetch("/api/admin-api/users/").catch(()=>({ok:false})),
-        fetch("/api/admin-api/appointments/").catch(()=>({ok:false})),
-        fetch("/api/admin-api/audit-logs/").catch(()=>({ok:false}))
+        secureFetch("/api/admin-api/users/").catch(()=>({ok:false})),
+        secureFetch("/api/admin-api/appointments/").catch(()=>({ok:false})),
+        secureFetch("/api/admin-api/audit-logs/").catch(()=>({ok:false}))
       ]);
 
       let apiUsers = []; let apiAppts = []; let apiAudit = [];
@@ -282,7 +283,7 @@ const AdminDashboard = () => {
       setUsers([newUser, ...users]);
       logSystemEvent('USER_CREATED', `Admin created new ${role} account for ${newUser.email}`);
       
-      const res = await fetch("/api/register/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(newUser) });
+      const res = await secureFetch("/api/admin-api/users/create/", { method: "POST", body: JSON.stringify(newUser) });
       if (!res.ok) throw new Error("Failed backend server registration.");
     } catch (err) { 
       console.log("Offline Fallback engaged.");
@@ -302,7 +303,7 @@ const AdminDashboard = () => {
     localStorage.setItem('healora_local_users', JSON.stringify(updatedLocal));
 
     logSystemEvent('USER_STATUS_CHANGE', `Admin changed user #${id} status to ${newStatus ? 'Active' : 'Inactive'}.`);
-    try { await fetch(`/api/admin-api/users/${id}/toggle-status/`, { method: "PATCH" }); } catch (e) { triggerToast("Warning: Status updated locally. Backend sync pending."); }
+    try { await secureFetch(`/api/admin-api/users/${id}/toggle-status/`, { method: "PATCH" }); } catch (e) { triggerToast("Warning: Status updated locally. Backend sync pending."); }
   };
 
   const deleteUser = async id => {
@@ -315,7 +316,7 @@ const AdminDashboard = () => {
     localStorage.setItem('healora_local_users', JSON.stringify(updatedLocal));
 
     logSystemEvent('CRITICAL_DELETE', `Admin permanently deleted user record #${id}.`);
-    try { await fetch(`/api/admin-api/users/${id}/delete/`, { method: "DELETE" }); } catch (e) { triggerToast("Warning: Account removed locally. Backend sync pending."); }
+    try { await secureFetch(`/api/admin-api/users/${id}/delete/`, { method: "DELETE" }); } catch (e) { triggerToast("Warning: Account removed locally. Backend sync pending."); }
   };
 
   const saveProgram = e => {
