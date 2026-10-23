@@ -1,37 +1,57 @@
+
 /**
  * Healora Secure API Client
- * Automatically attaches JWT Bearer token from localStorage to all outgoing requests.
- * Handles 401 Unauthorized and session expiration securely.
+ * Connects the frontend to the deployed Django backend.
+ * Automatically attaches JWT Bearer tokens.
  */
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+
+export const apiUrl = (url) => {
+  if (/^https?:\/\//i.test(url)) return url;
+
+  const path = url.startsWith('/') ? url : `/${url}`;
+  return `${API_BASE}${path}`;
+};
 
 export const secureFetch = async (url, options = {}) => {
   const token = localStorage.getItem('access_token');
   const isFormData = options.body instanceof FormData;
 
   const headers = {
-    'Accept': 'application/json',
+    Accept: 'application/json',
     ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
-    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(options.headers || {})
   };
 
+  const fullUrl = apiUrl(url);
+
   try {
-    const response = await fetch(url, { ...options, headers });
+    const response = await fetch(fullUrl, { ...options, headers });
+
     if (response.status === 401) {
-      console.warn(`[Healora Auth] 401 Unauthorized encountered on ${url}. Session expired or invalid token.`);
-      // If unauthorized on protected routes, redirect cleanly
-      if (!window.location.pathname.startsWith('/signin') && !window.location.pathname.startsWith('/signup') && window.location.pathname !== '/') {
+      console.warn(`[Healora Auth] 401 Unauthorized: ${fullUrl}`);
+
+      if (
+        !window.location.pathname.startsWith('/signin') &&
+        !window.location.pathname.startsWith('/signup') &&
+        window.location.pathname !== '/'
+      ) {
         localStorage.removeItem('access_token');
         localStorage.removeItem('user_role');
         window.location.href = '/signin';
       }
     }
+
     return response;
   } catch (error) {
-    console.error(`[Healora API Error] ${options.method || 'GET'} ${url}:`, error);
+    console.error(
+      `[Healora API Error] ${options.method || 'GET'} ${fullUrl}:`,
+      error
+    );
     throw error;
   }
 };
 
 export default secureFetch;
-

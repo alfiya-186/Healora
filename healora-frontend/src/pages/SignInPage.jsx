@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Mail, Lock, ShieldCheck, Eye, EyeOff, ArrowLeft, Leaf, Activity, CheckCircle, X, UserPlus, ArrowRight } from 'lucide-react';
-
+import { apiUrl } from '../utils/apiClient';
 const SignInPage = () => {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
@@ -64,7 +64,7 @@ const SignInPage = () => {
     setIsLoading(true);
 
     try {
-      const response = await fetch('/api/login/', {
+      const response = await fetch(apiUrl('/api/login/'), {
         method: 'POST',
         headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: email.toLowerCase().trim(), password: password }),
@@ -103,14 +103,14 @@ const SignInPage = () => {
 
     setTimeout(async () => {
       try {
-        let response = await fetch('/api/login/', {
+        let response = await fetch(apiUrl('/api/login/'), {
           method: 'POST',
           headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
           body: JSON.stringify({ username: formattedEmail, password: googlePassword }),
         });
 
         if (!response.ok) {
-          const regResponse = await fetch('/api/register/', {
+          const regResponse = await fetch(apiUrl('/api/register/'), {
             method: 'POST',
             headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
@@ -129,7 +129,7 @@ const SignInPage = () => {
             return;
           }
 
-          response = await fetch('/api/login/', {
+          response = await fetch(apiUrl('/api/login/'), {
             method: 'POST',
             headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
             body: JSON.stringify({ username: formattedEmail, password: googlePassword }),
@@ -172,7 +172,7 @@ const SignInPage = () => {
 
     setForgotLoading(true);
     try {
-      const res = await fetch('/api/password-reset/request/', {
+      const res = await fetch(apiUrl('/api/password-reset/request/'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: forgotEmail.trim() })
@@ -219,7 +219,7 @@ const SignInPage = () => {
 
     setForgotLoading(true);
     try {
-      const res = await fetch('/api/password-reset/verify/', {
+      const res = await fetch(apiUrl('/api/password-reset/verify/'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
