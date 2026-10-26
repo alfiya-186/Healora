@@ -82,7 +82,7 @@ if allowed_hosts_env:
 elif DEBUG:
     ALLOWED_HOSTS = ['*']
 else:
-    ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+    ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'healora-backend-ru0c.onrender.com', '.onrender.com']
 
 render_external_hostname = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
 if render_external_hostname and render_external_hostname not in ALLOWED_HOSTS:
@@ -141,13 +141,16 @@ WSGI_APPLICATION = 'healora_backend.wsgi.application'
 
 DATABASE_URL = os.environ.get('DATABASE_URL')
 if DATABASE_URL:
+    db_config = dj_database_url.parse(
+        DATABASE_URL,
+        conn_max_age=600,
+        conn_health_checks=True,
+        ssl_require=True,
+    )
+    # Enable Neon PgBouncer transaction-pooling compatibility
+    db_config['DISABLE_SERVER_SIDE_CURSORS'] = True
     DATABASES = {
-        'default': dj_database_url.parse(
-            DATABASE_URL,
-            conn_max_age=600,
-            conn_health_checks=True,
-            ssl_require=True,
-        )
+        'default': db_config
     }
 else:
     DATABASES = {
@@ -217,6 +220,8 @@ DEFAULT_LOCAL_ORIGINS = [
     'http://127.0.0.1:5173',
     'http://localhost:3000',
     'http://127.0.0.1:3000',
+    'https://healora-tau.vercel.app',
+    'https://healora-backend-ru0c.onrender.com',
 ]
 
 cors_origins_env = os.environ.get('CORS_ALLOWED_ORIGINS')

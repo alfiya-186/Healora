@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { apiUrl } from '../utils/apiClient';
 import { 
   User, Mail, Lock, PlusSquare, ArrowRight, ArrowLeft, Leaf, 
   ShieldCheck, Eye, EyeOff, Phone, CheckCircle2, Activity, 
@@ -176,7 +177,7 @@ const SignUpPage = () => {
 
     try {
       // 1. Create account on Django Backend
-      const response = await fetch('/api/register/', {
+      const response = await fetch(apiUrl('/api/register/'), {
         method: 'POST',
         headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -206,7 +207,7 @@ const SignUpPage = () => {
       let accessToken = 'session_token_' + Date.now();
 
       try {
-        const loginRes = await fetch('/api/login/', {
+        const loginRes = await fetch(apiUrl('/api/login/'), {
           method: 'POST',
           headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
           body: JSON.stringify({ username: email.toLowerCase().trim(), password: password }),
@@ -262,7 +263,7 @@ const SignUpPage = () => {
 
       // 6. Update Profile on Backend API
       try {
-        await fetch(`/api/profile/update/${authUserId}/`, {
+        await fetch(apiUrl(`/api/profile/update/${authUserId}/`), {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
           body: JSON.stringify(profileData)

@@ -5,7 +5,8 @@
  * Automatically attaches JWT Bearer tokens.
  */
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+// In production, fallback automatically to Render backend if env var is not set on Vercel
+const API_BASE = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? 'https://healora-backend-ru0c.onrender.com' : '');
 
 export const apiUrl = (url) => {
   if (/^https?:\/\//i.test(url)) return url;

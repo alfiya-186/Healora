@@ -83,7 +83,14 @@ const SignInPage = () => {
         else if (data.role === 'NUTRITIONIST') navigate('/nutritionist-dashboard', { replace: true });
         else navigate('/patient-dashboard', { replace: true });
       } else {
-        setErrorMsg('Invalid email or password. Are you sure you registered this account?');
+        if (response.status >= 500) {
+          setErrorMsg(`Server error (HTTP ${response.status}). Please verify the backend service and database connection.`);
+        } else if (data && (data.detail || data.non_field_errors)) {
+          const detailMsg = data.detail || (Array.isArray(data.non_field_errors) ? data.non_field_errors[0] : data.non_field_errors);
+          setErrorMsg(String(detailMsg));
+        } else {
+          setErrorMsg('Invalid email or password. Are you sure you registered this account?');
+        }
       }
     } catch (error) { 
       setErrorMsg('Cannot connect to server. Is Django running?'); 
@@ -146,7 +153,11 @@ const SignInPage = () => {
           
           navigate('/patient-dashboard', { replace: true });
         } else {
-          setErrorMsg('Google SSO Authentication failed at the database level.');
+          if (response.status >= 500) {
+            setErrorMsg(`Server error (HTTP ${response.status}). Please verify the backend service and database connection.`);
+          } else {
+            setErrorMsg(data?.detail || 'Google SSO Authentication failed at the database level.');
+          }
         }
       } catch (error) {
         setErrorMsg('Google SSO failed to connect to Django API.');

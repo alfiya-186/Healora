@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import BookingCalendarPicker from '../components/BookingCalendarPicker.jsx';
 import TimeSlotPicker, { normalizeTimeTo24H, normalizeTimeToLabel } from '../components/TimeSlotPicker.jsx';
+import { apiUrl } from '../utils/apiClient';
 
 export const CLINIC_ROOMS = [
   { id: 'ROOM_101', name: 'Doctor Consultation Chamber (In-Clinic)', doctor: 'Dr. Sarah Jenkins (Lead Clinical Nutritionist)', type: 'IN_CLINIC', badge: '🏥 Doctor Consultation Chamber' }
@@ -262,7 +263,7 @@ const secureFetch = async (url, options = {}) => {
     ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
     ...(options.headers || {})
   };
-  const response = await fetch(url, { ...options, headers });
+  const response = await fetch(apiUrl(url), { ...options, headers });
   if (response.status === 401) {
     localStorage.removeItem('access_token');
     localStorage.removeItem('user_role');
