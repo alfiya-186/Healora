@@ -2857,7 +2857,9 @@ const NutritionistDashboard = () => {
               
               {/* 🌟 TELEHEALTH GOOGLE MEET CONSULTATION BANNER 🌟 */}
               {(() => {
-                const patientAppt = appointments.find(a => String(a.patient) === String(selectedPatient.id) && a.status !== 'CANCELLED');
+                const patientAppt = appointments
+                  .filter(a => String(a.patient) === String(selectedPatient.id) && a.status !== 'CANCELLED')
+                  .sort((a, b) => (Number(b.id) || 0) - (Number(a.id) || 0))[0];
                 if (!patientAppt) return null;
                 return (
                   <div className={`p-6 rounded-3xl border shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 animate-in fade-in ${patientAppt.meet_link ? 'bg-emerald-50/90 border-emerald-200' : 'bg-[#EAF0EC]/60 border-[#456A50]/20'}`}>
@@ -4082,7 +4084,9 @@ const NutritionistDashboard = () => {
                 );
                 const localConsultHist = JSON.parse(localStorage.getItem(`healora_consultation_history_${selectedPatient.id}`)) || [];
                 const hasCompletedConsultation = patientCompletedConsultations.length > 0 || localConsultHist.length > 0;
-                const patientPendingAppt = appointments.find(a => String(a.patient) === String(selectedPatient.id) && a.status !== 'CANCELLED');
+                const patientPendingAppt = appointments
+                  .filter(a => String(a.patient) === String(selectedPatient.id) && a.status !== 'CANCELLED')
+                  .sort((a, b) => (Number(b.id) || 0) - (Number(a.id) || 0))[0];
 
                 if (!hasCompletedConsultation) {
                   return (

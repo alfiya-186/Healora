@@ -5,6 +5,7 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
+    host: true,
     proxy: {
       // This tells React: "Anytime I send data to /api, silently forward it to Django!"
       '/api': {

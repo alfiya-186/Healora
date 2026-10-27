@@ -43,6 +43,7 @@ const TelehealthVideoRoom = ({
   const [isMicOn, setIsMicOn] = useState(true);
   const [isVideoOn, setIsVideoOn] = useState(true);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [hasRemoteVideo, setHasRemoteVideo] = useState(false);
   const [mediaError, setMediaError] = useState('');
   const [successToast, setSuccessToast] = useState('');
   const [micVolume, setMicVolume] = useState(0);
@@ -78,6 +79,11 @@ const TelehealthVideoRoom = ({
   const pcRef = useRef(null);
   const pollingTimerRef = useRef(null);
   const lastSignalIdRef = useRef(0);
+  const iceCandidatesQueueRef = useRef([]);
+  const offerTimeoutRef = useRef(null);
+  const hasHandshakedRef = useRef(false);
+  const hasPresentedRef = useRef(false);
+  const hasAnsweredRef = useRef(false);
   const originalVideoTrackRef = useRef(null);
   const audioContextRef = useRef(null);
   const analyserRef = useRef(null);
@@ -159,6 +165,12 @@ const TelehealthVideoRoom = ({
       const incomingStream = event.streams && event.streams[0] ? event.streams[0] : new MediaStream([event.track]);
       setRemoteStream(incomingStream);
       setConnectionStatus('CONNECTED');
+      if (event.track.kind === 'video') {
+        setHasRemoteVideo(event.track.enabled && event.track.readyState === 'live');
+        event.track.onmute = () => setHasRemoteVideo(false);
+        event.track.onunmute = () => setHasRemoteVideo(true);
+        event.track.onended = () => setHasRemoteVideo(false);
+      }
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = incomingStream;
         remoteVideoRef.current.play().catch(() => {});
@@ -190,9 +202,87 @@ const TelehealthVideoRoom = ({
     return pc;
   };
 
+  // --- SYNTHETIC AVATAR VIDEO TRACK FALLBACK (FOR CONCURRENT LOCAL TESTING OR NO CAM) ---
+  const createVirtualVideoTrack = (name) => {
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = 640;
+      canvas.height = 480;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+
+      let frame = 0;
+      const render = () => {
+        frame++;
+        ctx.fillStyle = '#0F1A13';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Subtle pulsing ring
+        const pulse = Math.sin(frame * 0.08) * 8;
+        ctx.beginPath();
+        ctx.arc(320, 200, 75 + pulse, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(69, 106, 80, 0.4)';
+        ctx.lineWidth = 4;
+        ctx.stroke();
+
+        // Avatar circle
+        ctx.beginPath();
+        ctx.arc(320, 200, 70, 0, Math.PI * 2);
+        ctx.fillStyle = '#1D3B27';
+        ctx.fill();
+        ctx.strokeStyle = '#456A50';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        // Initial
+        ctx.fillStyle = '#A3E635';
+        ctx.font = 'bold 64px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText((name || 'U').charAt(0).toUpperCase(), 320, 202);
+
+        // Name
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 22px sans-serif';
+        ctx.fillText(name || 'Participant', 320, 310);
+
+        // Subtitle
+        ctx.fillStyle = '#94A3B8';
+        ctx.font = '14px sans-serif';
+        ctx.fillText('Live Audio Stream • Camera Reserved/Standby', 320, 340);
+      };
+
+      render();
+      const interval = setInterval(render, 100);
+      const stream = canvas.captureStream ? canvas.captureStream(10) : null;
+      if (stream) {
+        const track = stream.getVideoTracks()[0];
+        if (track) {
+          const originalStop = track.stop.bind(track);
+          track.stop = () => {
+            clearInterval(interval);
+            originalStop();
+          };
+          return track;
+        }
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  };
+
   // --- INITIATE OFFER (CALLED BY DOCTOR OR FIRST JOINER) ---
   const createAndSendOffer = async (pc) => {
     try {
+      if (!pc || pc.signalingState === 'closed') return;
+      if (pc.connectionState === 'connected') return;
+      if (hasHandshakedRef.current) return;
+      if (pc.signalingState !== 'stable') {
+        console.log("WebRTC signalingState not stable, deferring offer:", pc.signalingState);
+        return;
+      }
+      hasHandshakedRef.current = true;
       setConnectionStatus('CONNECTING');
       const offer = await pc.createOffer({
         offerToReceiveAudio: true,
@@ -203,6 +293,7 @@ const TelehealthVideoRoom = ({
       console.log("🌟 [WebRTC] Sent local offer description.");
     } catch (err) {
       console.error("Offer creation failed:", err);
+      hasHandshakedRef.current = false;
     }
   };
 
@@ -229,15 +320,34 @@ const TelehealthVideoRoom = ({
     if (!pc) return;
 
     if (type === 'join') {
-      // Peer arrived! If doctor, initiate offer
+      // Peer arrived!
       if (isDoctor) {
+        if (pc.signalingState === 'stable' && !hasHandshakedRef.current) {
+          createAndSendOffer(pc);
+        }
+      } else {
+        // Patient acknowledges arrival so doctor can generate offer
+        if (!hasPresentedRef.current) {
+          hasPresentedRef.current = true;
+          sendSignal('present', { role: currentUserRole, name: currentUserName });
+        }
+      }
+    } else if (type === 'present') {
+      if (isDoctor && pc.signalingState === 'stable' && !hasHandshakedRef.current) {
         createAndSendOffer(pc);
       }
     } else if (type === 'offer') {
       try {
+        if (hasAnsweredRef.current) return;
+        hasAnsweredRef.current = true;
         console.log("🌟 [WebRTC] Received offer from peer");
         setConnectionStatus('CONNECTING');
         await pc.setRemoteDescription(new RTCSessionDescription(payload));
+        // Flush candidate queue
+        while (iceCandidatesQueueRef.current.length > 0) {
+          const cand = iceCandidatesQueueRef.current.shift();
+          await pc.addIceCandidate(new RTCIceCandidate(cand)).catch(() => {});
+        }
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         await sendSignal('answer', answer);
@@ -248,9 +358,15 @@ const TelehealthVideoRoom = ({
     } else if (type === 'answer') {
       try {
         console.log("🌟 [WebRTC] Received answer from peer");
+        hasHandshakedRef.current = true;
         if (pc.signalingState === 'have-local-offer') {
           await pc.setRemoteDescription(new RTCSessionDescription(payload));
           setConnectionStatus('CONNECTED');
+          // Flush candidate queue
+          while (iceCandidatesQueueRef.current.length > 0) {
+            const cand = iceCandidatesQueueRef.current.shift();
+            await pc.addIceCandidate(new RTCIceCandidate(cand)).catch(() => {});
+          }
         }
       } catch (err) {
         console.error("Error handling answer:", err);
@@ -258,7 +374,11 @@ const TelehealthVideoRoom = ({
     } else if (type === 'candidate') {
       try {
         if (payload) {
-          await pc.addIceCandidate(new RTCIceCandidate(payload));
+          if (!pc.remoteDescription || !pc.remoteDescription.type) {
+            iceCandidatesQueueRef.current.push(payload);
+          } else {
+            await pc.addIceCandidate(new RTCIceCandidate(payload));
+          }
         }
       } catch (err) {
         console.error("Error adding candidate:", err);
@@ -290,10 +410,23 @@ const TelehealthVideoRoom = ({
     const startConsultation = async () => {
       try {
         setMediaError('');
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
-          audio: true
-        });
+        let stream = null;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+            audio: true
+          });
+        } catch (mediaErr) {
+          console.warn("Full camera+audio capture failed, falling back to audio-only stream:", mediaErr);
+          try {
+            const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            stream = audioStream;
+            setIsVideoOn(false);
+          } catch (audioErr) {
+            console.warn("Microphone access also failed:", audioErr);
+            throw mediaErr;
+          }
+        }
 
         localMediaStream = stream;
         setLocalStream(stream);
@@ -314,12 +447,16 @@ const TelehealthVideoRoom = ({
         await sendSignal('join', { role: currentUserRole, name: currentUserName });
         if (isDoctor) {
           // Doctor proactively generates offer
-          setTimeout(() => createAndSendOffer(pc), 600);
+          offerTimeoutRef.current = setTimeout(() => {
+            if (pcRef.current && pcRef.current.signalingState === 'stable') {
+              createAndSendOffer(pcRef.current);
+            }
+          }, 800);
         }
 
         // Start polling signals every 800ms
         pollingTimerRef.current = setInterval(pollSignals, 800);
-        setSuccessToast("🎥 Camera & Audio Ready");
+        setSuccessToast("🎥 Telehealth Studio Ready");
         setTimeout(() => setSuccessToast(''), 3000);
 
       } catch (err) {
@@ -338,9 +475,9 @@ const TelehealthVideoRoom = ({
 
     return () => {
       clearInterval(timer);
+      if (offerTimeoutRef.current) clearTimeout(offerTimeoutRef.current);
       if (pollingTimerRef.current) clearInterval(pollingTimerRef.current);
       if (pcRef.current) {
-        sendSignal('leave', {});
         pcRef.current.close();
         pcRef.current = null;
       }
@@ -354,14 +491,32 @@ const TelehealthVideoRoom = ({
     };
   }, [isOpen]);
 
+  // Dedicated callback refs ensuring immediate video playback
+  const handleLocalVideoRef = (el) => {
+    localVideoRef.current = el;
+    if (el && localStream) {
+      if (el.srcObject !== localStream) el.srcObject = localStream;
+      el.play().catch(() => {});
+    }
+  };
+
+  const handleRemoteVideoRef = (el) => {
+    remoteVideoRef.current = el;
+    if (el && remoteStream) {
+      if (el.srcObject !== remoteStream) el.srcObject = remoteStream;
+      el.play().catch(() => {});
+    }
+  };
+
   // Keep local video attached when re-rendering
   useEffect(() => {
     if (localVideoRef.current && localStream) {
       if (localVideoRef.current.srcObject !== localStream) {
         localVideoRef.current.srcObject = localStream;
       }
+      localVideoRef.current.play().catch(() => {});
     }
-  }, [localStream, isSwappedView]);
+  }, [localStream, isVideoOn, isSwappedView]);
 
   // Keep remote video attached
   useEffect(() => {
@@ -371,7 +526,7 @@ const TelehealthVideoRoom = ({
       }
       remoteVideoRef.current.play().catch(() => {});
     }
-  }, [remoteStream, isSwappedView]);
+  }, [remoteStream, hasRemoteVideo, isSwappedView]);
 
   // Auto-scroll chat
   useEffect(() => {
@@ -599,12 +754,36 @@ const TelehealthVideoRoom = ({
               <video ref={screenVideoRef} autoPlay playsInline className="w-full h-full object-contain bg-black" />
             ) : remoteStream && connectionStatus === 'CONNECTED' ? (
               /* 🌟 GENUINE REMOTE LIVE WEBRTC VIDEO STREAM 🌟 */
-              <video 
-                ref={remoteVideoRef} 
-                autoPlay 
-                playsInline 
-                className="w-full h-full object-cover"
-              />
+              <div className="w-full h-full relative flex items-center justify-center">
+                <video 
+                  ref={handleRemoteVideoRef} 
+                  autoPlay 
+                  playsInline 
+                  onLoadedMetadata={(e) => e.target.play().catch(() => {})}
+                  className={`w-full h-full object-cover ${hasRemoteVideo ? '' : 'hidden'}`}
+                />
+                {!hasRemoteVideo && (
+                  <div className="w-full h-full relative overflow-hidden bg-gradient-to-b from-[#0B1A10] to-[#040A06] flex flex-col items-center justify-center p-6 text-center animate-in fade-in">
+                    <div className="relative mb-5">
+                      <div className="w-28 h-28 rounded-full bg-gradient-to-br from-emerald-600 to-teal-800 border-4 border-emerald-400/80 flex items-center justify-center text-white text-4xl font-black shadow-2xl">
+                        {remotePersonName.charAt(0)}
+                      </div>
+                      <span className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-emerald-500 border-2 border-[#0B1A10] flex items-center justify-center text-white shadow-lg animate-pulse">
+                        <Mic size={16} />
+                      </span>
+                    </div>
+                    <h3 className="text-xl font-black text-white tracking-tight mb-1">
+                      {remotePersonName}
+                    </h3>
+                    <p className="text-xs text-emerald-300 font-semibold mb-3">
+                      {remotePersonTitle}
+                    </p>
+                    <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold px-3.5 py-1.5 rounded-full inline-flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span> Live Audio Consultation Active (Camera Off)
+                    </span>
+                  </div>
+                )}
+              </div>
             ) : (
               /* WAITING FOR REMOTE PEER OR CONNECTING */
               <div className="w-full h-full relative overflow-hidden bg-gradient-to-b from-[#0B1A10] to-[#040A06] flex flex-col items-center justify-center p-6 text-center">
@@ -639,18 +818,22 @@ const TelehealthVideoRoom = ({
 
             {/* 🌟 PICTURE-IN-PICTURE (PIP): LOCAL WEBCAM PREVIEW 🌟 */}
             <div className="absolute bottom-5 right-5 z-20 w-44 sm:w-56 h-32 sm:h-40 rounded-2xl overflow-hidden shadow-2xl border-2 border-emerald-500/50 bg-black flex items-center justify-center group">
-              {isVideoOn && localStream ? (
+              {isVideoOn && localStream && localStream.getVideoTracks().some(t => t.enabled && t.readyState === 'live') ? (
                 <video 
-                  ref={localVideoRef} 
+                  ref={handleLocalVideoRef} 
                   autoPlay 
                   playsInline 
                   muted 
+                  onLoadedMetadata={(e) => e.target.play().catch(() => {})}
                   className="w-full h-full object-cover transform -scale-x-100" 
                 />
               ) : (
-                <div className="flex flex-col items-center justify-center text-gray-400 text-xs">
-                  <VideoOff size={24} className="text-red-400 mb-1" />
-                  <span>Your Camera Off</span>
+                <div className="flex flex-col items-center justify-center text-gray-400 text-xs p-2 text-center">
+                  <div className="w-10 h-10 rounded-full bg-[#1C3323] border border-emerald-500/40 flex items-center justify-center text-sm font-bold text-emerald-300 mb-1">
+                    {currentUserName.charAt(0)}
+                  </div>
+                  <span className="text-[11px] font-bold text-gray-300">{isVideoOn ? 'Camera Reserved' : 'Camera Off'}</span>
+                  <span className="text-[9px] text-emerald-400 mt-0.5">Microphone Active</span>
                 </div>
               )}
               <div className="absolute bottom-1.5 left-2 bg-black/70 px-2 py-0.5 rounded-md text-[10px] font-bold text-white">
