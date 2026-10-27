@@ -762,10 +762,13 @@ class TelehealthSignalView(generics.GenericAPIView):
                 return Response({'error': 'Unauthorized to access this consultation room.'}, status=status.HTTP_403_FORBIDDEN)
 
         since_id = int(request.query_params.get('since_id', 0))
-        # Fetch signals sent by the OTHER participant since since_id
+        from django.utils import timezone
+        from datetime import timedelta
+        # Fetch signals sent by the OTHER participant since since_id (only within last 2 minutes)
         signals = TelehealthSignal.objects.filter(
             appointment=appt,
-            id__gt=since_id
+            id__gt=since_id,
+            created_at__gte=timezone.now() - timedelta(minutes=2)
         ).exclude(sender=request.user).order_by('id')
 
         serializer = TelehealthSignalSerializer(signals, many=True)
@@ -787,6 +790,23 @@ class TelehealthSignalView(generics.GenericAPIView):
 
         if not signal_type:
             return Response({'error': 'signal_type is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        from django.utils import timezone
+        from datetime import timedelta
+
+        # Prune stale signals older than 3 minutes to keep room lightweight
+        TelehealthSignal.objects.filter(
+            appointment=appt,
+            created_at__lt=timezone.now() - timedelta(minutes=3)
+        ).delete()
+
+        # When a peer joins, purge dead offers/answers from earlier test runs
+        if signal_type == 'join':
+            TelehealthSignal.objects.filter(
+                appointment=appt,
+                signal_type__in=['offer', 'answer', 'candidate', 'present'],
+                created_at__lt=timezone.now() - timedelta(seconds=15)
+            ).delete()
 
         signal = TelehealthSignal.objects.create(
             appointment=appt,
