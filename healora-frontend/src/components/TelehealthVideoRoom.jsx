@@ -90,6 +90,7 @@ const TelehealthVideoRoom = ({
   const [notesSavedAlert, setNotesSavedAlert] = useState(false);
 
   // --- REFS ---
+  const localStreamRef = useRef(null);
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const remoteMediaStreamRef = useRef(null);
@@ -166,7 +167,9 @@ const TelehealthVideoRoom = ({
   // --- CREATE WEBRTC PEER CONNECTION ---
   const createPeerConnection = (stream) => {
     if (pcRef.current) {
-      pcRef.current.close();
+      try {
+        pcRef.current.close();
+      } catch (e) {}
       pcRef.current = null;
     }
 
@@ -174,8 +177,11 @@ const TelehealthVideoRoom = ({
 
     // Add local tracks to peer connection
     if (stream) {
+      localStreamRef.current = stream;
       stream.getTracks().forEach(track => {
-        pc.addTrack(track, stream);
+        try {
+          pc.addTrack(track, stream);
+        } catch (e) {}
       });
     }
 
@@ -331,16 +337,16 @@ const TelehealthVideoRoom = ({
     setConnectionStatus('CONNECTING');
     hasHandshakedRef.current = false;
     hasAnsweredRef.current = false;
+    hasPresentedRef.current = false;
     lastSignalIdRef.current = 0;
-    if (pcRef.current) {
-      try {
-        if (pcRef.current.restartIce) pcRef.current.restartIce();
-        createAndSendOffer(pcRef.current);
-      } catch (e) {
-        console.warn("Reconnect offer error:", e);
-      }
-    }
+    const stream = localStreamRef.current || localStream;
+    const pc = createPeerConnection(stream);
     await sendSignal('join', { role: currentUserRole, name: currentUserName });
+    if (isDoctor) {
+      setTimeout(() => {
+        createAndSendOffer(pc);
+      }, 500);
+    }
   };
 
   // --- RETRY CAMERA & MIC PERMISSIONS (E.G. ON MOBILE AFTER UNBLOCKING) ---
@@ -352,6 +358,7 @@ const TelehealthVideoRoom = ({
         audio: true
       });
 
+      localStreamRef.current = stream;
       setLocalStream(stream);
       setIsVideoOn(true);
       setIsMicOn(true);
@@ -395,16 +402,11 @@ const TelehealthVideoRoom = ({
     }
   };
 
-  // --- INITIATE OFFER (CALLED BY DOCTOR OR FIRST JOINER) ---
+  // --- INITIATE OFFER (CALLED BY DOCTOR WHEN BOTH ARE IN ROOM) ---
   const createAndSendOffer = async (pc) => {
     try {
       if (!pc || pc.signalingState === 'closed') return;
-      if (pc.connectionState === 'connected') return;
       if (hasHandshakedRef.current) return;
-      if (pc.signalingState !== 'stable') {
-        console.log("WebRTC signalingState not stable, deferring offer:", pc.signalingState);
-        return;
-      }
       hasHandshakedRef.current = true;
       setConnectionStatus('CONNECTING');
       const offer = await pc.createOffer({
@@ -413,7 +415,7 @@ const TelehealthVideoRoom = ({
       });
       await pc.setLocalDescription(offer);
       await sendSignal('offer', offer);
-      console.log("🌟 [WebRTC] Sent local offer description.");
+      console.log("🌟 [WebRTC] Sent fresh offer description.");
     } catch (err) {
       console.error("Offer creation failed:", err);
       hasHandshakedRef.current = false;
@@ -439,40 +441,48 @@ const TelehealthVideoRoom = ({
 
   // --- PROCESS INCOMING WEBRTC SIGNAL ---
   const handleIncomingSignal = async (type, payload, senderName) => {
-    const pc = pcRef.current;
-    if (!pc) return;
-
     if (type === 'join') {
-      // Peer arrived!
+      console.log(`🌟 [WebRTC] Peer joined room (${senderName || 'Peer'})`);
       if (isDoctor) {
-        if (pc.signalingState === 'stable' && !hasHandshakedRef.current) {
-          createAndSendOffer(pc);
+        // Doctor creates fresh offer to peer who just joined
+        hasHandshakedRef.current = false;
+        let activePc = pcRef.current;
+        if (!activePc || activePc.signalingState !== 'stable' || activePc.connectionState === 'failed' || activePc.connectionState === 'disconnected') {
+          activePc = createPeerConnection(localStreamRef.current || localStream);
         }
+        createAndSendOffer(activePc);
       } else {
-        // Patient acknowledges arrival so doctor can generate offer
-        if (!hasPresentedRef.current) {
-          hasPresentedRef.current = true;
-          sendSignal('present', { role: currentUserRole, name: currentUserName });
-        }
+        // Patient acknowledges arrival
+        hasAnsweredRef.current = false;
+        sendSignal('present', { role: currentUserRole, name: currentUserName });
       }
     } else if (type === 'present') {
-      if (isDoctor && pc.signalingState === 'stable' && !hasHandshakedRef.current) {
-        createAndSendOffer(pc);
+      console.log(`🌟 [WebRTC] Peer presented presence (${senderName || 'Peer'})`);
+      if (isDoctor) {
+        hasHandshakedRef.current = false;
+        let activePc = pcRef.current;
+        if (!activePc || activePc.signalingState !== 'stable' || activePc.connectionState === 'failed' || activePc.connectionState === 'disconnected') {
+          activePc = createPeerConnection(localStreamRef.current || localStream);
+        }
+        createAndSendOffer(activePc);
       }
     } else if (type === 'offer') {
       try {
-        if (hasAnsweredRef.current) return;
-        hasAnsweredRef.current = true;
         console.log("🌟 [WebRTC] Received offer from peer");
+        let activePc = pcRef.current;
+        if (!activePc || activePc.signalingState !== 'stable') {
+          activePc = createPeerConnection(localStreamRef.current || localStream);
+        }
+        hasAnsweredRef.current = true;
         setConnectionStatus('CONNECTING');
-        await pc.setRemoteDescription(new RTCSessionDescription(payload));
+        await activePc.setRemoteDescription(new RTCSessionDescription(payload));
         // Flush candidate queue
         while (iceCandidatesQueueRef.current.length > 0) {
           const cand = iceCandidatesQueueRef.current.shift();
-          await pc.addIceCandidate(new RTCIceCandidate(cand)).catch(() => {});
+          await activePc.addIceCandidate(new RTCIceCandidate(cand)).catch(() => {});
         }
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
+        const answer = await activePc.createAnswer();
+        await activePc.setLocalDescription(answer);
         await sendSignal('answer', answer);
         console.log("🌟 [WebRTC] Created & sent answer to peer");
       } catch (err) {
@@ -482,13 +492,14 @@ const TelehealthVideoRoom = ({
       try {
         console.log("🌟 [WebRTC] Received answer from peer");
         hasHandshakedRef.current = true;
-        if (pc.signalingState === 'have-local-offer') {
-          await pc.setRemoteDescription(new RTCSessionDescription(payload));
+        const activePc = pcRef.current;
+        if (activePc && activePc.signalingState === 'have-local-offer') {
+          await activePc.setRemoteDescription(new RTCSessionDescription(payload));
           setConnectionStatus('CONNECTED');
           // Flush candidate queue
           while (iceCandidatesQueueRef.current.length > 0) {
             const cand = iceCandidatesQueueRef.current.shift();
-            await pc.addIceCandidate(new RTCIceCandidate(cand)).catch(() => {});
+            await activePc.addIceCandidate(new RTCIceCandidate(cand)).catch(() => {});
           }
         }
       } catch (err) {
@@ -497,10 +508,11 @@ const TelehealthVideoRoom = ({
     } else if (type === 'candidate') {
       try {
         if (payload) {
-          if (!pc.remoteDescription || !pc.remoteDescription.type) {
+          const activePc = pcRef.current;
+          if (!activePc || !activePc.remoteDescription || !activePc.remoteDescription.type) {
             iceCandidatesQueueRef.current.push(payload);
           } else {
-            await pc.addIceCandidate(new RTCIceCandidate(payload));
+            await activePc.addIceCandidate(new RTCIceCandidate(payload)).catch(() => {});
           }
         }
       } catch (err) {
@@ -578,16 +590,8 @@ const TelehealthVideoRoom = ({
         const pc = createPeerConnection(stream);
         setConnectionStatus('WAITING_FOR_PEER');
 
-        // Announce presence & start offer negotiation
+        // Announce presence to waiting or newly arriving peer
         await sendSignal('join', { role: currentUserRole, name: currentUserName });
-        if (isDoctor) {
-          // Doctor proactively generates offer
-          offerTimeoutRef.current = setTimeout(() => {
-            if (pcRef.current && pcRef.current.signalingState === 'stable') {
-              createAndSendOffer(pcRef.current);
-            }
-          }, 800);
-        }
 
         // Start polling signals every 500ms
         pollingTimerRef.current = setInterval(pollSignals, 500);
@@ -916,13 +920,17 @@ const TelehealthVideoRoom = ({
             </div>
           )}
 
-          {connectionStatus === 'FAILED' && (
+          {(connectionStatus === 'FAILED' || connectionStatus === 'DISCONNECTED') && (
             <div className="absolute top-5 left-1/2 -translate-x-1/2 z-40 w-[94%] max-w-md bg-amber-950/95 border-2 border-amber-500 text-white p-3.5 rounded-2xl shadow-2xl backdrop-blur-md flex items-center justify-between gap-3 animate-in fade-in">
               <div className="flex items-center gap-2.5">
                 <AlertCircle size={18} className="text-amber-400 shrink-0" />
                 <div>
-                  <p className="text-xs font-bold text-amber-200">Handshake Timeout</p>
-                  <p className="text-[10px] text-amber-300/80">Other participant took long to join or denied permissions.</p>
+                  <p className="text-xs font-bold text-amber-200">
+                    {connectionStatus === 'DISCONNECTED' ? 'Call In Standby / Peer Disconnected' : 'Handshake Timeout'}
+                  </p>
+                  <p className="text-[10px] text-amber-300/80">
+                    {connectionStatus === 'DISCONNECTED' ? 'Tap Reconnect to re-join and refresh video streams.' : 'Other participant took long to join or denied permissions.'}
+                  </p>
                 </div>
               </div>
               <button
@@ -930,7 +938,7 @@ const TelehealthVideoRoom = ({
                 onClick={handleReconnect}
                 className="bg-amber-600 hover:bg-amber-500 text-white font-bold px-3 py-1.5 rounded-xl text-xs shrink-0 cursor-pointer shadow flex items-center gap-1"
               >
-                <RefreshCw size={12} /> Retry Handshake
+                <RefreshCw size={12} /> Reconnect
               </button>
             </div>
           )}
