@@ -21,6 +21,15 @@ const SessionWatcher = ({ children }) => {
 
 
 function App() {
+  // 🌟 SILENT CLOUD BACKEND PRE-WARMUP PING 🌟
+  // Wakes up Render server the exact instant the user opens the website
+  // so that by the time they reach Login, the backend is 100% awake and responds in under 1 second!
+  useEffect(() => {
+    try {
+      fetch('https://healora-backend-ru0c.onrender.com/', { method: 'GET', mode: 'no-cors' }).catch(() => {});
+    } catch (e) {}
+  }, []);
+
   return (
     <Router>
       <SessionWatcher>
