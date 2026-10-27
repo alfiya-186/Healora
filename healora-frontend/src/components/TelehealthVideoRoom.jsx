@@ -93,6 +93,7 @@ const TelehealthVideoRoom = ({
   const localStreamRef = useRef(null);
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
+  const remoteAudioRef = useRef(null);
   const remoteMediaStreamRef = useRef(null);
   const screenVideoRef = useRef(null);
   const containerRef = useRef(null);
@@ -196,7 +197,7 @@ const TelehealthVideoRoom = ({
         remoteMediaStreamRef.current.addTrack(event.track);
       }
       const stream = remoteMediaStreamRef.current;
-      setRemoteStream(new MediaStream(stream.getTracks()));
+      setRemoteStream(stream);
       setConnectionStatus('CONNECTED');
       if (event.track.kind === 'video') {
         setHasRemoteVideo(true);
@@ -205,8 +206,25 @@ const TelehealthVideoRoom = ({
         event.track.onended = () => setHasRemoteVideo(false);
       }
       if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = stream;
-        remoteVideoRef.current.play().catch(() => {});
+        if (remoteVideoRef.current.srcObject !== stream) {
+          remoteVideoRef.current.srcObject = stream;
+        }
+        const playPromise = remoteVideoRef.current.play();
+        if (playPromise !== undefined) {
+          playPromise.catch((err) => {
+            console.warn("Unmuted autoplay restricted, playing muted to unlock video:", err);
+            if (remoteVideoRef.current) {
+              remoteVideoRef.current.muted = true;
+              remoteVideoRef.current.play().catch(() => {});
+            }
+          });
+        }
+      }
+      if (remoteAudioRef.current) {
+        if (remoteAudioRef.current.srcObject !== stream) {
+          remoteAudioRef.current.srcObject = stream;
+        }
+        remoteAudioRef.current.play().catch(() => {});
       }
     };
 
@@ -449,23 +467,29 @@ const TelehealthVideoRoom = ({
     if (type === 'join') {
       console.log(`🌟 [WebRTC] Peer joined room (${senderName || 'Peer'})`);
       if (isDoctor) {
-        // Doctor creates fresh offer to peer who just joined
-        hasHandshakedRef.current = false;
         let activePc = pcRef.current;
+        if (activePc && activePc.connectionState === 'connected') {
+          console.log("🌟 [WebRTC] Already connected, skipping redundant offer.");
+          return;
+        }
+        hasHandshakedRef.current = false;
         if (!activePc || activePc.signalingState !== 'stable' || activePc.connectionState === 'failed' || activePc.connectionState === 'disconnected') {
           activePc = createPeerConnection(localStreamRef.current || localStream);
         }
         createAndSendOffer(activePc);
       } else {
-        // Patient acknowledges arrival
         hasAnsweredRef.current = false;
         sendSignal('present', { role: currentUserRole, name: currentUserName });
       }
     } else if (type === 'present') {
       console.log(`🌟 [WebRTC] Peer presented presence (${senderName || 'Peer'})`);
       if (isDoctor) {
-        hasHandshakedRef.current = false;
         let activePc = pcRef.current;
+        if (activePc && activePc.connectionState === 'connected') {
+          console.log("🌟 [WebRTC] Already connected, skipping redundant offer.");
+          return;
+        }
+        hasHandshakedRef.current = false;
         if (!activePc || activePc.signalingState !== 'stable' || activePc.connectionState === 'failed' || activePc.connectionState === 'disconnected') {
           activePc = createPeerConnection(localStreamRef.current || localStream);
         }
@@ -645,9 +669,17 @@ const TelehealthVideoRoom = ({
 
   const handleRemoteVideoRef = (el) => {
     remoteVideoRef.current = el;
-    if (el && remoteStream) {
-      if (el.srcObject !== remoteStream) el.srcObject = remoteStream;
-      el.play().catch(() => {});
+    const stream = remoteMediaStreamRef.current || remoteStream;
+    if (el && stream) {
+      if (el.srcObject !== stream) el.srcObject = stream;
+      const playPromise = el.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((e) => {
+          console.warn("Unmuted autoplay restricted, unlocking with muted:", e);
+          el.muted = true;
+          el.play().catch(() => {});
+        });
+      }
     }
   };
 
@@ -663,11 +695,26 @@ const TelehealthVideoRoom = ({
 
   // Keep remote video attached
   useEffect(() => {
-    if (remoteVideoRef.current && remoteStream) {
-      if (remoteVideoRef.current.srcObject !== remoteStream) {
-        remoteVideoRef.current.srcObject = remoteStream;
+    const stream = remoteMediaStreamRef.current || remoteStream;
+    if (remoteVideoRef.current && stream) {
+      if (remoteVideoRef.current.srcObject !== stream) {
+        remoteVideoRef.current.srcObject = stream;
       }
-      remoteVideoRef.current.play().catch(() => {});
+      const playPromise = remoteVideoRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(() => {
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.muted = true;
+            remoteVideoRef.current.play().catch(() => {});
+          }
+        });
+      }
+    }
+    if (remoteAudioRef.current && stream) {
+      if (remoteAudioRef.current.srcObject !== stream) {
+        remoteAudioRef.current.srcObject = stream;
+      }
+      remoteAudioRef.current.play().catch(() => {});
     }
   }, [remoteStream, hasRemoteVideo, isSwappedView]);
 
@@ -998,11 +1045,17 @@ const TelehealthVideoRoom = ({
             ) : remoteStream || connectionStatus === 'CONNECTED' ? (
               /* 🌟 GENUINE REMOTE LIVE WEBRTC VIDEO STREAM 🌟 */
               <div className="w-full h-full relative flex items-center justify-center">
+                <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
                 <video 
                   ref={handleRemoteVideoRef} 
                   autoPlay 
                   playsInline 
-                  onLoadedMetadata={(e) => e.target.play().catch(() => {})}
+                  onLoadedMetadata={(e) => {
+                    e.target.play().catch(() => {
+                      e.target.muted = true;
+                      e.target.play().catch(() => {});
+                    });
+                  }}
                   className="w-full h-full object-cover"
                 />
                 {!hasRemoteVideo && (
