@@ -100,6 +100,7 @@ const TelehealthVideoRoom = ({
   const pcRef = useRef(null);
   const pollingTimerRef = useRef(null);
   const lastSignalIdRef = useRef(0);
+  const roomOpenedAtRef = useRef(Date.now() - 3000);
   const iceCandidatesQueueRef = useRef([]);
   const offerTimeoutRef = useRef(null);
   const hasHandshakedRef = useRef(false);
@@ -433,6 +434,10 @@ const TelehealthVideoRoom = ({
       if (signals.length > 0) {
         lastSignalIdRef.current = data.latest_id;
         for (const sig of signals) {
+          // Ignore stale historical signals created before this room session was opened
+          if (sig.created_at && new Date(sig.created_at).getTime() < roomOpenedAtRef.current) {
+            continue;
+          }
           await handleIncomingSignal(sig.signal_type, sig.payload, sig.sender_name);
         }
       }
@@ -693,13 +698,54 @@ const TelehealthVideoRoom = ({
     }
   };
 
-  // --- TOGGLE VIDEO ---
-  const handleToggleVideo = () => {
-    if (localStream) {
-      const videoTrack = localStream.getVideoTracks()[0];
-      if (videoTrack) {
-        videoTrack.enabled = !videoTrack.enabled;
-        setIsVideoOn(videoTrack.enabled);
+  // --- TOGGLE VIDEO (SHUTS OFF HARDWARE SENSOR & LED LIGHT) ---
+  const handleToggleVideo = async () => {
+    if (isVideoOn) {
+      // User turning camera off: stop track to physically turn off camera hardware light!
+      if (localStream) {
+        const videoTrack = localStream.getVideoTracks()[0];
+        if (videoTrack) {
+          videoTrack.stop();
+        }
+      }
+      setIsVideoOn(false);
+      // Replace with virtual track in peer connection senders
+      if (pcRef.current) {
+        const vTrack = createVirtualVideoTrack(currentUserName);
+        const sender = pcRef.current.getSenders().find(s => s.track && s.track.kind === 'video');
+        if (sender && vTrack) {
+          sender.replaceTrack(vTrack);
+        }
+      }
+    } else {
+      // User turning camera on: re-acquire physical camera hardware
+      try {
+        const newStream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' }
+        });
+        const newVideoTrack = newStream.getVideoTracks()[0];
+        if (newVideoTrack && localStream) {
+          const oldTrack = localStream.getVideoTracks()[0];
+          if (oldTrack) localStream.removeTrack(oldTrack);
+          localStream.addTrack(newVideoTrack);
+          originalVideoTrackRef.current = newVideoTrack;
+          localStreamRef.current = localStream;
+
+          if (localVideoRef.current) {
+            localVideoRef.current.srcObject = localStream;
+            localVideoRef.current.play().catch(() => {});
+          }
+
+          if (pcRef.current) {
+            const sender = pcRef.current.getSenders().find(s => s.track && s.track.kind === 'video');
+            if (sender) {
+              sender.replaceTrack(newVideoTrack);
+            }
+          }
+        }
+        setIsVideoOn(true);
+      } catch (err) {
+        console.warn("Failed to re-enable camera:", err);
       }
     }
   };
