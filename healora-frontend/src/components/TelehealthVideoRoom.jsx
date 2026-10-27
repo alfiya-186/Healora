@@ -305,6 +305,96 @@ const TelehealthVideoRoom = ({
     }
   };
 
+  // --- SILENT AUDIO TRACK FALLBACK (WHEN MIC DENIED OR RESERVED) ---
+  const createSilentAudioTrack = () => {
+    try {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) return null;
+      const ctx = new AudioContextClass();
+      const osc = ctx.createOscillator();
+      const dst = ctx.createMediaStreamDestination();
+      osc.connect(dst);
+      osc.start();
+      const track = dst.stream.getAudioTracks()[0];
+      if (track) {
+        track.enabled = false;
+        return track;
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  };
+
+  // --- RECONNECT FUNCTION FOR PEER CONNECTION RECOVERY ---
+  const handleReconnect = async () => {
+    setConnectionStatus('CONNECTING');
+    hasHandshakedRef.current = false;
+    hasAnsweredRef.current = false;
+    lastSignalIdRef.current = 0;
+    if (pcRef.current) {
+      try {
+        if (pcRef.current.restartIce) pcRef.current.restartIce();
+        createAndSendOffer(pcRef.current);
+      } catch (e) {
+        console.warn("Reconnect offer error:", e);
+      }
+    }
+    await sendSignal('join', { role: currentUserRole, name: currentUserName });
+  };
+
+  // --- RETRY CAMERA & MIC PERMISSIONS (E.G. ON MOBILE AFTER UNBLOCKING) ---
+  const handleRetryPermissions = async () => {
+    try {
+      setMediaError('');
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+        audio: true
+      });
+
+      setLocalStream(stream);
+      setIsVideoOn(true);
+      setIsMicOn(true);
+      originalVideoTrackRef.current = stream.getVideoTracks()[0];
+
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
+        localVideoRef.current.play().catch(() => {});
+      }
+
+      setupAudioAnalyser(stream);
+
+      if (pcRef.current) {
+        const senders = pcRef.current.getSenders();
+        const newVideoTrack = stream.getVideoTracks()[0];
+        const newAudioTrack = stream.getAudioTracks()[0];
+
+        const videoSender = senders.find(s => s.track && s.track.kind === 'video');
+        if (videoSender && newVideoTrack) {
+          videoSender.replaceTrack(newVideoTrack);
+        } else if (newVideoTrack) {
+          pcRef.current.addTrack(newVideoTrack, stream);
+        }
+
+        const audioSender = senders.find(s => s.track && s.track.kind === 'audio');
+        if (audioSender && newAudioTrack) {
+          audioSender.replaceTrack(newAudioTrack);
+        } else if (newAudioTrack) {
+          pcRef.current.addTrack(newAudioTrack, stream);
+        }
+      }
+      setSuccessToast("🎥 Camera & Microphone Connected!");
+      setTimeout(() => setSuccessToast(''), 3000);
+    } catch (err) {
+      console.warn("Retry permission failed:", err);
+      if (err.name === 'NotAllowedError') {
+        setMediaError('PERMISSION_DENIED');
+      } else {
+        setMediaError('DEVICE_ERROR');
+      }
+    }
+  };
+
   // --- INITIATE OFFER (CALLED BY DOCTOR OR FIRST JOINER) ---
   const createAndSendOffer = async (pc) => {
     try {
@@ -450,14 +540,26 @@ const TelehealthVideoRoom = ({
             audio: true
           });
         } catch (mediaErr) {
-          console.warn("Full camera+audio capture failed, falling back to audio-only stream:", mediaErr);
+          console.warn("Full camera+audio capture failed, falling back to audio-only or virtual stream:", mediaErr);
+          if (mediaErr.name === 'NotAllowedError') {
+            setMediaError('PERMISSION_DENIED');
+          } else {
+            setMediaError('DEVICE_ERROR');
+          }
           try {
             const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
             stream = audioStream;
             setIsVideoOn(false);
           } catch (audioErr) {
-            console.warn("Microphone access also failed:", audioErr);
-            throw mediaErr;
+            console.warn("Microphone access also failed/denied, generating synthetic stream:", audioErr);
+            const tracks = [];
+            const vTrack = createVirtualVideoTrack(currentUserName);
+            if (vTrack) tracks.push(vTrack);
+            const aTrack = createSilentAudioTrack();
+            if (aTrack) tracks.push(aTrack);
+            stream = new MediaStream(tracks);
+            setIsVideoOn(false);
+            setIsMicOn(false);
           }
         }
 
@@ -493,8 +595,7 @@ const TelehealthVideoRoom = ({
         setTimeout(() => setSuccessToast(''), 3000);
 
       } catch (err) {
-        console.warn("Camera/Mic error:", err);
-        setMediaError(err.name === 'NotAllowedError' ? 'PERMISSION_DENIED' : 'DEVICE_ERROR');
+        console.warn("WebRTC startup error:", err);
         setConnectionStatus('FAILED');
       }
     };
@@ -776,6 +877,61 @@ const TelehealthVideoRoom = ({
             <div className="absolute top-5 left-1/2 -translate-x-1/2 z-40 bg-emerald-950/95 border border-emerald-400 text-emerald-100 px-5 py-2.5 rounded-2xl text-xs flex items-center gap-2 shadow-2xl backdrop-blur-md animate-in fade-in">
               <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
               <span className="font-bold">{successToast}</span>
+            </div>
+          )}
+
+          {mediaError === 'PERMISSION_DENIED' && (
+            <div className="absolute top-5 left-1/2 -translate-x-1/2 z-50 w-[94%] max-w-lg bg-red-950/95 border-2 border-red-500 text-white p-4 rounded-2xl shadow-2xl backdrop-blur-md animate-in fade-in">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-red-600/30 border border-red-500 flex items-center justify-center shrink-0 mt-0.5">
+                  <Lock size={16} className="text-red-400" />
+                </div>
+                <div className="flex-1">
+                  <h4 className="text-xs sm:text-sm font-black text-red-200">Camera / Microphone Access Blocked</h4>
+                  <p className="text-[11px] text-red-100/90 mt-1 leading-relaxed">
+                    Your browser blocked camera or mic permission. To unblock:
+                  </p>
+                  <ol className="text-[11px] text-amber-200 list-decimal pl-4 mt-1 space-y-0.5">
+                    <li>Tap the <strong>lock 🔒 or tune icon</strong> in your browser address bar</li>
+                    <li>Toggle <strong>Camera</strong> and <strong>Microphone</strong> to <strong>Allow</strong></li>
+                  </ol>
+                  <div className="mt-3 flex items-center gap-2">
+                    <button 
+                      type="button" 
+                      onClick={handleRetryPermissions}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1.5 rounded-xl text-xs flex items-center gap-1.5 shadow-lg transition cursor-pointer"
+                    >
+                      <RefreshCw size={12} /> Allow & Retry Camera
+                    </button>
+                    <button 
+                      type="button" 
+                      onClick={() => setMediaError('')}
+                      className="text-gray-400 hover:text-white px-2 py-1 text-xs"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {connectionStatus === 'FAILED' && (
+            <div className="absolute top-5 left-1/2 -translate-x-1/2 z-40 w-[94%] max-w-md bg-amber-950/95 border-2 border-amber-500 text-white p-3.5 rounded-2xl shadow-2xl backdrop-blur-md flex items-center justify-between gap-3 animate-in fade-in">
+              <div className="flex items-center gap-2.5">
+                <AlertCircle size={18} className="text-amber-400 shrink-0" />
+                <div>
+                  <p className="text-xs font-bold text-amber-200">Handshake Timeout</p>
+                  <p className="text-[10px] text-amber-300/80">Other participant took long to join or denied permissions.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleReconnect}
+                className="bg-amber-600 hover:bg-amber-500 text-white font-bold px-3 py-1.5 rounded-xl text-xs shrink-0 cursor-pointer shadow flex items-center gap-1"
+              >
+                <RefreshCw size={12} /> Retry Handshake
+              </button>
             </div>
           )}
 
