@@ -12,7 +12,26 @@ const ICE_SERVERS = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' }
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    { urls: 'stun:openrelay.metered.ca:80' },
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turns:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    }
   ]
 };
 
@@ -73,6 +92,7 @@ const TelehealthVideoRoom = ({
   // --- REFS ---
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
+  const remoteMediaStreamRef = useRef(null);
   const screenVideoRef = useRef(null);
   const containerRef = useRef(null);
   const chatBottomRef = useRef(null);
@@ -162,17 +182,23 @@ const TelehealthVideoRoom = ({
     // Handle incoming remote media tracks
     pc.ontrack = (event) => {
       console.log("🌟 [WebRTC] Received remote stream track:", event.track.kind);
-      const incomingStream = event.streams && event.streams[0] ? event.streams[0] : new MediaStream([event.track]);
-      setRemoteStream(incomingStream);
+      if (!remoteMediaStreamRef.current) {
+        remoteMediaStreamRef.current = new MediaStream();
+      }
+      if (!remoteMediaStreamRef.current.getTracks().some(t => t.id === event.track.id)) {
+        remoteMediaStreamRef.current.addTrack(event.track);
+      }
+      const stream = remoteMediaStreamRef.current;
+      setRemoteStream(new MediaStream(stream.getTracks()));
       setConnectionStatus('CONNECTED');
       if (event.track.kind === 'video') {
-        setHasRemoteVideo(event.track.enabled && event.track.readyState === 'live');
-        event.track.onmute = () => setHasRemoteVideo(false);
+        setHasRemoteVideo(true);
+        event.track.onmute = () => {};
         event.track.onunmute = () => setHasRemoteVideo(true);
         event.track.onended = () => setHasRemoteVideo(false);
       }
       if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = incomingStream;
+        remoteVideoRef.current.srcObject = stream;
         remoteVideoRef.current.play().catch(() => {});
       }
     };
@@ -195,6 +221,13 @@ const TelehealthVideoRoom = ({
         setConnectionStatus('DISCONNECTED');
       } else if (pc.connectionState === 'failed') {
         setConnectionStatus('FAILED');
+      }
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      console.log("🌟 [WebRTC] ICE connection state:", pc.iceConnectionState);
+      if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+        setConnectionStatus('CONNECTED');
       }
     };
 
@@ -454,8 +487,8 @@ const TelehealthVideoRoom = ({
           }, 800);
         }
 
-        // Start polling signals every 800ms
-        pollingTimerRef.current = setInterval(pollSignals, 800);
+        // Start polling signals every 500ms
+        pollingTimerRef.current = setInterval(pollSignals, 500);
         setSuccessToast("🎥 Telehealth Studio Ready");
         setTimeout(() => setSuccessToast(''), 3000);
 
@@ -752,7 +785,7 @@ const TelehealthVideoRoom = ({
             {/* Screen Share Overlay */}
             {isScreenSharing ? (
               <video ref={screenVideoRef} autoPlay playsInline className="w-full h-full object-contain bg-black" />
-            ) : remoteStream && connectionStatus === 'CONNECTED' ? (
+            ) : remoteStream || connectionStatus === 'CONNECTED' ? (
               /* 🌟 GENUINE REMOTE LIVE WEBRTC VIDEO STREAM 🌟 */
               <div className="w-full h-full relative flex items-center justify-center">
                 <video 
@@ -760,10 +793,10 @@ const TelehealthVideoRoom = ({
                   autoPlay 
                   playsInline 
                   onLoadedMetadata={(e) => e.target.play().catch(() => {})}
-                  className={`w-full h-full object-cover ${hasRemoteVideo ? '' : 'hidden'}`}
+                  className="w-full h-full object-cover"
                 />
                 {!hasRemoteVideo && (
-                  <div className="w-full h-full relative overflow-hidden bg-gradient-to-b from-[#0B1A10] to-[#040A06] flex flex-col items-center justify-center p-6 text-center animate-in fade-in">
+                  <div className="absolute inset-0 z-10 overflow-hidden bg-gradient-to-b from-[#0B1A10] to-[#040A06] flex flex-col items-center justify-center p-6 text-center animate-in fade-in">
                     <div className="relative mb-5">
                       <div className="w-28 h-28 rounded-full bg-gradient-to-br from-emerald-600 to-teal-800 border-4 border-emerald-400/80 flex items-center justify-center text-white text-4xl font-black shadow-2xl">
                         {remotePersonName.charAt(0)}
