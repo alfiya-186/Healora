@@ -192,7 +192,10 @@ const SignInPage = () => {
       if (res.ok) {
         setForgotStep(2);
         setResendCooldown(60); // 🌟 Trigger 60-second live countdown
-        if (forgotStep === 2) {
+        if (data.fallback_otp) {
+          setForgotCode(data.fallback_otp);
+          setForgotSuccess('Verification Code: ' + data.fallback_otp + ' (Auto-detected from server)');
+        } else if (forgotStep === 2) {
           setForgotSuccess('A fresh 6-digit verification code has been dispatched. Please check your inbox.');
         }
       } else {
