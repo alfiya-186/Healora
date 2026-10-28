@@ -201,6 +201,8 @@ const TelehealthVideoRoom = ({
       setConnectionStatus('CONNECTED');
 
       if (event.track.kind === 'video') {
+        console.log("🌟 [WebRTC] Remote video track arrived:", event.track.id);
+        setHasRemoteVideo(true);
         event.track.onunmute = () => {
           console.log("🌟 [WebRTC] Remote video track unmuted, frames flowing!");
           setHasRemoteVideo(true);
@@ -234,7 +236,9 @@ const TelehealthVideoRoom = ({
       if (pc.connectionState === 'connected') {
         setConnectionStatus('CONNECTED');
       } else if (pc.connectionState === 'connecting') {
-        setConnectionStatus('CONNECTING');
+        if (!remoteMediaStreamRef.current || remoteMediaStreamRef.current.getTracks().length === 0) {
+          setConnectionStatus('CONNECTING');
+        }
       } else if (pc.connectionState === 'disconnected') {
         setConnectionStatus('DISCONNECTED');
       } else if (pc.connectionState === 'failed') {
@@ -687,15 +691,21 @@ const TelehealthVideoRoom = ({
 
     // Attach live video track to remote <video>
     const vTrack = stream.getVideoTracks().find(t => t.readyState === 'live');
-    if (remoteVideoRef.current && vTrack) {
-      const curTrack = remoteVideoRef.current.srcObject?.getVideoTracks()[0];
-      if (curTrack?.id !== vTrack.id) {
-        console.log("🌟 [WebRTC] Attaching fresh remote video stream with track:", vTrack.id);
+    if (vTrack) {
+      setHasRemoteVideo(true);
+      setConnectionStatus('CONNECTED');
+      if (remoteVideoRef.current) {
+        const curTrack = remoteVideoRef.current.srcObject?.getVideoTracks()[0];
+        if (curTrack?.id !== vTrack.id) {
+          console.log("🌟 [WebRTC] Attaching fresh remote video stream with track:", vTrack.id);
+          remoteVideoRef.current.muted = true;
+          remoteVideoRef.current.srcObject = new MediaStream([vTrack]);
+        }
         remoteVideoRef.current.muted = true;
-        remoteVideoRef.current.srcObject = new MediaStream([vTrack]);
+        remoteVideoRef.current.play().catch(() => {});
       }
-      remoteVideoRef.current.muted = true;
-      remoteVideoRef.current.play().catch(() => {});
+    } else {
+      setHasRemoteVideo(false);
     }
 
     // Attach live audio track to remote <audio>
@@ -1083,13 +1093,16 @@ const TelehealthVideoRoom = ({
                   playsInline 
                   muted={true}
                   onPlaying={() => setHasRemoteVideo(true)}
+                  onCanPlay={() => setHasRemoteVideo(true)}
+                  onLoadedData={() => setHasRemoteVideo(true)}
                   onLoadedMetadata={(e) => {
                     e.target.muted = true;
                     e.target.play().catch(() => {});
+                    setHasRemoteVideo(true);
                   }}
                   className={`w-full h-full object-cover transition-opacity duration-300 ${hasRemoteVideo ? 'opacity-100' : 'opacity-0'}`}
                 />
-                {!hasRemoteVideo && (
+                {!hasRemoteVideo && (!remoteMediaStreamRef.current?.getVideoTracks()?.some(t => t.readyState === 'live')) && (
                   <div className="absolute inset-0 z-10 overflow-hidden bg-gradient-to-b from-[#0B1A10] to-[#040A06] flex flex-col items-center justify-center p-6 text-center animate-in fade-in">
                     <div className="relative mb-5">
                       <div className="w-28 h-28 rounded-full bg-gradient-to-br from-emerald-600 to-teal-800 border-4 border-emerald-400/80 flex items-center justify-center text-white text-4xl font-black shadow-2xl">
