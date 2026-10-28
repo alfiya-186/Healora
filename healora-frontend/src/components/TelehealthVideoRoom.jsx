@@ -197,41 +197,34 @@ const TelehealthVideoRoom = ({
         remoteMediaStreamRef.current.addTrack(event.track);
       }
       const stream = remoteMediaStreamRef.current;
-      setRemoteStream(stream);
+      setRemoteStream(new MediaStream(stream.getTracks()));
       setConnectionStatus('CONNECTED');
+
       if (event.track.kind === 'video') {
-        setHasRemoteVideo(true);
-        event.track.onmute = () => {};
-        event.track.onunmute = () => setHasRemoteVideo(true);
-        event.track.onended = () => setHasRemoteVideo(false);
+        event.track.onunmute = () => {
+          console.log("🌟 [WebRTC] Remote video track unmuted, frames flowing!");
+          setHasRemoteVideo(true);
+          attachRemoteMedia();
+        };
+        event.track.onended = () => {
+          console.log("🌟 [WebRTC] Remote video track ended.");
+          setHasRemoteVideo(false);
+          attachRemoteMedia();
+        };
       }
-      if (remoteVideoRef.current) {
-        if (remoteVideoRef.current.srcObject !== stream) {
-          remoteVideoRef.current.srcObject = stream;
-        }
-        const playPromise = remoteVideoRef.current.play();
-        if (playPromise !== undefined) {
-          playPromise.catch((err) => {
-            console.warn("Unmuted autoplay restricted, playing muted to unlock video:", err);
-            if (remoteVideoRef.current) {
-              remoteVideoRef.current.muted = true;
-              remoteVideoRef.current.play().catch(() => {});
-            }
-          });
-        }
-      }
-      if (remoteAudioRef.current) {
-        if (remoteAudioRef.current.srcObject !== stream) {
-          remoteAudioRef.current.srcObject = stream;
-        }
-        remoteAudioRef.current.play().catch(() => {});
-      }
+
+      attachRemoteMedia();
     };
 
     // Handle ICE candidates
     pc.onicecandidate = (event) => {
       if (event.candidate) {
-        sendSignal('candidate', event.candidate);
+        const cand = event.candidate.toJSON ? event.candidate.toJSON() : {
+          candidate: event.candidate.candidate,
+          sdpMid: event.candidate.sdpMid,
+          sdpMLineIndex: event.candidate.sdpMLineIndex
+        };
+        sendSignal('candidate', cand);
       }
     };
 
@@ -354,10 +347,13 @@ const TelehealthVideoRoom = ({
   // --- RECONNECT FUNCTION FOR PEER CONNECTION RECOVERY ---
   const handleReconnect = async () => {
     setConnectionStatus('CONNECTING');
+    setHasRemoteVideo(false);
+    remoteMediaStreamRef.current = null;
     hasHandshakedRef.current = false;
     hasAnsweredRef.current = false;
     hasPresentedRef.current = false;
     lastSignalIdRef.current = 0;
+    roomOpenedAtRef.current = Date.now() - 3000;
     const stream = localStreamRef.current || localStream;
     const pc = createPeerConnection(stream);
     await sendSignal('join', { role: currentUserRole, name: currentUserName });
@@ -435,6 +431,14 @@ const TelehealthVideoRoom = ({
       await pc.setLocalDescription(offer);
       await sendSignal('offer', offer);
       console.log("🌟 [WebRTC] Sent fresh offer description.");
+
+      if (offerTimeoutRef.current) clearTimeout(offerTimeoutRef.current);
+      offerTimeoutRef.current = setTimeout(() => {
+        if (pcRef.current && pcRef.current.connectionState !== 'connected') {
+          console.log("🌟 [WebRTC] Handshake pending for 12s, allowing retry if peer reconnects.");
+          hasHandshakedRef.current = false;
+        }
+      }, 12000);
     } catch (err) {
       console.error("Offer creation failed:", err);
       hasHandshakedRef.current = false;
@@ -472,14 +476,19 @@ const TelehealthVideoRoom = ({
           console.log("🌟 [WebRTC] Already connected, skipping redundant offer.");
           return;
         }
-        hasHandshakedRef.current = false;
+        if (hasHandshakedRef.current) {
+          console.log("🌟 [WebRTC] Offer already in progress, skipping duplicate offer.");
+          return;
+        }
         if (!activePc || activePc.signalingState !== 'stable' || activePc.connectionState === 'failed' || activePc.connectionState === 'disconnected') {
           activePc = createPeerConnection(localStreamRef.current || localStream);
         }
         createAndSendOffer(activePc);
       } else {
-        hasAnsweredRef.current = false;
-        sendSignal('present', { role: currentUserRole, name: currentUserName });
+        if (!hasPresentedRef.current) {
+          hasPresentedRef.current = true;
+          sendSignal('present', { role: currentUserRole, name: currentUserName });
+        }
       }
     } else if (type === 'present') {
       console.log(`🌟 [WebRTC] Peer presented presence (${senderName || 'Peer'})`);
@@ -489,7 +498,10 @@ const TelehealthVideoRoom = ({
           console.log("🌟 [WebRTC] Already connected, skipping redundant offer.");
           return;
         }
-        hasHandshakedRef.current = false;
+        if (hasHandshakedRef.current) {
+          console.log("🌟 [WebRTC] Offer already in progress, skipping duplicate offer.");
+          return;
+        }
         if (!activePc || activePc.signalingState !== 'stable' || activePc.connectionState === 'failed' || activePc.connectionState === 'disconnected') {
           activePc = createPeerConnection(localStreamRef.current || localStream);
         }
@@ -497,12 +509,22 @@ const TelehealthVideoRoom = ({
       }
     } else if (type === 'offer') {
       try {
-        console.log("🌟 [WebRTC] Received offer from peer");
-        let activePc = pcRef.current;
-        if (!activePc || activePc.signalingState !== 'stable') {
-          activePc = createPeerConnection(localStreamRef.current || localStream);
+        const activePc = pcRef.current;
+        if (!activePc) return;
+        if (activePc.connectionState === 'connected') {
+          console.log("🌟 [WebRTC] Already connected, ignoring extra offer.");
+          return;
+        }
+        if (activePc.signalingState !== 'stable') {
+          console.log("🌟 [WebRTC] Ignoring extra offer because signalingState is:", activePc.signalingState);
+          return;
+        }
+        if (hasAnsweredRef.current) {
+          console.log("🌟 [WebRTC] Already answered offer, skipping duplicate.");
+          return;
         }
         hasAnsweredRef.current = true;
+        console.log("🌟 [WebRTC] Processing single valid offer from peer");
         setConnectionStatus('CONNECTING');
         await activePc.setRemoteDescription(new RTCSessionDescription(payload));
         // Flush candidate queue
@@ -513,7 +535,7 @@ const TelehealthVideoRoom = ({
         const answer = await activePc.createAnswer();
         await activePc.setLocalDescription(answer);
         await sendSignal('answer', answer);
-        console.log("🌟 [WebRTC] Created & sent answer to peer");
+        console.log("🌟 [WebRTC] Created & sent single valid answer to peer");
       } catch (err) {
         console.error("Error handling offer:", err);
       }
@@ -536,7 +558,7 @@ const TelehealthVideoRoom = ({
       }
     } else if (type === 'candidate') {
       try {
-        if (payload) {
+        if (payload && payload.candidate) {
           const activePc = pcRef.current;
           if (!activePc || !activePc.remoteDescription || !activePc.remoteDescription.type) {
             iceCandidatesQueueRef.current.push(payload);
@@ -658,7 +680,37 @@ const TelehealthVideoRoom = ({
     };
   }, [isOpen]);
 
-  // Dedicated callback refs ensuring immediate video playback
+  // --- ATTACH REMOTE MEDIA TO DEDICATED VIDEO & AUDIO ELEMENTS ---
+  const attachRemoteMedia = () => {
+    const stream = remoteMediaStreamRef.current;
+    if (!stream) return;
+
+    // Attach live video track to remote <video>
+    const vTrack = stream.getVideoTracks().find(t => t.readyState === 'live');
+    if (remoteVideoRef.current && vTrack) {
+      const curTrack = remoteVideoRef.current.srcObject?.getVideoTracks()[0];
+      if (curTrack?.id !== vTrack.id) {
+        console.log("🌟 [WebRTC] Attaching fresh remote video stream with track:", vTrack.id);
+        remoteVideoRef.current.muted = true;
+        remoteVideoRef.current.srcObject = new MediaStream([vTrack]);
+      }
+      remoteVideoRef.current.muted = true;
+      remoteVideoRef.current.play().catch(() => {});
+    }
+
+    // Attach live audio track to remote <audio>
+    const aTrack = stream.getAudioTracks().find(t => t.readyState === 'live');
+    if (remoteAudioRef.current && aTrack) {
+      const curTrack = remoteAudioRef.current.srcObject?.getAudioTracks()[0];
+      if (curTrack?.id !== aTrack.id) {
+        console.log("🌟 [WebRTC] Attaching fresh remote audio stream with track:", aTrack.id);
+        remoteAudioRef.current.srcObject = new MediaStream([aTrack]);
+      }
+      remoteAudioRef.current.play().catch(() => {});
+    }
+  };
+
+  // Dedicated callback refs ensuring immediate video and audio playback
   const handleLocalVideoRef = (el) => {
     localVideoRef.current = el;
     if (el && localStream) {
@@ -669,17 +721,16 @@ const TelehealthVideoRoom = ({
 
   const handleRemoteVideoRef = (el) => {
     remoteVideoRef.current = el;
-    const stream = remoteMediaStreamRef.current || remoteStream;
-    if (el && stream) {
-      if (el.srcObject !== stream) el.srcObject = stream;
-      const playPromise = el.play();
-      if (playPromise !== undefined) {
-        playPromise.catch((e) => {
-          console.warn("Unmuted autoplay restricted, unlocking with muted:", e);
-          el.muted = true;
-          el.play().catch(() => {});
-        });
-      }
+    if (el) {
+      el.muted = true;
+      attachRemoteMedia();
+    }
+  };
+
+  const handleRemoteAudioRef = (el) => {
+    remoteAudioRef.current = el;
+    if (el) {
+      attachRemoteMedia();
     }
   };
 
@@ -693,29 +744,9 @@ const TelehealthVideoRoom = ({
     }
   }, [localStream, isVideoOn, isSwappedView]);
 
-  // Keep remote video attached
+  // Keep remote media attached when re-rendering
   useEffect(() => {
-    const stream = remoteMediaStreamRef.current || remoteStream;
-    if (remoteVideoRef.current && stream) {
-      if (remoteVideoRef.current.srcObject !== stream) {
-        remoteVideoRef.current.srcObject = stream;
-      }
-      const playPromise = remoteVideoRef.current.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(() => {
-          if (remoteVideoRef.current) {
-            remoteVideoRef.current.muted = true;
-            remoteVideoRef.current.play().catch(() => {});
-          }
-        });
-      }
-    }
-    if (remoteAudioRef.current && stream) {
-      if (remoteAudioRef.current.srcObject !== stream) {
-        remoteAudioRef.current.srcObject = stream;
-      }
-      remoteAudioRef.current.play().catch(() => {});
-    }
+    attachRemoteMedia();
   }, [remoteStream, hasRemoteVideo, isSwappedView]);
 
   // Auto-scroll chat
@@ -1045,18 +1076,18 @@ const TelehealthVideoRoom = ({
             ) : remoteStream || connectionStatus === 'CONNECTED' ? (
               /* 🌟 GENUINE REMOTE LIVE WEBRTC VIDEO STREAM 🌟 */
               <div className="w-full h-full relative flex items-center justify-center">
-                <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
+                <audio ref={handleRemoteAudioRef} autoPlay playsInline className="hidden" />
                 <video 
                   ref={handleRemoteVideoRef} 
                   autoPlay 
                   playsInline 
+                  muted={true}
+                  onPlaying={() => setHasRemoteVideo(true)}
                   onLoadedMetadata={(e) => {
-                    e.target.play().catch(() => {
-                      e.target.muted = true;
-                      e.target.play().catch(() => {});
-                    });
+                    e.target.muted = true;
+                    e.target.play().catch(() => {});
                   }}
-                  className="w-full h-full object-cover"
+                  className={`w-full h-full object-cover transition-opacity duration-300 ${hasRemoteVideo ? 'opacity-100' : 'opacity-0'}`}
                 />
                 {!hasRemoteVideo && (
                   <div className="absolute inset-0 z-10 overflow-hidden bg-gradient-to-b from-[#0B1A10] to-[#040A06] flex flex-col items-center justify-center p-6 text-center animate-in fade-in">
