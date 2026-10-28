@@ -79,3 +79,4 @@ class TelehealthConsumer(AsyncJsonWebsocketConsumer):
             'sender_name': event.get('sender_name'),
             'role': event.get('role'),
         })
+
