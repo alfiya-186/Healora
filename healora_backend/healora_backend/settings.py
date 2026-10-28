@@ -300,13 +300,13 @@ RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET', 'testSecretHealora20
 RAZORPAY_CURRENCY = 'INR'
 
 
-# Email Configuration (SMTP for Real Emails)
+# Email Configuration (SMTP for Real Emails via Gmail)
 EMAIL_BACKEND = os.environ.get('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
 EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
 EMAIL_PORT = int(os.environ.get('EMAIL_PORT', 587))
 EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True').lower() in ('true', '1', 't')
 EMAIL_USE_SSL = os.environ.get('EMAIL_USE_SSL', 'False').lower() in ('true', '1', 't')
-EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
-EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
-DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL') or (f'Healora Health Clinic <{EMAIL_HOST_USER}>' if EMAIL_HOST_USER else 'Healora Health Clinic <noreply@healora.com>')
-EMAIL_TIMEOUT = int(os.environ.get('EMAIL_TIMEOUT', 10))
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER') or 'alfiyaismail186@gmail.com'
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD') or 'zezixlrpkvquzumq'
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL') or f'Healora Health Clinic <{EMAIL_HOST_USER}>'
+EMAIL_TIMEOUT = int(os.environ.get('EMAIL_TIMEOUT', 15))

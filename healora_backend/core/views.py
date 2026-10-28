@@ -119,6 +119,7 @@ class PasswordResetRequestView(generics.GenericAPIView):
         otp_record = PasswordResetOTP(user=user)
         otp_record.set_otp(raw_otp)
         otp_record.save()
+        print(f"==> [Healora OTP Dispatch] 6-digit verification code for {user.email}: {raw_otp}")
 
         # Dispatch real email via Django SMTP backend
         try:
