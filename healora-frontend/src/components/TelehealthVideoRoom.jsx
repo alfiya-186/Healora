@@ -74,6 +74,34 @@ const TelehealthVideoRoom = ({
   const [notesSaving, setNotesSaving] = useState(false);
   const [notesSavedAlert, setNotesSavedAlert] = useState(false);
 
+  // --- REAL-TIME WEBRTC DIAGNOSTICS & METRICS ---
+  const [diagLogs, setDiagLogs] = useState([]);
+  const [diagMetrics, setDiagMetrics] = useState({
+    localAudio: 'initializing',
+    localVideo: 'initializing',
+    signalingState: 'stable',
+    connectionState: 'new',
+    iceConnectionState: 'new',
+    iceGatheringState: 'new',
+    remoteAudioTrack: 'none',
+    remoteVideoTrack: 'none',
+    videoReadyState: -1,
+    videoDims: '0x0',
+    videoPlaying: false,
+    signalsSent: 0,
+    signalsRcvd: 0,
+    candidatesSent: 0,
+    candidatesRcvd: 0,
+    lastError: null
+  });
+
+  const addDiagLog = (msg, extra = '') => {
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const fullMsg = `[${time}] ${msg}${extra ? ' ' + (typeof extra === 'object' ? JSON.stringify(extra) : extra) : ''}`;
+    console.log(`%c[HEALORA_DIAGNOSTIC] ${fullMsg}`, 'color: #34d399; font-weight: bold;');
+    setDiagLogs(prev => [...prev.slice(-60), fullMsg]);
+  };
+
   // --- REFS ---
   const localStreamRef = useRef(null);
   const localVideoRef = useRef(null);
@@ -86,12 +114,15 @@ const TelehealthVideoRoom = ({
   const pcRef = useRef(null);
   const pollingTimerRef = useRef(null);
   const lastSignalIdRef = useRef(0);
-  const roomOpenedAtRef = useRef(Date.now() - 3000);
   const iceCandidatesQueueRef = useRef([]);
   const offerTimeoutRef = useRef(null);
   const hasHandshakedRef = useRef(false);
   const hasPresentedRef = useRef(false);
   const hasAnsweredRef = useRef(false);
+  const signalsSentCountRef = useRef(0);
+  const signalsRcvdCountRef = useRef(0);
+  const candidatesSentCountRef = useRef(0);
+  const candidatesRcvdCountRef = useRef(0);
   const originalVideoTrackRef = useRef(null);
   const audioContextRef = useRef(null);
   const analyserRef = useRef(null);
@@ -142,12 +173,21 @@ const TelehealthVideoRoom = ({
   const sendSignal = async (type, payload) => {
     if (!appointment?.id) return;
     try {
-      await secureFetch(`/api/telehealth/signal/${appointment.id}/`, {
+      signalsSentCountRef.current += 1;
+      if (type === 'candidate') candidatesSentCountRef.current += 1;
+      addDiagLog(`📤 SENDING signal [${type}] to room #${appointment.id}`);
+      const res = await secureFetch(`/api/telehealth/signal/${appointment.id}/`, {
         method: 'POST',
         body: JSON.stringify({ type, payload })
       });
+      if (res.ok) {
+        const data = await res.json();
+        addDiagLog(`✅ SENT signal [${type}] (id: #${data.signal_id})`);
+      } else {
+        addDiagLog(`❌ SEND FAILED [${type}]: HTTP ${res.status}`);
+      }
     } catch (err) {
-      console.warn("Signal send failed:", err);
+      addDiagLog(`❌ SEND ERROR [${type}]: ${err.message}`);
     }
   };
 
@@ -155,11 +195,13 @@ const TelehealthVideoRoom = ({
   const createPeerConnection = (stream) => {
     if (pcRef.current) {
       try {
+        addDiagLog("Closing existing RTCPeerConnection before recreating");
         pcRef.current.close();
       } catch (e) {}
       pcRef.current = null;
     }
 
+    addDiagLog("Creating new RTCPeerConnection with STUN configuration");
     const pc = new RTCPeerConnection(ICE_SERVERS);
 
     // Add local tracks to peer connection
@@ -167,14 +209,17 @@ const TelehealthVideoRoom = ({
       localStreamRef.current = stream;
       stream.getTracks().forEach(track => {
         try {
+          addDiagLog(`Adding local track to PC: kind=${track.kind}, id=${track.id}, readyState=${track.readyState}`);
           pc.addTrack(track, stream);
-        } catch (e) {}
+        } catch (e) {
+          addDiagLog(`Error adding local track: ${e.message}`);
+        }
       });
     }
 
     // Handle incoming remote media tracks
     pc.ontrack = (event) => {
-      console.log("🌟 [WebRTC] Received remote stream track:", event.track.kind);
+      addDiagLog(`🎬 pc.ontrack fired: kind=${event.track.kind}, id=${event.track.id}, muted=${event.track.muted}`);
       if (!remoteMediaStreamRef.current) {
         remoteMediaStreamRef.current = new MediaStream();
       }
@@ -186,15 +231,14 @@ const TelehealthVideoRoom = ({
       setConnectionStatus('CONNECTED');
 
       if (event.track.kind === 'video') {
-        console.log("🌟 [WebRTC] Remote video track arrived:", event.track.id);
         setHasRemoteVideo(true);
         event.track.onunmute = () => {
-          console.log("🌟 [WebRTC] Remote video track unmuted, frames flowing!");
+          addDiagLog("🌟 Video track onunmute: frames flowing!");
           setHasRemoteVideo(true);
           attachRemoteMedia();
         };
         event.track.onended = () => {
-          console.log("🌟 [WebRTC] Remote video track ended.");
+          addDiagLog("Remote video track ended");
           setHasRemoteVideo(false);
           attachRemoteMedia();
         };
@@ -206,18 +250,22 @@ const TelehealthVideoRoom = ({
     // Handle ICE candidates
     pc.onicecandidate = (event) => {
       if (event.candidate) {
+        const candType = event.candidate.type || (event.candidate.candidate?.includes('typ srflx') ? 'srflx' : 'host');
+        addDiagLog(`🧊 Generated local ICE candidate (${candType}): ${event.candidate.candidate?.slice(0, 45)}...`);
         const cand = event.candidate.toJSON ? event.candidate.toJSON() : {
           candidate: event.candidate.candidate,
           sdpMid: event.candidate.sdpMid,
           sdpMLineIndex: event.candidate.sdpMLineIndex
         };
         sendSignal('candidate', cand);
+      } else {
+        addDiagLog("🧊 Local ICE candidate gathering complete (null candidate)");
       }
     };
 
     // Connection state changes
     pc.onconnectionstatechange = () => {
-      console.log("🌟 [WebRTC] Connection state changed:", pc.connectionState);
+      addDiagLog(`⚡ pc.connectionState changed: ${pc.connectionState}`);
       if (pc.connectionState === 'connected') {
         setConnectionStatus('CONNECTED');
       } else if (pc.connectionState === 'connecting') {
@@ -232,10 +280,14 @@ const TelehealthVideoRoom = ({
     };
 
     pc.oniceconnectionstatechange = () => {
-      console.log("🌟 [WebRTC] ICE connection state:", pc.iceConnectionState);
+      addDiagLog(`❄️ pc.iceConnectionState changed: ${pc.iceConnectionState}`);
       if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
         setConnectionStatus('CONNECTED');
       }
+    };
+
+    pc.onsignalingstatechange = () => {
+      addDiagLog(`📶 pc.signalingState changed: ${pc.signalingState}`);
     };
 
     pcRef.current = pc;
@@ -410,26 +462,31 @@ const TelehealthVideoRoom = ({
   const createAndSendOffer = async (pc) => {
     try {
       if (!pc || pc.signalingState === 'closed') return;
-      if (hasHandshakedRef.current) return;
+      if (hasHandshakedRef.current) {
+        addDiagLog("ℹ️ Handshake already in progress, skipping duplicate offer.");
+        return;
+      }
       hasHandshakedRef.current = true;
       setConnectionStatus('CONNECTING');
+      addDiagLog("🤝 Initiating WebRTC handshake: creating SDP offer...");
       const offer = await pc.createOffer({
         offerToReceiveAudio: true,
         offerToReceiveVideo: true
       });
       await pc.setLocalDescription(offer);
+      addDiagLog(`📝 Local description set (offer). Signaling state: ${pc.signalingState}`);
       await sendSignal('offer', offer);
-      console.log("🌟 [WebRTC] Sent fresh offer description.");
+      addDiagLog("🌟 Sent offer description to peer via backend signal");
 
       if (offerTimeoutRef.current) clearTimeout(offerTimeoutRef.current);
       offerTimeoutRef.current = setTimeout(() => {
         if (pcRef.current && pcRef.current.connectionState !== 'connected') {
-          console.log("🌟 [WebRTC] Handshake pending for 12s, allowing retry if peer reconnects.");
+          addDiagLog("⚠️ Handshake pending for 12s without connection; unlocking offer for re-negotiation.");
           hasHandshakedRef.current = false;
         }
       }, 12000);
     } catch (err) {
-      console.error("Offer creation failed:", err);
+      addDiagLog(`❌ Offer creation failed: ${err.message}`);
       hasHandshakedRef.current = false;
     }
   };
@@ -439,34 +496,37 @@ const TelehealthVideoRoom = ({
     if (!appointment?.id) return;
     try {
       const res = await secureFetch(`/api/telehealth/signal/${appointment.id}/?since_id=${lastSignalIdRef.current}`);
-      if (!res.ok) return;
+      if (!res.ok) {
+        addDiagLog(`⚠️ Signal poll HTTP ${res.status}`);
+        return;
+      }
       const data = await res.json();
       const signals = data.signals || [];
       if (signals.length > 0) {
         lastSignalIdRef.current = data.latest_id;
         for (const sig of signals) {
-          // Ignore stale historical signals created before this room session was opened
-          if (sig.created_at && new Date(sig.created_at).getTime() < roomOpenedAtRef.current) {
-            continue;
-          }
+          signalsRcvdCountRef.current += 1;
+          addDiagLog(`📥 RCVD signal #${sig.id} [${sig.signal_type}] from ${sig.sender_name || 'peer'}`);
           await handleIncomingSignal(sig.signal_type, sig.payload, sig.sender_name);
         }
       }
-    } catch (err) {}
+    } catch (err) {
+      addDiagLog(`⚠️ Signal poll error: ${err.message}`);
+    }
   };
 
   // --- PROCESS INCOMING WEBRTC SIGNAL ---
   const handleIncomingSignal = async (type, payload, senderName) => {
     if (type === 'join') {
-      console.log(`🌟 [WebRTC] Peer joined room (${senderName || 'Peer'})`);
+      addDiagLog(`👋 Peer announced presence in room: ${senderName || 'Peer'}`);
       if (isDoctor) {
         let activePc = pcRef.current;
         if (activePc && activePc.connectionState === 'connected') {
-          console.log("🌟 [WebRTC] Already connected, skipping redundant offer.");
+          addDiagLog("Already connected to peer, skipping redundant offer.");
           return;
         }
         if (hasHandshakedRef.current) {
-          console.log("🌟 [WebRTC] Offer already in progress, skipping duplicate offer.");
+          addDiagLog("Offer already in progress, skipping duplicate offer.");
           return;
         }
         if (!activePc || activePc.signalingState !== 'stable' || activePc.connectionState === 'failed' || activePc.connectionState === 'disconnected') {
@@ -476,19 +536,20 @@ const TelehealthVideoRoom = ({
       } else {
         if (!hasPresentedRef.current) {
           hasPresentedRef.current = true;
+          addDiagLog("Answering peer presence with 'present' signal");
           sendSignal('present', { role: currentUserRole, name: currentUserName });
         }
       }
     } else if (type === 'present') {
-      console.log(`🌟 [WebRTC] Peer presented presence (${senderName || 'Peer'})`);
+      addDiagLog(`👋 Peer presented presence: ${senderName || 'Peer'}`);
       if (isDoctor) {
         let activePc = pcRef.current;
         if (activePc && activePc.connectionState === 'connected') {
-          console.log("🌟 [WebRTC] Already connected, skipping redundant offer.");
+          addDiagLog("Already connected, skipping redundant offer on present.");
           return;
         }
         if (hasHandshakedRef.current) {
-          console.log("🌟 [WebRTC] Offer already in progress, skipping duplicate offer.");
+          addDiagLog("Offer already in progress, skipping duplicate offer on present.");
           return;
         }
         if (!activePc || activePc.signalingState !== 'stable' || activePc.connectionState === 'failed' || activePc.connectionState === 'disconnected') {
@@ -499,66 +560,90 @@ const TelehealthVideoRoom = ({
     } else if (type === 'offer') {
       try {
         const activePc = pcRef.current;
-        if (!activePc) return;
+        if (!activePc) {
+          addDiagLog("❌ Cannot handle offer: activePc is null");
+          return;
+        }
         if (activePc.connectionState === 'connected') {
-          console.log("🌟 [WebRTC] Already connected, ignoring extra offer.");
+          addDiagLog("Already connected, ignoring extra offer.");
           return;
         }
         if (activePc.signalingState !== 'stable') {
-          console.log("🌟 [WebRTC] Ignoring extra offer because signalingState is:", activePc.signalingState);
+          addDiagLog(`Ignoring extra offer because signalingState is: ${activePc.signalingState}`);
           return;
         }
         if (hasAnsweredRef.current) {
-          console.log("🌟 [WebRTC] Already answered offer, skipping duplicate.");
+          addDiagLog("Already answered offer, skipping duplicate offer.");
           return;
         }
         hasAnsweredRef.current = true;
-        console.log("🌟 [WebRTC] Processing single valid offer from peer");
+        addDiagLog("🤝 Processing valid SDP offer from doctor/peer...");
         setConnectionStatus('CONNECTING');
         await activePc.setRemoteDescription(new RTCSessionDescription(payload));
-        // Flush candidate queue
-        while (iceCandidatesQueueRef.current.length > 0) {
-          const cand = iceCandidatesQueueRef.current.shift();
-          await activePc.addIceCandidate(new RTCIceCandidate(cand)).catch(() => {});
-        }
+        addDiagLog(`📝 Remote description set (offer). Signaling state: ${activePc.signalingState}`);
+
         const answer = await activePc.createAnswer();
         await activePc.setLocalDescription(answer);
+        addDiagLog(`📝 Local description set (answer). Signaling state: ${activePc.signalingState}`);
         await sendSignal('answer', answer);
-        console.log("🌟 [WebRTC] Created & sent single valid answer to peer");
+        addDiagLog("🌟 Created & sent single valid answer to peer");
+
+        // Flush candidate queue AFTER local answer description is set
+        if (iceCandidatesQueueRef.current.length > 0) {
+          addDiagLog(`Flushing ${iceCandidatesQueueRef.current.length} queued ICE candidates`);
+          while (iceCandidatesQueueRef.current.length > 0) {
+            const cand = iceCandidatesQueueRef.current.shift();
+            await activePc.addIceCandidate(new RTCIceCandidate(cand)).catch(e => {
+              addDiagLog(`Queued candidate add warning: ${e.message}`);
+            });
+          }
+        }
       } catch (err) {
-        console.error("Error handling offer:", err);
+        addDiagLog(`❌ Error handling offer: ${err.message}`);
       }
     } else if (type === 'answer') {
       try {
-        console.log("🌟 [WebRTC] Received answer from peer");
+        addDiagLog("🤝 Processing SDP answer from patient/peer...");
         hasHandshakedRef.current = true;
         const activePc = pcRef.current;
         if (activePc && activePc.signalingState === 'have-local-offer') {
           await activePc.setRemoteDescription(new RTCSessionDescription(payload));
+          addDiagLog(`📝 Remote description set (answer). Signaling state: ${activePc.signalingState}`);
           setConnectionStatus('CONNECTED');
           // Flush candidate queue
-          while (iceCandidatesQueueRef.current.length > 0) {
-            const cand = iceCandidatesQueueRef.current.shift();
-            await activePc.addIceCandidate(new RTCIceCandidate(cand)).catch(() => {});
+          if (iceCandidatesQueueRef.current.length > 0) {
+            addDiagLog(`Flushing ${iceCandidatesQueueRef.current.length} queued ICE candidates`);
+            while (iceCandidatesQueueRef.current.length > 0) {
+              const cand = iceCandidatesQueueRef.current.shift();
+              await activePc.addIceCandidate(new RTCIceCandidate(cand)).catch(e => {
+                addDiagLog(`Queued candidate add warning: ${e.message}`);
+              });
+            }
           }
+        } else {
+          addDiagLog(`⚠️ Ignoring answer: peerConnection signalingState is '${activePc?.signalingState}'`);
         }
       } catch (err) {
-        console.error("Error handling answer:", err);
+        addDiagLog(`❌ Error handling answer: ${err.message}`);
       }
     } else if (type === 'candidate') {
       try {
         if (payload && payload.candidate) {
+          candidatesRcvdCountRef.current += 1;
           const activePc = pcRef.current;
           if (!activePc || !activePc.remoteDescription || !activePc.remoteDescription.type) {
             iceCandidatesQueueRef.current.push(payload);
+            addDiagLog(`Queued remote ICE candidate (waiting for remote description). Queue size: ${iceCandidatesQueueRef.current.length}`);
           } else {
-            await activePc.addIceCandidate(new RTCIceCandidate(payload)).catch(() => {});
+            await activePc.addIceCandidate(new RTCIceCandidate(payload));
+            addDiagLog(`❄️ Added remote ICE candidate: ${payload.candidate?.slice(0, 35)}...`);
           }
         }
       } catch (err) {
-        console.error("Error adding candidate:", err);
+        addDiagLog(`❌ Error adding remote candidate: ${err.message}`);
       }
     } else if (type === 'leave') {
+      addDiagLog("👋 Peer left consultation room");
       setRemoteStream(null);
       setConnectionStatus('DISCONNECTED');
       if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
@@ -585,25 +670,47 @@ const TelehealthVideoRoom = ({
     const startConsultation = async () => {
       try {
         setMediaError('');
+        addDiagLog(`🚀 Starting consultation studio: room #${appointment?.id}, role=${currentUserRole}, user=${currentUserName}`);
+
+        // 1. Establish baseline signal id so we ignore historical signals from earlier sessions
+        try {
+          addDiagLog(`Syncing baseline signal ID from room #${appointment?.id}...`);
+          const initRes = await secureFetch(`/api/telehealth/signal/${appointment.id}/?since_id=0`);
+          if (initRes.ok) {
+            const initData = await initRes.json();
+            lastSignalIdRef.current = initData.latest_id || 0;
+            addDiagLog(`✅ Baseline signal ID established: #${lastSignalIdRef.current}`);
+          }
+        } catch (initErr) {
+          addDiagLog(`⚠️ Baseline sync warning: ${initErr.message}`);
+        }
+
+        // 2. Request local media devices
         let stream = null;
         try {
+          addDiagLog("Requesting local camera and microphone via getUserMedia...");
           stream = await navigator.mediaDevices.getUserMedia({
             video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
             audio: true
           });
+          const vTrack = stream.getVideoTracks()[0];
+          const aTrack = stream.getAudioTracks()[0];
+          addDiagLog(`🎥 Local media acquired successfully: video=${vTrack?.label || 'camera'} (${vTrack?.readyState}), audio=${aTrack?.label || 'mic'} (${aTrack?.readyState})`);
         } catch (mediaErr) {
-          console.warn("Full camera+audio capture failed, falling back to audio-only or virtual stream:", mediaErr);
+          addDiagLog(`❌ Local camera/audio capture failed: ${mediaErr.name} - ${mediaErr.message}`);
           if (mediaErr.name === 'NotAllowedError') {
             setMediaError('PERMISSION_DENIED');
           } else {
             setMediaError('DEVICE_ERROR');
           }
           try {
+            addDiagLog("Attempting audio-only fallback...");
             const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
             stream = audioStream;
             setIsVideoOn(false);
+            addDiagLog("🎤 Audio-only stream acquired");
           } catch (audioErr) {
-            console.warn("Microphone access also failed/denied, generating synthetic stream:", audioErr);
+            addDiagLog(`❌ Audio access also failed: ${audioErr.message}. Generating virtual fallback stream.`);
             const tracks = [];
             const vTrack = createVirtualVideoTrack(currentUserName);
             if (vTrack) tracks.push(vTrack);
@@ -626,20 +733,20 @@ const TelehealthVideoRoom = ({
 
         setupAudioAnalyser(stream);
 
-        // Setup WebRTC peer connection
+        // 3. Setup WebRTC peer connection
         const pc = createPeerConnection(stream);
         setConnectionStatus('WAITING_FOR_PEER');
 
-        // Announce presence to waiting or newly arriving peer
+        // 4. Announce presence to waiting or newly arriving peer
         await sendSignal('join', { role: currentUserRole, name: currentUserName });
 
-        // Start polling signals every 500ms
+        // 5. Start polling signals every 500ms
         pollingTimerRef.current = setInterval(pollSignals, 500);
         setSuccessToast("🎥 Telehealth Studio Ready");
         setTimeout(() => setSuccessToast(''), 3000);
 
       } catch (err) {
-        console.warn("WebRTC startup error:", err);
+        addDiagLog(`❌ WebRTC startup fatal error: ${err.message}`);
         setConnectionStatus('FAILED');
       }
     };
@@ -656,6 +763,7 @@ const TelehealthVideoRoom = ({
       if (offerTimeoutRef.current) clearTimeout(offerTimeoutRef.current);
       if (pollingTimerRef.current) clearInterval(pollingTimerRef.current);
       if (pcRef.current) {
+        addDiagLog("Closing RTCPeerConnection on cleanup");
         pcRef.current.close();
         pcRef.current = null;
       }
@@ -669,10 +777,47 @@ const TelehealthVideoRoom = ({
     };
   }, [isOpen]);
 
+  // --- PERIODIC WEBRTC HEALTH INSPECTOR (RUNS EVERY SECOND) ---
+  useEffect(() => {
+    if (!isOpen) return;
+    const interval = setInterval(() => {
+      const pc = pcRef.current;
+      const vEl = remoteVideoRef.current;
+      const lStream = localStreamRef.current || localStream;
+      const rStream = remoteMediaStreamRef.current;
+
+      const vTrack = rStream?.getVideoTracks().find(t => t.readyState === 'live');
+      const aTrack = rStream?.getAudioTracks().find(t => t.readyState === 'live');
+
+      setDiagMetrics({
+        localAudio: lStream?.getAudioTracks()[0] ? `${lStream.getAudioTracks()[0].readyState} (enabled: ${lStream.getAudioTracks()[0].enabled})` : 'none',
+        localVideo: lStream?.getVideoTracks()[0] ? `${lStream.getVideoTracks()[0].readyState} (enabled: ${lStream.getVideoTracks()[0].enabled})` : 'none',
+        signalingState: pc?.signalingState || 'none',
+        connectionState: pc?.connectionState || 'none',
+        iceConnectionState: pc?.iceConnectionState || 'none',
+        iceGatheringState: pc?.iceGatheringState || 'none',
+        remoteAudioTrack: aTrack ? `${aTrack.readyState} (muted: ${aTrack.muted})` : 'none',
+        remoteVideoTrack: vTrack ? `${vTrack.readyState} (muted: ${vTrack.muted})` : 'none',
+        videoReadyState: vEl ? vEl.readyState : -1,
+        videoDims: vEl && vEl.videoWidth ? `${vEl.videoWidth}x${vEl.videoHeight}` : '0x0',
+        videoPlaying: vEl ? (!vEl.paused && !vEl.ended) : false,
+        videoCurrentTime: vEl ? Number(vEl.currentTime.toFixed(1)) : 0,
+        signalsSent: signalsSentCountRef.current,
+        signalsRcvd: signalsRcvdCountRef.current,
+        candidatesSent: candidatesSentCountRef.current,
+        candidatesRcvd: candidatesRcvdCountRef.current
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isOpen, localStream]);
+
   // --- ATTACH REMOTE MEDIA TO DEDICATED VIDEO & AUDIO ELEMENTS ---
   const attachRemoteMedia = () => {
     const stream = remoteMediaStreamRef.current;
-    if (!stream) return;
+    if (!stream) {
+      addDiagLog("attachRemoteMedia: stream is null");
+      return;
+    }
 
     // Attach live video track to remote <video>
     const vTrack = stream.getVideoTracks().find(t => t.readyState === 'live');
@@ -682,12 +827,16 @@ const TelehealthVideoRoom = ({
       if (remoteVideoRef.current) {
         const curTrack = remoteVideoRef.current.srcObject?.getVideoTracks()[0];
         if (curTrack?.id !== vTrack.id) {
-          console.log("🌟 [WebRTC] Attaching fresh remote video stream with track:", vTrack.id);
+          addDiagLog(`📺 Binding video track ${vTrack.id} to remote <video> element`);
           remoteVideoRef.current.muted = true;
           remoteVideoRef.current.srcObject = new MediaStream([vTrack]);
         }
         remoteVideoRef.current.muted = true;
-        remoteVideoRef.current.play().catch(() => {});
+        remoteVideoRef.current.play().catch(e => {
+          addDiagLog(`⚠️ Remote video play rejected: ${e.message}`);
+        });
+      } else {
+        addDiagLog("📺 Live video track ready, remoteVideoRef pending mount");
       }
     } else {
       setHasRemoteVideo(false);
@@ -698,10 +847,12 @@ const TelehealthVideoRoom = ({
     if (remoteAudioRef.current && aTrack) {
       const curTrack = remoteAudioRef.current.srcObject?.getAudioTracks()[0];
       if (curTrack?.id !== aTrack.id) {
-        console.log("🌟 [WebRTC] Attaching fresh remote audio stream with track:", aTrack.id);
+        addDiagLog(`🔊 Binding audio track ${aTrack.id} to remote <audio> element`);
         remoteAudioRef.current.srcObject = new MediaStream([aTrack]);
       }
-      remoteAudioRef.current.play().catch(() => {});
+      remoteAudioRef.current.play().catch(e => {
+        addDiagLog(`⚠️ Remote audio play rejected: ${e.message}`);
+      });
     }
   };
 
@@ -1077,15 +1228,27 @@ const TelehealthVideoRoom = ({
                   autoPlay 
                   playsInline 
                   muted={true}
-                  onPlaying={() => setHasRemoteVideo(true)}
-                  onCanPlay={() => setHasRemoteVideo(true)}
-                  onLoadedData={() => setHasRemoteVideo(true)}
-                  onLoadedMetadata={(e) => {
-                    e.target.muted = true;
-                    e.target.play().catch(() => {});
+                  onPlaying={() => {
+                    addDiagLog("📺 Remote <video> onPlaying event fired: live frames decoding!");
                     setHasRemoteVideo(true);
                   }}
-                  className={`w-full h-full object-cover transition-opacity duration-300 ${hasRemoteVideo ? 'opacity-100' : 'opacity-0'}`}
+                  onCanPlay={() => {
+                    addDiagLog("📺 Remote <video> onCanPlay event fired");
+                    setHasRemoteVideo(true);
+                  }}
+                  onLoadedData={() => {
+                    addDiagLog("📺 Remote <video> onLoadedData event fired");
+                    setHasRemoteVideo(true);
+                  }}
+                  onLoadedMetadata={(e) => {
+                    addDiagLog(`📺 Remote <video> onLoadedMetadata: dimensions=${e.target.videoWidth}x${e.target.videoHeight}`);
+                    e.target.muted = true;
+                    e.target.play().catch(err => {
+                      addDiagLog(`⚠️ Remote <video> play rejected onLoadedMetadata: ${err.message}`);
+                    });
+                    setHasRemoteVideo(true);
+                  }}
+                  className="w-full h-full object-cover"
                 />
                 {!hasRemoteVideo && (!remoteMediaStreamRef.current?.getVideoTracks()?.some(t => t.readyState === 'live')) && (
                   <div className="absolute inset-0 z-10 overflow-hidden bg-gradient-to-b from-[#0B1A10] to-[#040A06] flex flex-col items-center justify-center p-6 text-center animate-in fade-in">
@@ -1166,29 +1329,38 @@ const TelehealthVideoRoom = ({
               </div>
             </div>
 
-            {/* Top Tag: Connection State */}
-            <div className="absolute top-4 left-4 z-10 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 flex items-center gap-2">
+            {/* Top Tag: Connection State (clickable to open diagnostics) */}
+            <button
+              type="button"
+              onClick={() => setActiveSidePanel(prev => prev === 'diagnostics' ? '' : 'diagnostics')}
+              className="absolute top-4 left-4 z-10 bg-black/60 hover:bg-black/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 flex items-center gap-2 cursor-pointer transition shadow-lg"
+              title="Click to view live WebRTC Diagnostics"
+            >
               <span className={`w-2 h-2 rounded-full ${connectionStatus === 'CONNECTED' ? 'bg-emerald-400' : 'bg-amber-400 animate-ping'}`}></span>
               <span className="text-[10px] font-mono text-emerald-300 uppercase tracking-widest font-bold">
                 {connectionStatus === 'CONNECTED' ? 'Two-Way Audio & Video Live' : connectionStatus}
               </span>
-            </div>
+              <span className="text-[9px] bg-white/10 hover:bg-white/20 text-emerald-200 px-1.5 py-0.5 rounded font-mono flex items-center gap-1">
+                <Activity size={10} /> Diag
+              </span>
+            </button>
           </div>
         </div>
 
-        {/* 🌟 SIDE PANEL: LIVE IN-CALL CHAT & CLINICAL NOTES 🌟 */}
+        {/* 🌟 SIDE PANEL: LIVE IN-CALL CHAT, CLINICAL NOTES & WEBRTC DIAGNOSTICS 🌟 */}
         {activeSidePanel && (
           <div className="w-80 sm:w-96 bg-[#0B170F] border-l border-[#1F3325] flex flex-col z-20 shrink-0">
             {/* Panel Header */}
             <div className="h-14 border-b border-[#1F3325] px-4 flex items-center justify-between">
               <div className="flex items-center gap-2 text-xs font-bold text-emerald-300">
-                {activeSidePanel === 'chat' ? <MessageSquare size={16} /> : <FileText size={16} />}
-                <span>{activeSidePanel === 'chat' ? 'In-Call Real-Time Chat' : 'Doctor Consultation Notes'}</span>
+                {activeSidePanel === 'chat' && <><MessageSquare size={16} /><span>In-Call Real-Time Chat</span></>}
+                {activeSidePanel === 'clinical' && <><FileText size={16} /><span>Doctor Consultation Notes</span></>}
+                {activeSidePanel === 'diagnostics' && <><Activity size={16} className="text-amber-400" /><span className="text-amber-300 font-bold">WebRTC Diagnostics (Live)</span></>}
               </div>
               <button 
                 type="button"
                 onClick={() => setActiveSidePanel('')}
-                className="text-gray-400 hover:text-white p-1 rounded-lg"
+                className="text-gray-400 hover:text-white p-1 rounded-lg cursor-pointer"
               >
                 <X size={16} />
               </button>
@@ -1292,6 +1464,100 @@ const TelehealthVideoRoom = ({
                 </div>
               </div>
             )}
+
+            {/* Panel Body: Real-Time WebRTC Diagnostics */}
+            {activeSidePanel === 'diagnostics' && (
+              <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar flex flex-col justify-between text-xs">
+                <div className="space-y-3">
+                  {/* Copy Report Button */}
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      const reportData = {
+                        app: "Healora Telehealth WebRTC",
+                        timestamp: new Date().toISOString(),
+                        room: appointment?.id,
+                        currentUser: { role: currentUserRole, name: currentUserName },
+                        metrics: diagMetrics,
+                        recentLogs: diagLogs
+                      };
+                      const reportText = JSON.stringify(reportData, null, 2);
+                      navigator.clipboard.writeText(reportText).then(() => {
+                        setSuccessToast("📋 Diagnostic report copied to clipboard!");
+                        setTimeout(() => setSuccessToast(''), 3000);
+                      }).catch(() => {
+                        prompt("Copy Diagnostic Report JSON:", reportText);
+                      });
+                    }}
+                    className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 shadow-lg transition cursor-pointer"
+                  >
+                    <FileText size={14} /> Copy Diagnostic Report (JSON)
+                  </button>
+
+                  {/* Summary Metric Badges */}
+                  <div className="bg-[#132218] border border-[#27402F] rounded-2xl p-3 space-y-2 font-mono text-[11px]">
+                    <div className="flex justify-between items-center text-gray-300 border-b border-white/5 pb-1.5">
+                      <span>Room / Role</span>
+                      <span className="text-emerald-400 font-bold">#{appointment?.id} • {currentUserRole}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-gray-300 border-b border-white/5 pb-1.5">
+                      <span>Peer Connection</span>
+                      <span className={`font-bold ${diagMetrics.connectionState === 'connected' ? 'text-emerald-400' : 'text-amber-400'}`}>
+                        {diagMetrics.connectionState}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-gray-300 border-b border-white/5 pb-1.5">
+                      <span>ICE Connection</span>
+                      <span className={`font-bold ${diagMetrics.iceConnectionState === 'connected' ? 'text-emerald-400' : 'text-amber-400'}`}>
+                        {diagMetrics.iceConnectionState}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-gray-300 border-b border-white/5 pb-1.5">
+                      <span>Signaling State</span>
+                      <span className="text-gray-300">{diagMetrics.signalingState}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-gray-300 border-b border-white/5 pb-1.5">
+                      <span>Local Media</span>
+                      <span className="text-gray-200">
+                        {diagMetrics.localVideo !== 'none' ? '🎥 live' : '❌ off'} • {diagMetrics.localAudio !== 'none' ? '🎤 live' : '❌ off'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-gray-300 border-b border-white/5 pb-1.5">
+                      <span>Remote Video Track</span>
+                      <span className={diagMetrics.remoteVideoTrack !== 'none' ? 'text-emerald-400 font-bold' : 'text-red-400'}>
+                        {diagMetrics.remoteVideoTrack}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-gray-300 border-b border-white/5 pb-1.5">
+                      <span>Remote Video Element</span>
+                      <span className="text-gray-200">ready: {diagMetrics.videoReadyState} • dims: {diagMetrics.videoDims}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-gray-300 pt-0.5">
+                      <span>Signals / Candidates</span>
+                      <span className="text-gray-200">Sent: {diagMetrics.signalsSent} | Rcvd: {diagMetrics.signalsRcvd} | ICE: {diagMetrics.candidatesRcvd}</span>
+                    </div>
+                  </div>
+
+                  {/* Live Event Log Box */}
+                  <div>
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1.5">
+                      Real-Time Event Stream ({diagLogs.length})
+                    </span>
+                    <div className="bg-[#060D08] border border-[#1E3324] rounded-xl p-2.5 h-64 overflow-y-auto font-mono text-[10px] space-y-1 custom-scrollbar text-emerald-300/90 select-text">
+                      {diagLogs.length === 0 ? (
+                        <p className="text-gray-500 italic">No events logged yet...</p>
+                      ) : (
+                        diagLogs.map((log, idx) => (
+                          <div key={idx} className="leading-tight border-b border-white/5 pb-1">
+                            {log}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1366,6 +1632,19 @@ const TelehealthVideoRoom = ({
 
         {/* Right: Drawer toggles */}
         <div className="flex items-center gap-2">
+          {/* Diagnostics Button */}
+          <button 
+            type="button"
+            onClick={() => setActiveSidePanel(prev => prev === 'diagnostics' ? '' : 'diagnostics')}
+            className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
+              activeSidePanel === 'diagnostics' ? 'bg-amber-600 text-white' : 'bg-[#122317] hover:bg-[#182F20] text-amber-300 border border-amber-600/40'
+            }`}
+            title="Open WebRTC Diagnostics Panel"
+          >
+            <Activity size={16} />
+            <span className="hidden sm:inline">Diagnostics</span>
+          </button>
+
           {/* Chat Toggle */}
           <button 
             type="button"

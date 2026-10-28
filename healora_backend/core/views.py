@@ -772,7 +772,8 @@ class TelehealthSignalView(generics.GenericAPIView):
         ).exclude(sender=request.user).order_by('id')
 
         serializer = TelehealthSignalSerializer(signals, many=True)
-        latest_id = signals.last().id if signals.exists() else since_id
+        max_sig = TelehealthSignal.objects.filter(appointment=appt).order_by('-id').first()
+        latest_id = max_sig.id if max_sig else since_id
         return Response({'signals': serializer.data, 'latest_id': latest_id}, status=status.HTTP_200_OK)
 
     def post(self, request, appointment_id):
