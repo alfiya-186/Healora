@@ -903,37 +903,28 @@ const TelehealthVideoRoom = ({
     return () => clearInterval(interval);
   }, [isOpen, localStream]);
 
-  // --- ATTACH REMOTE MEDIA TO DEDICATED VIDEO & AUDIO ELEMENTS ---
+  // --- ATTACH REMOTE MEDIA TO DEDICATED VIDEO & AUDIO ELEMENTS (DOM SIDE EFFECT ONLY) ---
   const attachRemoteMedia = () => {
     const stream = remoteMediaStreamRef.current;
-    if (!stream) {
-      addDiagLog("attachRemoteMedia: stream is null");
-      return;
-    }
+    if (!stream) return;
 
     // Attach stream to remote <video>
     const vTrack = stream.getVideoTracks().find(t => t.readyState === 'live');
-    if (vTrack) {
-      setHasRemoteVideo(true);
-      setConnectionStatus('CONNECTED');
-      if (remoteVideoRef.current) {
-        if (remoteVideoRef.current.srcObject !== stream) {
-          addDiagLog(`📺 Binding live remote stream (${vTrack.id}) to <video> element`);
-          remoteVideoRef.current.muted = true;
-          remoteVideoRef.current.srcObject = stream;
-        }
+    if (remoteVideoRef.current && vTrack) {
+      if (remoteVideoRef.current.srcObject !== stream) {
+        addDiagLog(`📺 Binding live remote stream (${vTrack.id}) to <video> element`);
         remoteVideoRef.current.muted = true;
-        const playPromise = remoteVideoRef.current.play();
-        if (playPromise !== undefined) {
-          playPromise.catch(e => {
-            addDiagLog(`⚠️ Remote video play rejected: ${e.message}`);
-          });
-        }
-      } else {
-        addDiagLog("📺 Live video track ready, remoteVideoRef pending mount");
+        remoteVideoRef.current.srcObject = stream;
       }
-    } else {
-      setHasRemoteVideo(false);
+      remoteVideoRef.current.muted = true;
+      const playPromise = remoteVideoRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(e => {
+          if (e.name !== 'AbortError') {
+            addDiagLog(`⚠️ Remote video play: ${e.message}`);
+          }
+        });
+      }
     }
 
     // Attach stream to remote <audio>
@@ -946,13 +937,15 @@ const TelehealthVideoRoom = ({
       const playPromise = remoteAudioRef.current.play();
       if (playPromise !== undefined) {
         playPromise.catch(e => {
-          addDiagLog(`⚠️ Remote audio play rejected: ${e.message}`);
+          if (e.name !== 'AbortError') {
+            addDiagLog(`⚠️ Remote audio play: ${e.message}`);
+          }
         });
       }
     }
   };
 
-  // Dedicated callback refs ensuring immediate video and audio playback
+  // Dedicated callback refs ensuring immediate video and audio playback without re-renders
   const handleLocalVideoRef = (el) => {
     localVideoRef.current = el;
     if (el && localStream) {
@@ -963,16 +956,22 @@ const TelehealthVideoRoom = ({
 
   const handleRemoteVideoRef = (el) => {
     remoteVideoRef.current = el;
-    if (el) {
+    if (el && remoteMediaStreamRef.current) {
       el.muted = true;
-      attachRemoteMedia();
+      if (el.srcObject !== remoteMediaStreamRef.current) {
+        el.srcObject = remoteMediaStreamRef.current;
+      }
+      el.play().catch(() => {});
     }
   };
 
   const handleRemoteAudioRef = (el) => {
     remoteAudioRef.current = el;
-    if (el) {
-      attachRemoteMedia();
+    if (el && remoteMediaStreamRef.current) {
+      if (el.srcObject !== remoteMediaStreamRef.current) {
+        el.srcObject = remoteMediaStreamRef.current;
+      }
+      el.play().catch(() => {});
     }
   };
 
@@ -989,7 +988,7 @@ const TelehealthVideoRoom = ({
   // Keep remote media attached when re-rendering
   useEffect(() => {
     attachRemoteMedia();
-  }, [remoteStream, hasRemoteVideo, isSwappedView]);
+  }, [remoteStream, isSwappedView]);
 
   // Auto-scroll chat
   useEffect(() => {
