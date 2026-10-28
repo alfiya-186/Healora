@@ -6919,7 +6919,7 @@ const PatientDashboard = () => {
         {/* TAB 4: APPOINTMENTS & MODERN CHAT */}
         {activeTab === 'appointments' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in">
-            <div className="lg:col-span-2 bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-[#EBE9E0] overflow-hidden flex flex-col h-[75vh]">
+            <div className="lg:col-span-2 bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-[#EBE9E0] overflow-hidden flex flex-col min-h-[720px] lg:min-h-[820px]">
               {(() => {
                 const sortedAppts = [...appointments].sort((a, b) => {
                   const dateTimeA = new Date(`${a.date}T${a.time || '00:00:00'}`).getTime() || 0;
@@ -6947,7 +6947,7 @@ const PatientDashboard = () => {
 
                 return (
                   <>
-                    <div className="p-6 border-b border-[#EBE9E0] bg-[#FDFCF8] space-y-4">
+                    <div className="p-4 sm:p-5 border-b border-[#EBE9E0] bg-[#FDFCF8] space-y-3 shrink-0">
                       {/* Top Tier: Title & Action Button */}
                       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                         <div>
@@ -7016,42 +7016,42 @@ const PatientDashboard = () => {
                         const isCompleted = qStatus === 'COMPLETED';
 
                         return (
-                          <div className={`p-4 rounded-2xl border transition-all duration-300 ${
+                          <div className={`p-3 sm:p-3.5 rounded-2xl border transition-all duration-300 shadow-sm ${
                             isCalled 
                               ? 'bg-amber-500 text-white border-amber-600 shadow-lg animate-pulse'
                               : isInSession
                               ? 'bg-emerald-700 text-white border-emerald-800 shadow-md'
-                              : 'bg-white border-[#EBE9E0] text-[#1C2C22] shadow-xs'
+                              : 'bg-white border-[#EBE9E0] text-[#1C2C22]'
                           }`}>
-                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                              <div className="flex items-center gap-3.5">
-                                <div className={`p-3 rounded-2xl shrink-0 ${
+                            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2.5">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className={`p-2.5 rounded-xl shrink-0 ${
                                   isCalled || isInSession ? 'bg-white/20 text-white' : 'bg-[#EAF0EC] text-[#456A50]'
                                 }`}>
-                                  <Ticket size={24} />
+                                  <Ticket size={20} />
                                 </div>
-                                <div>
-                                  <div className="flex items-center gap-2">
-                                    <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-md ${
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md ${
                                       isCalled || isInSession ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-700'
                                     }`}>
                                       Today's Live Queue Pass
                                     </span>
                                     <span className="text-xs font-bold opacity-80">Slot: {todayAppt.time}</span>
                                   </div>
-                                  <h4 className="font-black text-lg mt-0.5 flex items-center gap-2">
-                                    Token #{tokenNum}
-                                    <span className="text-xs font-normal opacity-90">• {roomName}</span>
+                                  <h4 className="font-black text-base sm:text-lg mt-0.5 flex items-center gap-1.5 flex-wrap">
+                                    <span>Token #{tokenNum}</span>
+                                    <span className="text-xs font-normal opacity-90 truncate max-w-[240px] sm:max-w-md">• {roomName}</span>
                                   </h4>
                                 </div>
                               </div>
 
-                              <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 pt-2 sm:pt-0 border-white/20">
-                                <div className="text-left sm:text-right">
-                                  <span className={`text-[10px] font-black uppercase tracking-wider block ${isCalled || isInSession ? 'text-white' : 'text-gray-500'}`}>
+                              <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end border-t md:border-t-0 pt-2 md:pt-0 border-white/20 shrink-0">
+                                <div className="text-left md:text-right shrink-0">
+                                  <span className={`text-[9px] font-black uppercase tracking-wider block ${isCalled || isInSession ? 'text-white' : 'text-gray-500'}`}>
                                     Queue Status
                                   </span>
-                                  <span className="font-bold text-xs">
+                                  <span className="font-bold text-xs whitespace-nowrap">
                                     {isCalled 
                                       ? '📢 PLEASE PROCEED TO ROOM'
                                       : isInSession 
@@ -7077,7 +7077,7 @@ const PatientDashboard = () => {
                                   <button 
                                     type="button"
                                     onClick={() => handleStartVideoConsultation(todayAppt)} 
-                                    className="bg-white text-emerald-800 font-bold px-3 py-1.5 rounded-xl text-xs flex items-center gap-1.5 shadow-sm transition hover:bg-gray-100 shrink-0 cursor-pointer"
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3.5 py-1.5 rounded-xl text-xs flex items-center gap-1.5 shadow-sm transition shrink-0 cursor-pointer"
                                   >
                                     <Video size={13} /> Enter Video Room
                                   </button>
@@ -7089,7 +7089,7 @@ const PatientDashboard = () => {
                       })()}
                     </div>
 
-                    <div className="overflow-x-auto overflow-y-auto flex-1 p-2 custom-scrollbar">
+                    <div className="overflow-x-auto overflow-y-auto flex-1 min-h-[420px] p-2 custom-scrollbar">
                       <table className="w-full text-left text-sm text-[#1C2C22] whitespace-nowrap">
                         <thead className="bg-[#FDFCF8] text-[10px] uppercase font-extrabold text-[#5A6B60] tracking-widest border-b sticky top-0">
                           <tr>
@@ -7212,7 +7212,7 @@ const PatientDashboard = () => {
             </div>
 
             <div className="flex flex-col gap-6">
-              <div className="bg-white text-[#1C2C22] rounded-3xl shadow-xl p-0 h-[75vh] border border-[#EBE9E0] flex flex-col overflow-hidden">
+              <div className="bg-white text-[#1C2C22] rounded-3xl shadow-xl p-0 min-h-[720px] lg:min-h-[820px] h-full border border-[#EBE9E0] flex flex-col overflow-hidden">
                 {/* 🌟 Tab Toggle for Chat 🌟 */}
                 <div className="flex border-b border-[#EBE9E0] bg-[#FDFCF8] shrink-0">
                   <button onClick={() => setChatPartner('manager')} className={`flex-1 py-4 text-xs font-black flex items-center justify-center gap-2 transition cursor-pointer ${chatPartner === 'manager' ? 'bg-[#EAF0EC] text-[#456A50] border-b-2 border-[#456A50]' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-50'}`}><MessageSquare size={16}/> Clinic Manager</button>
