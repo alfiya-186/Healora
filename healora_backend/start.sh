@@ -7,11 +7,10 @@ if [ -d "healora_backend" ]; then
     cd healora_backend
 fi
 
-# Run migrations once as a single pre-start process before Gunicorn workers spawn
+# Run migrations once as a single pre-start process before Daphne server spawns
 echo "==> [Healora Startup] Verifying database schema..."
 python manage.py migrate --no-input
 
-# Start Gunicorn WSGI server
-echo "==> [Healora Startup] Launching Gunicorn WSGI server..."
-exec gunicorn healora_backend.wsgi:application
-
+# Start Daphne ASGI server (handles both HTTP and WebSockets)
+echo "==> [Healora Startup] Launching Daphne ASGI server..."
+exec daphne -b 0.0.0.0 -p ${PORT:-8000} healora_backend.asgi:application

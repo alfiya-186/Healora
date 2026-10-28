@@ -92,12 +92,14 @@ if render_external_hostname and render_external_hostname not in ALLOWED_HOSTS:
 # Application definition
 
 INSTALLED_APPS = [
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'channels',
     # Added for Healora:
     'rest_framework',
     'corsheaders',
@@ -134,6 +136,25 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'healora_backend.wsgi.application'
+ASGI_APPLICATION = 'healora_backend.asgi.application'
+
+# Channel Layers (Redis for production WebSocket signaling; InMemory fallback for local dev/testing)
+REDIS_URL = os.environ.get('REDIS_URL') or os.environ.get('REDISCLOUD_URL')
+if REDIS_URL:
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels_redis.core.RedisChannelLayer',
+            'CONFIG': {
+                'hosts': [REDIS_URL],
+            },
+        },
+    }
+else:
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels.layers.InMemoryChannelLayer',
+        },
+    }
 
 
 # Database

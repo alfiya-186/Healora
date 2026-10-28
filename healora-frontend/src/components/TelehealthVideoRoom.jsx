@@ -127,6 +127,9 @@ const TelehealthVideoRoom = ({
   const audioContextRef = useRef(null);
   const analyserRef = useRef(null);
   const animFrameRef = useRef(null);
+  const wsRef = useRef(null);
+  const isWsConnectedRef = useRef(false);
+  const isProcessingOfferRef = useRef(false);
 
   const isDoctor = currentUserRole === 'NUTRITIONIST';
   const remotePersonName = isDoctor 
@@ -169,25 +172,92 @@ const TelehealthVideoRoom = ({
     } catch (e) {}
   };
 
-  // --- SEND WEBRTC SIGNALLING MESSAGE VIA BACKEND ---
+  // --- REAL-TIME WEBSOCKET & HTTP FALLBACK SIGNALLING ---
   const sendSignal = async (type, payload) => {
     if (!appointment?.id) return;
+    signalsSentCountRef.current += 1;
+    if (type === 'candidate') candidatesSentCountRef.current += 1;
+
+    // 1. Send via real-time WebSocket if open (sub-millisecond latency)
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      try {
+        wsRef.current.send(JSON.stringify({
+          type,
+          payload,
+          senderName: currentUserName,
+          role: currentUserRole
+        }));
+        addDiagLog(`⚡ [WS] Sent signal [${type}]`);
+        return;
+      } catch (wsErr) {
+        addDiagLog(`⚠️ WS send error: ${wsErr.message}, attempting HTTP fallback`);
+      }
+    }
+
+    // 2. Resilient fallback via HTTP REST
     try {
-      signalsSentCountRef.current += 1;
-      if (type === 'candidate') candidatesSentCountRef.current += 1;
-      addDiagLog(`📤 SENDING signal [${type}] to room #${appointment.id}`);
+      addDiagLog(`📤 [HTTP] SENDING signal [${type}] to room #${appointment.id}`);
       const res = await secureFetch(`/api/telehealth/signal/${appointment.id}/`, {
         method: 'POST',
         body: JSON.stringify({ type, payload })
       });
       if (res.ok) {
         const data = await res.json();
-        addDiagLog(`✅ SENT signal [${type}] (id: #${data.signal_id})`);
+        addDiagLog(`✅ [HTTP] SENT signal [${type}] (id: #${data.signal_id})`);
       } else {
-        addDiagLog(`❌ SEND FAILED [${type}]: HTTP ${res.status}`);
+        addDiagLog(`❌ [HTTP] SEND FAILED [${type}]: HTTP ${res.status}`);
       }
     } catch (err) {
-      addDiagLog(`❌ SEND ERROR [${type}]: ${err.message}`);
+      addDiagLog(`❌ [HTTP] SEND ERROR [${type}]: ${err.message}`);
+    }
+  };
+
+  // --- CONNECT REAL-TIME WEBSOCKET BACKED BY REDIS & CHANNELS ---
+  const setupWebSocket = () => {
+    if (!appointment?.id) return;
+    try {
+      const rawBase = import.meta.env.VITE_API_BASE_URL || 'https://healora-backend-ru0c.onrender.com';
+      const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsHost = rawBase.replace(/^https?:\/\//, '').replace(/\/$/, '');
+      const wsUrl = `${wsProto}//${wsHost}/ws/telehealth/${appointment.id}/`;
+
+      addDiagLog(`🔌 Connecting real-time WebSocket: ${wsUrl}`);
+      const ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        isWsConnectedRef.current = true;
+        addDiagLog("⚡ Real-time WebSocket signaling connected to Redis channel group!");
+        // Announce presence immediately across the WebSocket
+        sendSignal('join', { role: currentUserRole, name: currentUserName });
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data && data.type) {
+            signalsRcvdCountRef.current += 1;
+            addDiagLog(`📥 [WS] RCVD signal [${data.type}] from ${data.sender_name || 'peer'}`);
+            handleIncomingSignal(data.type, data.payload, data.sender_name);
+          }
+        } catch (e) {
+          addDiagLog(`⚠️ WS JSON parse error: ${e.message}`);
+        }
+      };
+
+      ws.onerror = (e) => {
+        addDiagLog("⚠️ WebSocket connection notice, HTTP polling serves as active backup");
+        isWsConnectedRef.current = false;
+      };
+
+      ws.onclose = () => {
+        addDiagLog("🔌 WebSocket connection closed");
+        isWsConnectedRef.current = false;
+      };
+
+      wsRef.current = ws;
+    } catch (err) {
+      addDiagLog(`⚠️ WebSocket initialization error: ${err.message}`);
+      isWsConnectedRef.current = false;
     }
   };
 
@@ -491,9 +561,13 @@ const TelehealthVideoRoom = ({
     }
   };
 
-  // --- POLL SIGNALS FROM OTHER PARTICIPANT ---
+  // --- POLL SIGNALS FROM OTHER PARTICIPANT (HTTP FALLBACK) ---
   const pollSignals = async () => {
-    if (!appointment?.id) return;
+    // When real-time WebSocket is connected, pause HTTP polling to eliminate duplicate collisions
+    if (isWsConnectedRef.current && wsRef.current?.readyState === WebSocket.OPEN) {
+      return;
+    }
+    if (!isOpen || !appointment?.id) return;
     try {
       const res = await secureFetch(`/api/telehealth/signal/${appointment.id}/?since_id=${lastSignalIdRef.current}`);
       if (!res.ok) {
@@ -506,7 +580,7 @@ const TelehealthVideoRoom = ({
         lastSignalIdRef.current = data.latest_id;
         for (const sig of signals) {
           signalsRcvdCountRef.current += 1;
-          addDiagLog(`📥 RCVD signal #${sig.id} [${sig.signal_type}] from ${sig.sender_name || 'peer'}`);
+          addDiagLog(`📥 [HTTP] RCVD signal #${sig.id} [${sig.signal_type}] from ${sig.sender_name || 'peer'}`);
           await handleIncomingSignal(sig.signal_type, sig.payload, sig.sender_name);
         }
       }
@@ -568,38 +642,50 @@ const TelehealthVideoRoom = ({
           addDiagLog("Already connected, ignoring extra offer.");
           return;
         }
+        if (isProcessingOfferRef.current) {
+          addDiagLog("⏳ Offer processing already in progress, skipping duplicate offer.");
+          return;
+        }
         if (activePc.signalingState !== 'stable') {
-          addDiagLog(`Ignoring extra offer because signalingState is: ${activePc.signalingState}`);
+          addDiagLog(`⚠️ Ignoring extra offer because signalingState is: ${activePc.signalingState}`);
           return;
         }
         if (hasAnsweredRef.current) {
           addDiagLog("Already answered offer, skipping duplicate offer.");
           return;
         }
+
+        isProcessingOfferRef.current = true;
         hasAnsweredRef.current = true;
-        addDiagLog("🤝 Processing valid SDP offer from doctor/peer...");
+        addDiagLog("🤝 Processing valid SDP offer from peer...");
         setConnectionStatus('CONNECTING');
         await activePc.setRemoteDescription(new RTCSessionDescription(payload));
         addDiagLog(`📝 Remote description set (offer). Signaling state: ${activePc.signalingState}`);
 
-        const answer = await activePc.createAnswer();
-        await activePc.setLocalDescription(answer);
-        addDiagLog(`📝 Local description set (answer). Signaling state: ${activePc.signalingState}`);
-        await sendSignal('answer', answer);
-        addDiagLog("🌟 Created & sent single valid answer to peer");
+        if (activePc.signalingState === 'have-remote-offer') {
+          const answer = await activePc.createAnswer();
+          await activePc.setLocalDescription(answer);
+          addDiagLog(`📝 Local description set (answer). Signaling state: ${activePc.signalingState}`);
+          await sendSignal('answer', answer);
+          addDiagLog("🌟 Created & sent single valid answer to peer");
+        }
 
         // Flush candidate queue AFTER local answer description is set
         if (iceCandidatesQueueRef.current.length > 0) {
           addDiagLog(`Flushing ${iceCandidatesQueueRef.current.length} queued ICE candidates`);
           while (iceCandidatesQueueRef.current.length > 0) {
             const cand = iceCandidatesQueueRef.current.shift();
-            await activePc.addIceCandidate(new RTCIceCandidate(cand)).catch(e => {
+            try {
+              await activePc.addIceCandidate(new RTCIceCandidate(cand));
+            } catch (e) {
               addDiagLog(`Queued candidate add warning: ${e.message}`);
-            });
+            }
           }
         }
       } catch (err) {
         addDiagLog(`❌ Error handling offer: ${err.message}`);
+      } finally {
+        isProcessingOfferRef.current = false;
       }
     } else if (type === 'answer') {
       try {
@@ -737,11 +823,11 @@ const TelehealthVideoRoom = ({
         const pc = createPeerConnection(stream);
         setConnectionStatus('WAITING_FOR_PEER');
 
-        // 4. Announce presence to waiting or newly arriving peer
-        await sendSignal('join', { role: currentUserRole, name: currentUserName });
+        // 4. Initialize real-time WebSocket connection (with automatic HTTP fallback)
+        setupWebSocket();
 
-        // 5. Start polling signals every 500ms
-        pollingTimerRef.current = setInterval(pollSignals, 500);
+        // 5. Fallback polling timer (only active if WebSocket is disconnected)
+        pollingTimerRef.current = setInterval(pollSignals, 1500);
         setSuccessToast("🎥 Telehealth Studio Ready");
         setTimeout(() => setSuccessToast(''), 3000);
 
@@ -762,6 +848,12 @@ const TelehealthVideoRoom = ({
       clearInterval(timer);
       if (offerTimeoutRef.current) clearTimeout(offerTimeoutRef.current);
       if (pollingTimerRef.current) clearInterval(pollingTimerRef.current);
+      if (wsRef.current) {
+        try {
+          wsRef.current.close();
+        } catch (e) {}
+        wsRef.current = null;
+      }
       if (pcRef.current) {
         addDiagLog("Closing RTCPeerConnection on cleanup");
         pcRef.current.close();
@@ -819,22 +911,24 @@ const TelehealthVideoRoom = ({
       return;
     }
 
-    // Attach live video track to remote <video>
+    // Attach stream to remote <video>
     const vTrack = stream.getVideoTracks().find(t => t.readyState === 'live');
     if (vTrack) {
       setHasRemoteVideo(true);
       setConnectionStatus('CONNECTED');
       if (remoteVideoRef.current) {
-        const curTrack = remoteVideoRef.current.srcObject?.getVideoTracks()[0];
-        if (curTrack?.id !== vTrack.id) {
-          addDiagLog(`📺 Binding video track ${vTrack.id} to remote <video> element`);
+        if (remoteVideoRef.current.srcObject !== stream) {
+          addDiagLog(`📺 Binding live remote stream (${vTrack.id}) to <video> element`);
           remoteVideoRef.current.muted = true;
-          remoteVideoRef.current.srcObject = new MediaStream([vTrack]);
+          remoteVideoRef.current.srcObject = stream;
         }
         remoteVideoRef.current.muted = true;
-        remoteVideoRef.current.play().catch(e => {
-          addDiagLog(`⚠️ Remote video play rejected: ${e.message}`);
-        });
+        const playPromise = remoteVideoRef.current.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(e => {
+            addDiagLog(`⚠️ Remote video play rejected: ${e.message}`);
+          });
+        }
       } else {
         addDiagLog("📺 Live video track ready, remoteVideoRef pending mount");
       }
@@ -842,17 +936,19 @@ const TelehealthVideoRoom = ({
       setHasRemoteVideo(false);
     }
 
-    // Attach live audio track to remote <audio>
+    // Attach stream to remote <audio>
     const aTrack = stream.getAudioTracks().find(t => t.readyState === 'live');
     if (remoteAudioRef.current && aTrack) {
-      const curTrack = remoteAudioRef.current.srcObject?.getAudioTracks()[0];
-      if (curTrack?.id !== aTrack.id) {
-        addDiagLog(`🔊 Binding audio track ${aTrack.id} to remote <audio> element`);
-        remoteAudioRef.current.srcObject = new MediaStream([aTrack]);
+      if (remoteAudioRef.current.srcObject !== stream) {
+        addDiagLog(`🔊 Binding live remote audio (${aTrack.id}) to <audio> element`);
+        remoteAudioRef.current.srcObject = stream;
       }
-      remoteAudioRef.current.play().catch(e => {
-        addDiagLog(`⚠️ Remote audio play rejected: ${e.message}`);
-      });
+      const playPromise = remoteAudioRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(e => {
+          addDiagLog(`⚠️ Remote audio play rejected: ${e.message}`);
+        });
+      }
     }
   };
 
