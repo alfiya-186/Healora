@@ -5,6 +5,8 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django.conf import settings
+import os
+import requests
 import datetime
 import razorpay
 import hmac
@@ -190,11 +192,12 @@ class PasswordResetRequestView(generics.GenericAPIView):
         import requests
 
         # Channel 1: Resend HTTPS API (Port 443 - Bypasses Render firewall blocks!)
-        resend_key = os.environ.get('RESEND_API_KEY')
+        resend_key = getattr(settings, 'RESEND_API_KEY', None) or os.environ.get('RESEND_API_KEY')
         if resend_key and not email_delivered:
             try:
+                from_email = getattr(settings, 'RESEND_FROM_EMAIL', None) or os.environ.get('RESEND_FROM_EMAIL', 'Healora Health Clinic <onboarding@resend.dev>')
                 resend_payload = {
-                    "from": os.environ.get('RESEND_FROM_EMAIL', 'Healora Health Clinic <onboarding@resend.dev>'),
+                    "from": from_email,
                     "to": [user.email],
                     "subject": subject,
                     "html": html_content,

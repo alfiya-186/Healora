@@ -300,6 +300,10 @@ RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET', 'testSecretHealora20
 RAZORPAY_CURRENCY = 'INR'
 
 
+# Resend HTTPS Email API Configuration (Bypasses cloud host SMTP firewall blocks)
+RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')
+RESEND_FROM_EMAIL = os.environ.get('RESEND_FROM_EMAIL', 'Healora Health Clinic <onboarding@resend.dev>')
+
 # Email Configuration (SMTP for Real Emails via Gmail)
 EMAIL_BACKEND = os.environ.get('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
 EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
