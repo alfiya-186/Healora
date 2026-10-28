@@ -130,6 +130,7 @@ const TelehealthVideoRoom = ({
   const wsRef = useRef(null);
   const isWsConnectedRef = useRef(false);
   const isProcessingOfferRef = useRef(false);
+  const pollCountRef = useRef(0);
 
   const isDoctor = currentUserRole === 'NUTRITIONIST';
   const remotePersonName = isDoctor 
@@ -568,6 +569,13 @@ const TelehealthVideoRoom = ({
       return;
     }
     if (!isOpen || !appointment?.id) return;
+
+    pollCountRef.current += 1;
+    // Periodic presence ping every 4 polls (~6s) while peer is not yet connected
+    if (pollCountRef.current % 4 === 0 && (!pcRef.current || pcRef.current.connectionState !== 'connected')) {
+      sendSignal('join', { role: currentUserRole, name: currentUserName }).catch(() => {});
+    }
+
     try {
       const res = await secureFetch(`/api/telehealth/signal/${appointment.id}/?since_id=${lastSignalIdRef.current}`);
       if (!res.ok) {
@@ -650,8 +658,8 @@ const TelehealthVideoRoom = ({
           addDiagLog(`⚠️ Ignoring extra offer because signalingState is: ${activePc.signalingState}`);
           return;
         }
-        if (hasAnsweredRef.current) {
-          addDiagLog("Already answered offer, skipping duplicate offer.");
+        if (hasAnsweredRef.current && activePc.connectionState === 'connected') {
+          addDiagLog("Already connected, skipping duplicate offer.");
           return;
         }
 
@@ -766,6 +774,17 @@ const TelehealthVideoRoom = ({
             const initData = await initRes.json();
             lastSignalIdRef.current = initData.latest_id || 0;
             addDiagLog(`✅ Baseline signal ID established: #${lastSignalIdRef.current}`);
+            if (initData.signals && initData.signals.length > 0) {
+              for (const sig of initData.signals) {
+                if (sig.signal_type === 'join' || sig.signal_type === 'present') {
+                  addDiagLog(`👋 Detected peer waiting in room from baseline: ${sig.sender_name || 'peer'}`);
+                  setTimeout(() => {
+                    handleIncomingSignal(sig.signal_type, sig.payload, sig.sender_name);
+                  }, 1200);
+                  break;
+                }
+              }
+            }
           }
         } catch (initErr) {
           addDiagLog(`⚠️ Baseline sync warning: ${initErr.message}`);
@@ -826,7 +845,11 @@ const TelehealthVideoRoom = ({
         // 4. Initialize real-time WebSocket connection (with automatic HTTP fallback)
         setupWebSocket();
 
-        // 5. Fallback polling timer (only active if WebSocket is disconnected)
+        // 5. UNCONDITIONALLY announce presence to room immediately (works over WS or HTTP)
+        addDiagLog(`📢 Dispatching join presence: ${currentUserName} (${currentUserRole})`);
+        await sendSignal('join', { role: currentUserRole, name: currentUserName });
+
+        // 6. Fallback polling timer (only active if WebSocket is disconnected)
         pollingTimerRef.current = setInterval(pollSignals, 1500);
         setSuccessToast("🎥 Telehealth Studio Ready");
         setTimeout(() => setSuccessToast(''), 3000);

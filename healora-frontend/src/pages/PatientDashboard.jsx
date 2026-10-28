@@ -1389,6 +1389,7 @@ const PatientDashboard = () => {
   const [notifications, setNotifications] = useState([]);
   const [queryText, setQueryText] = useState("");
   const chatEndRef = useRef(null);
+  const chatBoxRef = useRef(null);
   const [chats, setChats] = useState([]);
   const [chatPartner, setChatPartner] = useState('manager'); // 'manager' | 'nutritionist'
 
@@ -1580,10 +1581,10 @@ const PatientDashboard = () => {
   }, [userId]);
 
   useEffect(() => {
-    if (activeTab === 'appointments' && chatEndRef.current) {
-      chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    if (activeTab === 'appointments' && chatBoxRef.current) {
+      chatBoxRef.current.scrollTop = chatBoxRef.current.scrollHeight;
     }
-  }, [activeTab, chats, chatPartner]);
+  }, [activeTab, chats.length, chatPartner]);
 
   // Click outside listener for profile avatar popover menus
   useEffect(() => {
@@ -1641,7 +1642,12 @@ const PatientDashboard = () => {
       // 2. Sync chats strictly for THIS patient
       const syncedChats = JSON.parse(localStorage.getItem('healora_chats')) || [];
       const myChats = syncedChats.filter(c => c && (String(c.patientId) === String(userId) || (String(c.contactId) === String(userId) && c.senderRole !== 'PATIENT')));
-      setChats(myChats);
+      setChats(prev => {
+        if (prev.length !== myChats.length || (myChats.length > 0 && prev[prev.length - 1]?.id !== myChats[myChats.length - 1]?.id)) {
+          return myChats;
+        }
+        return prev;
+      });
 
       // 3. Sync notifications
       const notifs = JSON.parse(localStorage.getItem(`healora_notifications_${userId}`)) || [];
@@ -1822,7 +1828,12 @@ const PatientDashboard = () => {
 
       const syncedChats = JSON.parse(localStorage.getItem('healora_chats')) || [];
       const myChats = syncedChats.filter(c => c && (String(c.patientId) === String(userId) || (String(c.contactId) === String(userId) && c.senderRole !== 'PATIENT')));
-      setChats(myChats);
+      setChats(prev => {
+        if (prev.length !== myChats.length || (myChats.length > 0 && prev[prev.length - 1]?.id !== myChats[myChats.length - 1]?.id)) {
+          return myChats;
+        }
+        return prev;
+      });
 
 
 
@@ -1875,6 +1886,10 @@ const PatientDashboard = () => {
 
   const generateReceipt = (appt) => {
     const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert("Please allow popups in your browser to print your receipt.");
+      return;
+    }
     const paymentRef = appt.razorpay_payment_id || `PAY-RZP-${appt.id}`;
     printWindow.document.write(`
       <html><head><title>Receipt - Healora</title></head><body style="font-family: Arial, sans-serif; padding: 40px; color: #1C2C22; max-width: 600px; margin: auto; line-height: 1.5;">
@@ -1926,6 +1941,10 @@ const PatientDashboard = () => {
   // 🌟 OFFICIAL 100% INSTANT CASH BACK REFUND DOCUMENT GENERATOR 🌟
   const generateRefundReceipt = (appt) => {
     const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert("Please allow popups in your browser to print your refund receipt.");
+      return;
+    }
     const refundId = appt.refund_id || `REF-${appt.id}`;
     const refundDate = appt.refund_timestamp || new Date().toLocaleString();
     printWindow.document.write(`
@@ -2174,6 +2193,10 @@ const PatientDashboard = () => {
     const targetWeek = selectedWeek || 1;
     const publishedPlan = dietPlans.length > 0 ? dietPlans[0] : (JSON.parse(localStorage.getItem(`healora_patient_dietplan_${userId}`)) || null);
     const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert("Please allow popups in your browser to download your diet plan.");
+      return;
+    }
     
     const slotDefinitions = {
       pre_breakfast: { key: 'pre_breakfast', label: 'Pre-Breakfast Tonic', color: '#059669' },
@@ -6919,7 +6942,7 @@ const PatientDashboard = () => {
         {/* TAB 4: APPOINTMENTS & MODERN CHAT */}
         {activeTab === 'appointments' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in">
-            <div className="lg:col-span-2 bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-[#EBE9E0] overflow-hidden flex flex-col min-h-[720px] lg:min-h-[820px]">
+            <div className="lg:col-span-2 bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-[#EBE9E0] overflow-hidden flex flex-col min-h-[480px] max-h-[640px]">
               {(() => {
                 const sortedAppts = [...appointments].sort((a, b) => {
                   const dateTimeA = new Date(`${a.date}T${a.time || '00:00:00'}`).getTime() || 0;
@@ -7089,7 +7112,7 @@ const PatientDashboard = () => {
                       })()}
                     </div>
 
-                    <div className="overflow-x-auto overflow-y-auto flex-1 min-h-[420px] p-2 custom-scrollbar">
+                    <div className="overflow-x-auto overflow-y-auto flex-1 p-2 custom-scrollbar">
                       <table className="w-full text-left text-sm text-[#1C2C22] whitespace-nowrap">
                         <thead className="bg-[#FDFCF8] text-[10px] uppercase font-extrabold text-[#5A6B60] tracking-widest border-b sticky top-0">
                           <tr>
@@ -7212,7 +7235,7 @@ const PatientDashboard = () => {
             </div>
 
             <div className="flex flex-col gap-6">
-              <div className="bg-white text-[#1C2C22] rounded-3xl shadow-xl p-0 min-h-[720px] lg:min-h-[820px] h-full border border-[#EBE9E0] flex flex-col overflow-hidden">
+              <div className="bg-white text-[#1C2C22] rounded-3xl shadow-xl p-0 min-h-[480px] max-h-[640px] h-full border border-[#EBE9E0] flex flex-col overflow-hidden">
                 {/* 🌟 Tab Toggle for Chat 🌟 */}
                 <div className="flex border-b border-[#EBE9E0] bg-[#FDFCF8] shrink-0">
                   <button onClick={() => setChatPartner('manager')} className={`flex-1 py-4 text-xs font-black flex items-center justify-center gap-2 transition cursor-pointer ${chatPartner === 'manager' ? 'bg-[#EAF0EC] text-[#456A50] border-b-2 border-[#456A50]' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-50'}`}><MessageSquare size={16}/> Clinic Manager</button>
@@ -7242,7 +7265,7 @@ const PatientDashboard = () => {
                   </div>
                 )}
                 
-                <div className="flex-1 overflow-y-auto p-6 space-y-5 bg-white custom-scrollbar">
+                <div ref={chatBoxRef} className="flex-1 overflow-y-auto p-6 space-y-5 bg-white custom-scrollbar">
                   {(() => {
                     const activeMessages = chats.filter(c => {
                       if (chatPartner === 'manager') {

@@ -642,7 +642,14 @@ const NutritionistDashboard = () => {
 
       // Load Chats live
       const allChats = JSON.parse(localStorage.getItem('healora_chats')) || [];
-      if (!cancelled) setChats(allChats);
+      if (!cancelled) {
+        setChats(prev => {
+          if (prev.length !== allChats.length || (allChats.length > 0 && prev[prev.length - 1]?.id !== allChats[allChats.length - 1]?.id)) {
+            return allChats;
+          }
+          return prev;
+        });
+      }
 
       // Load Notifications live
       const notifs = JSON.parse(localStorage.getItem(`healora_notifications_${nutritionistId}`)) || [];
@@ -673,9 +680,19 @@ const NutritionistDashboard = () => {
   // Scroll on chat update
   useEffect(() => {
     if(chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
-  }, [activeTab, activeChatContact, chats]);
+  }, [activeTab, activeChatContact, chats.length]);
 
-  // Load Wellness Logs, Evaluations & Lab Reports on patient select
+  // Load Evaluation text draft ONLY when a new patient is selected (prevents typing overwrite)
+  useEffect(() => {
+    if (selectedPatient?.id) {
+      const allEvals = JSON.parse(localStorage.getItem('healora_evaluations')) || {};
+      setEvaluations(allEvals);
+      setWeeklyEvaluation(allEvals[selectedPatient.id] || '');
+      setEvaluationRating(5);
+    }
+  }, [selectedPatient?.id]);
+
+  // Load Wellness Logs & Lab Reports on patient select
   useEffect(() => {
     if (selectedPatient) {
       // Load wellness logs submitted by this patient
@@ -711,12 +728,6 @@ const NutritionistDashboard = () => {
       ];
       setPatientWeightHistory(storedWeightHistory);
 
-      // Set Evaluation text draft if they didn't send last time
-      const allEvals = JSON.parse(localStorage.getItem('healora_evaluations')) || {};
-      setEvaluations(allEvals);
-      setWeeklyEvaluation(allEvals[selectedPatient.id] || '');
-      setEvaluationRating(5);
-
       // Load Patient's Complete Consultation History
       const patientLocalHistory = JSON.parse(localStorage.getItem(`healora_consultation_history_${selectedPatient.id}`)) || [];
       const patientAppts = appointments.filter(a => String(a.patient) === String(selectedPatient.id));
@@ -740,7 +751,7 @@ const NutritionistDashboard = () => {
       const sortedHistory = Array.from(historyMap.values()).sort((a,b) => new Date(`${b.date} ${b.time || '00:00'}`) - new Date(`${a.date} ${a.time || '00:00'}`));
       setPatientConsultationHistory(sortedHistory);
     }
-  }, [selectedPatient, appointments]);
+  }, [selectedPatient?.id, appointments.length]);
 
 
   // --- NOTIFICATIONS HANDLER ---

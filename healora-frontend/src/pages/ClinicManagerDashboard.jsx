@@ -506,6 +506,10 @@ const ClinicManagerDashboard = () => {
   const generateInvoice = (appt) => {
     const pName = patients.find(p => String(p.id) === String(appt.patient))?.first_name || `Patient #${appt.patient}`;
     const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert("Please allow popups in your browser to print the invoice.");
+      return;
+    }
     printWindow.document.write(`
       <html><body style="font-family: Arial, sans-serif; padding: 40px; color: #1C2C22; max-width:600px; margin:auto;">
         <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #EBE9E0; padding-bottom: 20px;"><h1 style="color: #456A50; margin:0;">Healora Clinic</h1><h2 style="margin:0; color:#5A6B60;">OFFICIAL INVOICE</h2></div><br/>
