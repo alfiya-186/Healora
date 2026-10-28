@@ -121,102 +121,156 @@ class PasswordResetRequestView(generics.GenericAPIView):
         otp_record.save()
         print(f"==> [Healora OTP Dispatch] 6-digit verification code for {user.email}: {raw_otp}")
 
-        # Dispatch real email via Django SMTP backend
-        try:
-            subject = 'Healora Health — Password Reset Verification Code'
-            text_content = (
-                f"Hello {user.first_name or 'Healora Patient'},\n\n"
-                f"You requested to reset your password for your Healora portal account ({user.email}).\n\n"
-                f"Your 6-digit verification code is:\n\n"
-                f"    {raw_otp}\n\n"
-                f"This verification code is valid for 10 minutes and single-use only.\n\n"
-                f"For your security, never share this code with anyone. Healora staff will never ask for your code.\n"
-                f"If you did not request a password reset, please ignore this email.\n\n"
-                f"Warm regards,\n"
-                f"The Healora Clinical & Security Team\n"
-                f"Healora Health & Nutrition Clinic"
-            )
+        # Dispatch real email to user's inbox
+        subject = 'Healora Health — Password Reset Verification Code'
+        text_content = (
+            f"Hello {user.first_name or 'Healora Patient'},\n\n"
+            f"You requested to reset your password for your Healora portal account ({user.email}).\n\n"
+            f"Your 6-digit verification code is:\n\n"
+            f"    {raw_otp}\n\n"
+            f"This verification code is valid for 10 minutes and single-use only.\n\n"
+            f"For your security, never share this code with anyone. Healora staff will never ask for your code.\n"
+            f"If you did not request a password reset, please ignore this email.\n\n"
+            f"Warm regards,\n"
+            f"The Healora Clinical & Security Team\n"
+            f"Healora Health & Nutrition Clinic"
+        )
 
-            html_content = f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-              <meta charset="utf-8">
-              <style>
-                body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f7f9f6; margin: 0; padding: 24px; color: #1c2c22; }}
-                .container {{ max-width: 540px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8e0; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.04); }}
-                .header {{ background-color: #456A50; padding: 28px 32px; text-align: center; color: #ffffff; }}
-                .header h1 {{ margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }}
-                .header p {{ margin: 4px 0 0; font-size: 13px; opacity: 0.9; }}
-                .content {{ padding: 32px; }}
-                .code-box {{ background-color: #f2f7f3; border: 2px dashed #456A50; border-radius: 12px; padding: 18px; text-align: center; margin: 24px 0; }}
-                .otp-code {{ font-family: 'Courier New', monospace; font-size: 32px; font-weight: 800; letter-spacing: 8px; color: #23422d; margin: 0; }}
-                .meta-note {{ font-size: 12px; color: #5a6b60; margin-top: 8px; }}
-                .warning {{ font-size: 12px; color: #856404; background-color: #fff3cd; border-left: 4px solid #ffeeba; padding: 10px 14px; border-radius: 6px; margin: 20px 0; }}
-                .footer {{ background-color: #fdfcf8; padding: 20px 32px; font-size: 11px; color: #88928b; text-align: center; border-top: 1px solid #ebe9e0; }}
-              </style>
-            </head>
-            <body>
-              <div class="container">
-                <div class="header">
-                  <h1>🌿 Healora Health Clinic</h1>
-                  <p>Secure Account Verification</p>
-                </div>
-                <div class="content">
-                  <p style="font-size: 15px; font-weight: 600;">Hello {user.first_name or 'Healora Patient'},</p>
-                  <p style="font-size: 14px; line-height: 1.6; color: #405045;">
-                    We received a request to reset your password for your Healora portal account (<strong>{user.email}</strong>). Please use the 6-digit verification code below:
-                  </p>
-                  <div class="code-box">
-                    <div class="otp-code">{raw_otp}</div>
-                    <div class="meta-note">Expires in 10 minutes • Single-use only</div>
-                  </div>
-                  <div class="warning">
-                    <strong>Security Reminder:</strong> Never share this code with anyone. Healora clinical staff will never ask for your verification code.
-                  </div>
-                  <p style="font-size: 13px; line-height: 1.5; color: #5a6b60;">
-                    If you did not initiate this request, you can safely ignore this email. Your current password remains active and secure.
-                  </p>
-                </div>
-                <div class="footer">
-                  © 2026 Healora Healthcare Portal. All rights reserved.<br>
-                  This is an automated security transmission. Please do not reply directly to this email.
-                </div>
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f7f9f6; margin: 0; padding: 24px; color: #1c2c22; }}
+            .container {{ max-width: 540px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8e0; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.04); }}
+            .header {{ background-color: #456A50; padding: 28px 32px; text-align: center; color: #ffffff; }}
+            .header h1 {{ margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }}
+            .header p {{ margin: 4px 0 0; font-size: 13px; opacity: 0.9; }}
+            .content {{ padding: 32px; }}
+            .code-box {{ background-color: #f2f7f3; border: 2px dashed #456A50; border-radius: 12px; padding: 18px; text-align: center; margin: 24px 0; }}
+            .otp-code {{ font-family: 'Courier New', monospace; font-size: 32px; font-weight: 800; letter-spacing: 8px; color: #23422d; margin: 0; }}
+            .meta-note {{ font-size: 12px; color: #5a6b60; margin-top: 8px; }}
+            .warning {{ font-size: 12px; color: #856404; background-color: #fff3cd; border-left: 4px solid #ffeeba; padding: 10px 14px; border-radius: 6px; margin: 20px 0; }}
+            .footer {{ background-color: #fdfcf8; padding: 20px 32px; font-size: 11px; color: #88928b; text-align: center; border-top: 1px solid #ebe9e0; }}
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>🌿 Healora Health Clinic</h1>
+              <p>Secure Account Verification</p>
+            </div>
+            <div class="content">
+              <p style="font-size: 15px; font-weight: 600;">Hello {user.first_name or 'Healora Patient'},</p>
+              <p style="font-size: 14px; line-height: 1.6; color: #405045;">
+                We received a request to reset your password for your Healora portal account (<strong>{user.email}</strong>). Please use the 6-digit verification code below:
+              </p>
+              <div class="code-box">
+                <div class="otp-code">{raw_otp}</div>
+                <div class="meta-note">Expires in 10 minutes • Single-use only</div>
               </div>
-            </body>
-            </html>
-            """
+              <div class="warning">
+                <strong>Security Reminder:</strong> Never share this code with anyone. Healora clinical staff will never ask for your verification code.
+              </div>
+              <p style="font-size: 13px; line-height: 1.5; color: #5a6b60;">
+                If you did not initiate this request, you can safely ignore this email. Your current password remains active and secure.
+              </p>
+            </div>
+            <div class="footer">
+              © 2026 Healora Healthcare Portal. All rights reserved.<br>
+              This is an automated security transmission. Please do not reply directly to this email.
+            </div>
+          </div>
+        </body>
+        </html>
+        """
 
-            sender = getattr(settings, 'DEFAULT_FROM_EMAIL', None) or 'noreply@healora.com'
-            msg = EmailMultiAlternatives(
-                subject=subject,
-                body=text_content,
-                from_email=sender,
-                to=[user.email],
-                connection=email_connection
-            )
-            msg.attach_alternative(html_content, "text/html")
-            msg.send(fail_silently=False)
-            print(f"[Healora SMTP Delivery Success]: Email dispatched to {user.email}")
+        email_delivered = False
+        import requests
 
+        # Channel 1: Resend HTTPS API (Port 443 - Bypasses Render firewall blocks!)
+        resend_key = os.environ.get('RESEND_API_KEY')
+        if resend_key and not email_delivered:
+            try:
+                resend_payload = {
+                    "from": os.environ.get('RESEND_FROM_EMAIL', 'Healora Health Clinic <onboarding@resend.dev>'),
+                    "to": [user.email],
+                    "subject": subject,
+                    "html": html_content,
+                    "text": text_content,
+                }
+                res = requests.post(
+                    "https://api.resend.com/emails",
+                    json=resend_payload,
+                    headers={"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"},
+                    timeout=10
+                )
+                if res.status_code in (200, 201):
+                    email_delivered = True
+                    print(f"[Healora Resend API Success]: Verification email dispatched directly to {user.email}")
+                else:
+                    print(f"[Healora Resend API Error]: HTTP {res.status_code}: {res.text}")
+            except Exception as resend_err:
+                print(f"[Healora Resend Exception]: {resend_err}")
+
+        # Channel 2: Brevo HTTPS API (Port 443 - Bypasses Render firewall blocks!)
+        brevo_key = os.environ.get('BREVO_API_KEY')
+        if brevo_key and not email_delivered:
+            try:
+                brevo_payload = {
+                    "sender": {"name": "Healora Health Clinic", "email": "alfiyaismail186@gmail.com"},
+                    "to": [{"email": user.email}],
+                    "subject": subject,
+                    "htmlContent": html_content,
+                    "textContent": text_content,
+                }
+                res = requests.post(
+                    "https://api.brevo.com/v3/smtp/email",
+                    json=brevo_payload,
+                    headers={"api-key": brevo_key, "Content-Type": "application/json"},
+                    timeout=10
+                )
+                if res.status_code in (200, 201):
+                    email_delivered = True
+                    print(f"[Healora Brevo API Success]: Verification email dispatched directly to {user.email}")
+                else:
+                    print(f"[Healora Brevo API Error]: HTTP {res.status_code}: {res.text}")
+            except Exception as brevo_err:
+                print(f"[Healora Brevo Exception]: {brevo_err}")
+
+        # Channel 3: Standard SMTP (Port 587 - Active on local dev and unblocked cloud providers)
+        if not email_delivered and getattr(settings, 'EMAIL_HOST_USER', None) and getattr(settings, 'EMAIL_HOST_PASSWORD', None):
+            try:
+                sender = getattr(settings, 'DEFAULT_FROM_EMAIL', None) or f'Healora Health Clinic <{settings.EMAIL_HOST_USER}>'
+                msg = EmailMultiAlternatives(
+                    subject=subject,
+                    body=text_content,
+                    from_email=sender,
+                    to=[user.email],
+                    connection=email_connection
+                )
+                msg.attach_alternative(html_content, "text/html")
+                msg.send(fail_silently=False)
+                email_delivered = True
+                print(f"[Healora SMTP Delivery Success]: Verification email dispatched directly to {user.email}")
+            except Exception as smtp_err:
+                print(f"[Healora SMTP Blocked]: {type(smtp_err).__name__}: {str(smtp_err)[:150]}")
+
+        if email_delivered:
             log_event("SECURITY_EVENT", f"Password reset verification code dispatched to email on record for User #{user.id}.")
-
             return Response({
                 'status': 'success',
                 'message': neutral_message
             }, status=status.HTTP_200_OK)
-
-        except Exception as e:
-            # Cloud hosts (like Render free tier) block outbound SMTP ports (25, 465, 587).
-            # If the cloud firewall blocks direct SMTP, keep the valid OTP in DB and return fallback_otp
-            # so the user is never locked out of password recovery.
-            print(f"[Healora SMTP Notice]: Host blocked outbound SMTP: {type(e).__name__}: {str(e)[:150]}. Providing fallback_otp.")
-            log_event("SECURITY_EVENT", f"Password reset verification code generated with host-fallback for User #{user.id}.")
+        else:
+            # Invalidate the unsent OTP so the user is not stuck
+            if otp_record and otp_record.id:
+                otp_record.delete()
             return Response({
-                'status': 'success',
-                'message': 'Verification code generated successfully.',
-                'fallback_otp': raw_otp
-            }, status=status.HTTP_200_OK)
+                'status': 'error',
+                'error': 'Outbound email delivery to your inbox is blocked by the cloud hosting firewall. Please configure RESEND_API_KEY in Render to send emails over HTTPS.'
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
 class PasswordResetVerifyView(generics.GenericAPIView):
     permission_classes = (AllowAny,)

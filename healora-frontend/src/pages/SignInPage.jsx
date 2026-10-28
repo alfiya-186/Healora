@@ -192,12 +192,8 @@ const SignInPage = () => {
       if (res.ok) {
         setForgotStep(2);
         setResendCooldown(60); // 🌟 Trigger 60-second live countdown
-        if (data.fallback_otp) {
-          setForgotCode(data.fallback_otp);
-          setForgotSuccess('Verification Code: ' + data.fallback_otp + ' (Auto-detected from server)');
-        } else if (forgotStep === 2) {
-          setForgotSuccess('A fresh 6-digit verification code has been dispatched. Please check your inbox.');
-        }
+        setForgotCode('');
+        setForgotSuccess('A 6-digit verification code has been dispatched to your email. Please check your inbox or spam folder.');
       } else {
         if (res.status === 429 && data.retry_after) {
           setResendCooldown(data.retry_after); // 🌟 Sync with backend countdown
