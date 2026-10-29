@@ -22,6 +22,15 @@ const SignInPage = () => {
   const [customGoogleEmail, setCustomGoogleEmail] = useState('');
   const [customGoogleName, setCustomGoogleName] = useState('');
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [showWakeupNotice, setShowWakeupNotice] = useState(false);
+
+  // ⚡ Pre-warm Render backend service in background
+  useEffect(() => {
+    try {
+      const rawBase = import.meta.env.VITE_API_BASE_URL || 'https://healora-backend-ru0c.onrender.com';
+      fetch(`${rawBase.replace(/\/$/, '')}/`, { method: 'GET', mode: 'no-cors' }).catch(() => {});
+    } catch (e) {}
+  }, []);
 
   // Forgot Password Modal States
   const [showForgotModal, setShowForgotModal] = useState(false);
@@ -62,6 +71,10 @@ const SignInPage = () => {
     if (password.length < 1) return setErrorMsg("Password cannot be empty.");
 
     setIsLoading(true);
+    setShowWakeupNotice(false);
+    const warmupTimer = setTimeout(() => {
+      setShowWakeupNotice(true);
+    }, 2500);
 
     try {
       const response = await fetch(apiUrl('/api/login/'), {
@@ -95,7 +108,9 @@ const SignInPage = () => {
     } catch (error) { 
       setErrorMsg('Cannot connect to server. Is Django running?'); 
     } finally { 
+      clearTimeout(warmupTimer);
       setIsLoading(false); 
+      setShowWakeupNotice(false);
     }
   };
 

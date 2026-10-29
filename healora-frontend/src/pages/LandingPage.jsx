@@ -19,8 +19,14 @@ const LandingPage = () => {
   const clinicEmail = localStorage.getItem('clinic_email') || 'support@healora.com';
   const clinicAddress = 'Healora Clinical Tech Park, InfoPark Phase 2, Kakkanad, Kochi, Kerala 682042';
 
-  // --- SCROLL ANIMATION OBSERVER ---
+  // --- SCROLL ANIMATION OBSERVER & SILENT BACKEND PRE-WARM ---
   useEffect(() => {
+    // ⚡ Pre-warm Render backend service in background so logins/signups are instant
+    try {
+      const rawBase = import.meta.env.VITE_API_BASE_URL || 'https://healora-backend-ru0c.onrender.com';
+      fetch(`${rawBase.replace(/\/$/, '')}/`, { method: 'GET', mode: 'no-cors' }).catch(() => {});
+    } catch (e) {}
+
     const handleScroll = () => setIsScrolled(window.scrollY > 20);
     window.addEventListener('scroll', handleScroll);
 

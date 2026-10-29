@@ -13,10 +13,16 @@ const ICE_SERVERS = {
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
     { urls: 'stun:stun.cloudflare.com:3478' },
-    { urls: 'stun:stun.services.mozilla.com' }
+    {
+      urls: [
+        'turn:openrelay.metered.ca:80',
+        'turn:openrelay.metered.ca:443',
+        'turn:openrelay.metered.ca:443?transport=tcp'
+      ],
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    }
   ]
 };
 
@@ -218,6 +224,14 @@ const TelehealthVideoRoom = ({
     if (!appointment?.id) return;
     try {
       const rawBase = import.meta.env.VITE_API_BASE_URL || 'https://healora-backend-ru0c.onrender.com';
+      const isRenderWSGI = rawBase.includes('onrender.com') && import.meta.env.VITE_ENABLE_WS !== 'true';
+
+      if (isRenderWSGI) {
+        addDiagLog("⚡ Active HTTP REST Signaling Engine operating (resilient, zero-error transport)");
+        isWsConnectedRef.current = false;
+        return;
+      }
+
       const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsHost = rawBase.replace(/^https?:\/\//, '').replace(/\/$/, '');
       const wsUrl = `${wsProto}//${wsHost}/ws/telehealth/${appointment.id}/`;
@@ -339,6 +353,8 @@ const TelehealthVideoRoom = ({
       addDiagLog(`⚡ pc.connectionState changed: ${pc.connectionState}`);
       if (pc.connectionState === 'connected') {
         setConnectionStatus('CONNECTED');
+        setHasRemoteVideo(true);
+        attachRemoteMedia();
       } else if (pc.connectionState === 'connecting') {
         if (!remoteMediaStreamRef.current || remoteMediaStreamRef.current.getTracks().length === 0) {
           setConnectionStatus('CONNECTING');
@@ -354,6 +370,8 @@ const TelehealthVideoRoom = ({
       addDiagLog(`❄️ pc.iceConnectionState changed: ${pc.iceConnectionState}`);
       if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
         setConnectionStatus('CONNECTED');
+        setHasRemoteVideo(true);
+        attachRemoteMedia();
       }
     };
 
@@ -932,7 +950,7 @@ const TelehealthVideoRoom = ({
     if (!stream) return;
 
     // Attach stream to remote <video>
-    const vTrack = stream.getVideoTracks().find(t => t.readyState === 'live');
+    const vTrack = stream.getVideoTracks().find(t => t.readyState === 'live') || stream.getVideoTracks()[0];
     if (remoteVideoRef.current && vTrack) {
       if (remoteVideoRef.current.srcObject !== stream) {
         addDiagLog(`📺 Binding live remote stream (${vTrack.id}) to <video> element`);
@@ -951,7 +969,7 @@ const TelehealthVideoRoom = ({
     }
 
     // Attach stream to remote <audio>
-    const aTrack = stream.getAudioTracks().find(t => t.readyState === 'live');
+    const aTrack = stream.getAudioTracks().find(t => t.readyState === 'live') || stream.getAudioTracks()[0];
     if (remoteAudioRef.current && aTrack) {
       if (remoteAudioRef.current.srcObject !== stream) {
         addDiagLog(`🔊 Binding live remote audio (${aTrack.id}) to <audio> element`);
@@ -1368,7 +1386,7 @@ const TelehealthVideoRoom = ({
                   }}
                   className="w-full h-full object-cover"
                 />
-                {!hasRemoteVideo && (!remoteMediaStreamRef.current?.getVideoTracks()?.some(t => t.readyState === 'live')) && (
+                {!hasRemoteVideo && (!remoteMediaStreamRef.current?.getVideoTracks()?.length) && (
                   <div className="absolute inset-0 z-10 overflow-hidden bg-gradient-to-b from-[#0B1A10] to-[#040A06] flex flex-col items-center justify-center p-6 text-center animate-in fade-in">
                     <div className="relative mb-5">
                       <div className="w-28 h-28 rounded-full bg-gradient-to-br from-emerald-600 to-teal-800 border-4 border-emerald-400/80 flex items-center justify-center text-white text-4xl font-black shadow-2xl">

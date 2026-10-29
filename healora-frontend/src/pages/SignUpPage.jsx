@@ -86,6 +86,14 @@ const loadActivePrograms = () => {
 const SignUpPage = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  
+  // ⚡ Pre-warm Render backend service in background
+  useEffect(() => {
+    try {
+      const rawBase = import.meta.env.VITE_API_BASE_URL || 'https://healora-backend-ru0c.onrender.com';
+      fetch(`${rawBase.replace(/\/$/, '')}/`, { method: 'GET', mode: 'no-cors' }).catch(() => {});
+    } catch (e) {}
+  }, []);
 
   const [goalPrograms, setGoalPrograms] = useState(loadActivePrograms);
 
