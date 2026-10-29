@@ -1273,6 +1273,7 @@ const PatientDashboard = () => {
 
   // --- APPOINTMENT & PAYMENT ---
   const [showApptModal, setShowApptModal] = useState(false);
+  const [viewingApptDetails, setViewingApptDetails] = useState(null);
   const [activeVideoCallAppt, setActiveVideoCallAppt] = useState(null);
   const [bookingStep, setBookingStep] = useState(1);
 
@@ -2684,6 +2685,147 @@ const PatientDashboard = () => {
     <div className="h-screen w-screen overflow-hidden flex bg-[#FDFCF8] font-sans text-[#1C2C22]">
       
       {/* 🌟 OVERLAYS 🌟 */}
+      {viewingApptDetails && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[70] flex items-center justify-center p-4 animate-in fade-in" onClick={() => setViewingApptDetails(null)}>
+          <div className="bg-white rounded-3xl w-full max-w-lg p-6 sm:p-8 shadow-2xl relative border border-[#EBE9E0] max-h-[90vh] overflow-y-auto custom-scrollbar" onClick={e => e.stopPropagation()}>
+            <button 
+              type="button"
+              onClick={() => setViewingApptDetails(null)} 
+              className="absolute top-6 right-6 text-gray-400 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 p-2 rounded-full transition cursor-pointer"
+            >
+              <X size={18} />
+            </button>
+
+            {/* Header */}
+            <div className="flex items-center gap-3 border-b border-[#EBE9E0] pb-4 mb-5">
+              <div className="w-12 h-12 rounded-2xl bg-[#EAF0EC] text-[#456A50] flex items-center justify-center font-black">
+                {viewingApptDetails.mode === 'ONLINE' ? <Video size={24} /> : <Ticket size={24} />}
+              </div>
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-widest text-[#5A6B60]">
+                  {viewingApptDetails.mode === 'ONLINE' ? 'Telehealth Consultation' : "Today's Clinic Token Pass"}
+                </span>
+                <h2 className="text-xl font-black text-[#1C2C22]">
+                  Appointment #{viewingApptDetails.id}
+                </h2>
+              </div>
+            </div>
+
+            {/* Token / Mode Hero Box */}
+            <div className={`p-4 rounded-2xl border mb-5 ${
+              viewingApptDetails.mode === 'ONLINE' 
+                ? 'bg-purple-50/60 border-purple-200 text-purple-950'
+                : 'bg-emerald-50/60 border-emerald-200 text-emerald-950'
+            }`}>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-wider block opacity-75">
+                    {viewingApptDetails.mode === 'ONLINE' ? 'Consultation Mode' : 'Queue Token Number'}
+                  </span>
+                  <div className="text-2xl font-mono font-black mt-0.5">
+                    {viewingApptDetails.mode === 'ONLINE' 
+                      ? '📹 ONLINE VIDEO' 
+                      : (viewingApptDetails.token_number || 'TK-105')}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] font-black uppercase tracking-wider block opacity-75">Queue Status</span>
+                  <span className="inline-block px-3 py-1 rounded-full text-xs font-black mt-1 bg-white shadow-xs">
+                    {viewingApptDetails.queue_status === 'CALLED'
+                      ? '📢 CALLED (Proceed to Room)'
+                      : viewingApptDetails.queue_status === 'IN_CONSULTATION'
+                      ? '🟢 IN SESSION'
+                      : viewingApptDetails.status || 'WAITING'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Information Grid */}
+            <div className="space-y-3 text-xs mb-6">
+              <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                <span className="text-gray-500 font-bold">Doctor / Nutritionist:</span>
+                <span className="font-black text-[#1C2C22] text-right">
+                  {viewingApptDetails.doctor_name || 'Dr. Sarah Jenkins (Lead Clinical Nutritionist)'}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                <span className="text-gray-500 font-bold">Date & Time Slot:</span>
+                <span className="font-bold text-[#1C2C22]">
+                  {viewingApptDetails.date} at {viewingApptDetails.time}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                <span className="text-gray-500 font-bold">Consultation Chamber:</span>
+                <span className="font-bold text-[#456A50] text-right">
+                  {viewingApptDetails.allocated_room || (viewingApptDetails.mode === 'ONLINE' ? 'In-App Telehealth Video Suite' : 'Doctor Consultation Chamber (Ground Floor, Room 101)')}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                <span className="text-gray-500 font-bold">Patient Name:</span>
+                <span className="font-bold text-[#1C2C22]">{userName || profile.first_name || 'Patient'}</span>
+              </div>
+              <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                <span className="text-gray-500 font-bold">Payment Details:</span>
+                <span className="font-bold text-emerald-700">₹ 500.00 • PAID via Razorpay</span>
+              </div>
+              {viewingApptDetails.razorpay_payment_id && (
+                <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                  <span className="text-gray-500 font-bold">Payment Reference:</span>
+                  <span className="font-mono text-gray-700">{viewingApptDetails.razorpay_payment_id}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex flex-col sm:flex-row gap-2.5 pt-2">
+              {viewingApptDetails.mode === 'ONLINE' ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = viewingApptDetails;
+                    setViewingApptDetails(null);
+                    handleStartVideoConsultation(target);
+                  }}
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black py-3 rounded-xl text-xs transition shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Video size={16} /> Enter Video Room
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    printClinicTokenSlip(viewingApptDetails, { name: userName || profile.first_name });
+                  }}
+                  className="flex-1 bg-[#456A50] hover:bg-[#35533E] text-white font-black py-3 rounded-xl text-xs transition shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Printer size={16} /> Print Token Slip
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => generateReceipt(viewingApptDetails)}
+                className="bg-white hover:bg-gray-50 text-[#1C2C22] border border-[#EBE9E0] font-bold py-3 px-4 rounded-xl text-xs transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Download size={14} className="text-[#456A50]" /> Invoice
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setViewingApptDetails(null);
+                  setActiveTab('appointments');
+                }}
+                className="bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3 px-4 rounded-xl text-xs transition cursor-pointer"
+              >
+                All Bookings
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showPasswordModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in">
           <div className="bg-white rounded-3xl w-full max-w-sm p-8 shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-[#EBE9E0] relative">
@@ -3939,10 +4081,11 @@ const PatientDashboard = () => {
                       )}
 
                       <button 
-                        onClick={() => setActiveTab('appointments')} 
-                        className="bg-white/10 hover:bg-white/20 border border-white/10 text-white px-4 py-3.5 rounded-2xl text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1"
+                        type="button"
+                        onClick={() => setViewingApptDetails(appt)} 
+                        className="bg-white/10 hover:bg-white/20 border border-white/10 text-white px-4 py-3.5 rounded-2xl text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1.5"
                       >
-                        View Details
+                        <Eye size={14} /> View Details
                       </button>
                     </div>
                   </div>
@@ -7189,6 +7332,14 @@ const PatientDashboard = () => {
                                   </button>
                                 ) : (
                                   <div className="flex items-center justify-end gap-1.5 flex-nowrap">
+                                    <button 
+                                      type="button"
+                                      onClick={() => setViewingApptDetails(a)} 
+                                      className="bg-gray-100 hover:bg-gray-200 text-[#1C2C22] px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 transition shadow-2xs border border-gray-200 cursor-pointer shrink-0"
+                                      title="View Full Appointment & Token Details"
+                                    >
+                                      <Eye size={12}/> Details
+                                    </button>
                                     {a.mode !== 'ONLINE' && (
                                       <button 
                                         type="button"
