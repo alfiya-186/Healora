@@ -460,8 +460,11 @@ const TelehealthVideoRoom = ({
       if (!AudioContextClass) return null;
       const ctx = new AudioContextClass();
       const osc = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+      gainNode.gain.setValueAtTime(0, ctx.currentTime); // Pure digital zero - absolutely silent, zero beep!
       const dst = ctx.createMediaStreamDestination();
-      osc.connect(dst);
+      osc.connect(gainNode);
+      gainNode.connect(dst);
       osc.start();
       const track = dst.stream.getAudioTracks()[0];
       if (track) {
@@ -498,10 +501,18 @@ const TelehealthVideoRoom = ({
   const handleRetryPermissions = async () => {
     try {
       setMediaError('');
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
-        audio: true
-      });
+      let stream = null;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280, max: 1920 }, height: { ideal: 720, max: 1080 }, facingMode: 'user' },
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+        });
+      } catch (e) {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+        });
+      }
 
       localStreamRef.current = stream;
       setLocalStream(stream);
@@ -570,10 +581,10 @@ const TelehealthVideoRoom = ({
       if (offerTimeoutRef.current) clearTimeout(offerTimeoutRef.current);
       offerTimeoutRef.current = setTimeout(() => {
         if (pcRef.current && pcRef.current.connectionState !== 'connected') {
-          addDiagLog("⚠️ Handshake pending for 12s without connection; unlocking offer for re-negotiation.");
+          addDiagLog("⚠️ Handshake pending for 5s without connection; unlocking offer for instant re-negotiation.");
           hasHandshakedRef.current = false;
         }
-      }, 12000);
+      }, 5000);
     } catch (err) {
       addDiagLog(`❌ Offer creation failed: ${err.message}`);
       hasHandshakedRef.current = false;
@@ -625,20 +636,14 @@ const TelehealthVideoRoom = ({
           addDiagLog("Already connected to peer, skipping redundant offer.");
           return;
         }
-        if (hasHandshakedRef.current) {
-          addDiagLog("Offer already in progress, skipping duplicate offer.");
-          return;
-        }
         if (!activePc || activePc.signalingState !== 'stable' || activePc.connectionState === 'failed' || activePc.connectionState === 'disconnected') {
           activePc = createPeerConnection(localStreamRef.current || localStream);
         }
         createAndSendOffer(activePc);
       } else {
-        if (!hasPresentedRef.current) {
-          hasPresentedRef.current = true;
-          addDiagLog("Answering peer presence with 'present' signal");
-          sendSignal('present', { role: currentUserRole, name: currentUserName });
-        }
+        // Patient sends present response so the doctor knows the patient is listening and ready
+        addDiagLog("Answering peer presence with 'present' signal");
+        sendSignal('present', { role: currentUserRole, name: currentUserName });
       }
     } else if (type === 'present') {
       addDiagLog(`👋 Peer presented presence: ${senderName || 'Peer'}`);
@@ -646,10 +651,6 @@ const TelehealthVideoRoom = ({
         let activePc = pcRef.current;
         if (activePc && activePc.connectionState === 'connected') {
           addDiagLog("Already connected, skipping redundant offer on present.");
-          return;
-        }
-        if (hasHandshakedRef.current) {
-          addDiagLog("Offer already in progress, skipping duplicate offer on present.");
           return;
         }
         if (!activePc || activePc.signalingState !== 'stable' || activePc.connectionState === 'failed' || activePc.connectionState === 'disconnected') {
@@ -808,14 +809,24 @@ const TelehealthVideoRoom = ({
           addDiagLog(`⚠️ Baseline sync warning: ${initErr.message}`);
         }
 
-        // 2. Request local media devices
+        // 2. Request local media devices (resilient mobile/laptop audio-video capture)
         let stream = null;
         try {
           addDiagLog("Requesting local camera and microphone via getUserMedia...");
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
-            audio: true
-          });
+          // Try standard dual acquisition first
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: { width: { ideal: 1280, max: 1920 }, height: { ideal: 720, max: 1080 }, facingMode: 'user' },
+              audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+            });
+          } catch (strictErr) {
+            // Mobile fallback with unconstrained resolution (solves mobile camera capability mismatch)
+            addDiagLog(`Retrying with flexible constraints: ${strictErr.message}`);
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: true,
+              audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+            });
+          }
           const vTrack = stream.getVideoTracks()[0];
           const aTrack = stream.getAudioTracks()[0];
           addDiagLog(`🎥 Local media acquired successfully: video=${vTrack?.label || 'camera'} (${vTrack?.readyState}), audio=${aTrack?.label || 'mic'} (${aTrack?.readyState})`);
@@ -828,10 +839,14 @@ const TelehealthVideoRoom = ({
           }
           try {
             addDiagLog("Attempting audio-only fallback...");
-            const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const audioStream = await navigator.mediaDevices.getUserMedia({ 
+              audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } 
+            });
+            const vTrack = createVirtualVideoTrack(currentUserName);
+            if (vTrack) audioStream.addTrack(vTrack);
             stream = audioStream;
             setIsVideoOn(false);
-            addDiagLog("🎤 Audio-only stream acquired");
+            addDiagLog("🎤 Audio-only stream acquired with virtual video track");
           } catch (audioErr) {
             addDiagLog(`❌ Audio access also failed: ${audioErr.message}. Generating virtual fallback stream.`);
             const tracks = [];
