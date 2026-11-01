@@ -6086,6 +6086,32 @@ const PatientDashboard = () => {
                   {/* MEAL CHECKBOXES (DYNAMICALLY PERSONALIZED TO PATIENT'S PRESCRIBED 3, 4, 5, OR 6 MEALS) */}
                   {(() => {
                     const publishedPlan = dietPlans.length > 0 ? dietPlans[0] : (JSON.parse(localStorage.getItem(`healora_patient_dietplan_${userId}`)) || null);
+                    const isPlanPublished = publishedPlan && (publishedPlan.status === 'PUBLISHED' || publishedPlan.status === 'Published') && publishedPlan.weeks && Object.keys(publishedPlan.weeks).length > 0;
+
+                    if (!isPlanPublished) {
+                      return (
+                        <div className="bg-[#FDFCF8] border border-[#EBE9E0] p-6 rounded-[2rem] shadow-sm text-center">
+                          <div className="flex justify-between items-center mb-4">
+                            <label className="block text-[11px] font-bold text-[#5A6B60] tracking-widest uppercase">
+                              1. Today's Scheduled Meals
+                            </label>
+                            <span className="text-[10px] font-bold text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
+                              Formulation Pending
+                            </span>
+                          </div>
+                          <div className="py-6 px-4 bg-white rounded-2xl border border-dashed border-[#EBE9E0] flex flex-col items-center justify-center">
+                            <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mb-3">
+                              <Apple size={24} className="text-[#456A50]" />
+                            </div>
+                            <h4 className="text-sm font-black text-[#1C2C22] mb-1">No Prescribed Meals Yet</h4>
+                            <p className="text-xs text-[#5A6B60] max-w-sm leading-relaxed">
+                              Your assigned nutritionist has not formulated a diet plan yet. Meal check-ins will appear here as soon as your custom protocol is published.
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    }
+
                     const currentDayPlan = (publishedPlan?.weeks?.[selectedWeek || 1]?.[selectedDay || 'Sunday']) || (publishedPlan?.weeks?.['1']?.['Sunday']) || {};
                     
                     const slotDefinitions = {
