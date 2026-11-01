@@ -8,7 +8,7 @@ from .views import (
     AdminToggleUserStatusView, AdminEditUserView, AdminAuditLogListView,
     ClinicHolidayListCreateView, ClinicHolidayDeleteView, AppointmentUpdateView,
     RazorpayCreateOrderView, RazorpayVerifyPaymentView, RazorpayRefundPaymentView,
-    TelehealthSignalView, TelehealthSaveNotesView
+    TelehealthSignalView, TelehealthSaveNotesView, BookedSlotsListView
 )
 from rest_framework_simplejwt.views import TokenRefreshView
 
@@ -34,6 +34,7 @@ urlpatterns = [
     path('patient/<int:user_id>/wellness/', WellnessLogListCreateView.as_view(), name='wellness-logs'),
     path('patient/<int:user_id>/diet/', PatientDietPlanView.as_view(), name='diet-plan'),
     path('patient/<int:user_id>/appointments/', PatientAppointmentListCreateView.as_view(), name='patient-appointments'),
+    path('appointments/booked-slots/', BookedSlotsListView.as_view(), name='booked-slots'),
     path('appointments/<int:pk>/', AppointmentUpdateView.as_view(), name='appointment-update'),
     path('patient/<int:user_id>/documents/', PatientDocumentListCreateView.as_view(), name='patient-documents'),
 

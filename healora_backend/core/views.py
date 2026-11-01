@@ -466,14 +466,21 @@ class PatientAppointmentListCreateView(generics.ListCreateAPIView):
                     
                     # 5. Check Double Booking / Slot Conflict
                     if appt_time_str:
-                        conflict = Appointment.objects.filter(
-                            nutritionist_id=nut_id,
-                            date=appt_date,
-                            time=appt_time_str,
-                            status='SCHEDULED'
-                        ).exists()
+                        if nut_id and nut_id not in ('AUTO', '', None):
+                            conflict = Appointment.objects.filter(
+                                nutritionist_id=nut_id,
+                                date=appt_date,
+                                time=appt_time_str,
+                                status='SCHEDULED'
+                            ).exists()
+                        else:
+                            conflict = Appointment.objects.filter(
+                                date=appt_date,
+                                time=appt_time_str,
+                                status='SCHEDULED'
+                            ).exists()
                         if conflict:
-                            return Response({'error': 'This nutritionist is already booked for this time slot. Please choose another slot.'}, status=status.HTTP_409_CONFLICT)
+                            return Response({'error': 'This time slot is already booked. Please choose another slot.'}, status=status.HTTP_409_CONFLICT)
             except ValueError:
                 pass
 
@@ -511,6 +518,32 @@ class PatientDocumentListCreateView(generics.ListAPIView):
     permission_classes = (IsAuthenticated, IsOwnerOrStaff)
     def get(self, request, *args, **kwargs):
         return Response([])
+
+class BookedSlotsListView(generics.GenericAPIView):
+    """
+    Returns non-sensitive slot availability info for all scheduled appointments:
+    date, time, nutritionist id, status.
+    This enables real-time slot locking across all patient accounts and devices.
+    """
+    permission_classes = (AllowAny,)
+    
+    def get(self, request, *args, **kwargs):
+        appts = Appointment.objects.exclude(status='CANCELLED').values(
+            'id', 'date', 'time', 'nutritionist_id', 'status', 'mode', 'patient_id'
+        )
+        data = [
+            {
+                'id': a['id'],
+                'date': str(a['date']),
+                'time': str(a['time']),
+                'nutritionist': a['nutritionist_id'],
+                'patient': a['patient_id'],
+                'status': a['status'],
+                'mode': a['mode']
+            }
+            for a in appts
+        ]
+        return Response(data, status=status.HTTP_200_OK)
 
 # --- CLINIC HOLIDAYS & LEAVES MANAGEMENT VIEWS ---
 class ClinicHolidayListCreateView(generics.ListCreateAPIView):
@@ -690,6 +723,9 @@ class RazorpayVerifyPaymentView(generics.GenericAPIView):
                         return Response({'error': 'Selected nutritionist is on leave.'}, status=status.HTTP_400_BAD_REQUEST)
                     if appt_time_str and Appointment.objects.filter(nutritionist_id=nutritionist_id, date=appt_date, time=appt_time_str, status='SCHEDULED').exists():
                         return Response({'error': 'Selected nutritionist is already booked for this slot.'}, status=status.HTTP_409_CONFLICT)
+                else:
+                    if appt_time_str and Appointment.objects.filter(date=appt_date, time=appt_time_str, status='SCHEDULED').exists():
+                        return Response({'error': 'This time slot is already booked. Please choose another slot.'}, status=status.HTTP_409_CONFLICT)
             except ValueError:
                 pass
 

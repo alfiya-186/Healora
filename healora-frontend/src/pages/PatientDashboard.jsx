@@ -1604,6 +1604,24 @@ const PatientDashboard = () => {
   // 🌟 PERIODIC LIVE SYNC FOR APPOINTMENTS, GOOGLE MEET LINKS, AND CHATS 🌟
   useEffect(() => {
     const syncLiveAppointmentsAndChats = async () => {
+      // 0. Sync clinic-wide booked slots from server into local store for real-time slot locking
+      try {
+        const slotsRes = await secureFetch('/api/appointments/booked-slots/').catch(() => null);
+        if (slotsRes && slotsRes.ok) {
+          const remoteSlots = await slotsRes.json().catch(() => []);
+          if (Array.isArray(remoteSlots)) {
+            const currentCache = JSON.parse(localStorage.getItem('healora_all_appointments')) || [];
+            const cacheMap = new Map();
+            currentCache.forEach(c => { if (c && c.id) cacheMap.set(String(c.id), c); });
+            remoteSlots.forEach(r => {
+              const existing = cacheMap.get(String(r.id)) || {};
+              cacheMap.set(String(r.id), { ...existing, ...r });
+            });
+            localStorage.setItem('healora_all_appointments', JSON.stringify(Array.from(cacheMap.values())));
+          }
+        }
+      } catch (err) {}
+
       // 1. Sync appointments strictly for THIS patient
       try {
         const apptRes = await secureFetch(`/api/patient/${userId}/appointments/`).catch(() => ({ ok: false }));
@@ -2319,7 +2337,7 @@ const PatientDashboard = () => {
       a.status !== 'CANCELLED' && 
       a.date === apptForm.date && 
       normalizeTimeTo24H(a.time) === normalizeTimeTo24H(apptForm.time) &&
-      (apptForm.nutritionist === 'AUTO' || a.nutritionist === 'AUTO' || String(a.nutritionist) === String(apptForm.nutritionist))
+      (!a.nutritionist || !apptForm.nutritionist || apptForm.nutritionist === 'AUTO' || a.nutritionist === 'AUTO' || String(a.nutritionist) === String(apptForm.nutritionist))
     );
 
     if (isSlotTaken) {
@@ -2935,7 +2953,7 @@ const PatientDashboard = () => {
                       setBookingError('');
                     }}
                     selectedNutritionistId={apptForm.nutritionist}
-                    existingAppointments={appointments}
+                    existingAppointments={JSON.parse(localStorage.getItem('healora_all_appointments')) || appointments}
                   />
                 </div>
 

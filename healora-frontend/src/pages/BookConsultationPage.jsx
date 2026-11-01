@@ -80,7 +80,7 @@ const BookConsultationPage = () => {
       a.status !== 'CANCELLED' && 
       a.date === date && 
       normalizeTimeTo24H(a.time) === normalizeTimeTo24H(time) &&
-      (nutritionist === 'AUTO' || a.nutritionist === 'AUTO' || String(a.nutritionist) === String(nutritionist))
+      (!a.nutritionist || !nutritionist || nutritionist === 'AUTO' || a.nutritionist === 'AUTO' || String(a.nutritionist) === String(nutritionist))
     );
 
     if (isSlotTaken) {

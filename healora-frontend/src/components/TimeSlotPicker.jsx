@@ -1,5 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Clock, CheckCircle2, Lock, AlertCircle, Sun, Moon } from 'lucide-react';
+import { secureFetch } from '../utils/apiClient.js';
 
 // Standard 20-25 min consultation slots (scheduled in 30-min clinical windows)
 export const CLINIC_TIME_SLOTS = [
@@ -67,14 +68,77 @@ const TimeSlotPicker = ({
   existingAppointments = [],
   excludeAppointmentId = null, // useful during rescheduling
 }) => {
-  // 1. Gather all booked time slots on the selected date
+  const [remoteSlots, setRemoteSlots] = useState([]);
+
+  // Fetch clinic-wide booked slots from backend & keep synced in localStorage
+  useEffect(() => {
+    let isMounted = true;
+    const fetchBookedSlots = async () => {
+      try {
+        const res = await secureFetch('/api/appointments/booked-slots/').catch(() => null);
+        if (res && res.ok) {
+          const data = await res.json().catch(() => []);
+          if (isMounted && Array.isArray(data)) {
+            setRemoteSlots(data);
+            try {
+              const local = JSON.parse(localStorage.getItem('healora_all_appointments')) || [];
+              const map = new Map();
+              local.forEach(item => { if (item && item.id) map.set(String(item.id), item); });
+              data.forEach(item => {
+                const existing = map.get(String(item.id)) || {};
+                map.set(String(item.id), { ...existing, ...item });
+              });
+              localStorage.setItem('healora_all_appointments', JSON.stringify(Array.from(map.values())));
+            } catch (err) {}
+          }
+        }
+      } catch (e) {}
+    };
+
+    fetchBookedSlots();
+    // Live polling every 4 seconds while slot picker is open
+    const interval = setInterval(fetchBookedSlots, 4000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [selectedDate]);
+
+  // 1. Gather all booked time slots on the selected date across ALL patients and storage sources
   const bookedSlotsMap = useMemo(() => {
     if (!selectedDate) return {};
 
-    const allAppts = existingAppointments && existingAppointments.length > 0 
-      ? existingAppointments 
-      : (JSON.parse(localStorage.getItem('healora_all_appointments')) || []);
+    const localAll = JSON.parse(localStorage.getItem('healora_all_appointments')) || [];
+    const apptMap = new Map();
 
+    // 1. Remote DB booked slots from backend (cross-device & cross-patient)
+    (remoteSlots || []).forEach(a => {
+      if (a && a.id) {
+        apptMap.set(String(a.id), a);
+      } else if (a && a.date && a.time) {
+        apptMap.set(`${a.date}_${normalizeTimeTo24H(a.time)}_${a.nutritionist || 'ANY'}`, a);
+      }
+    });
+
+    // 2. Local clinic-wide storage (captures bookings made in this or other tabs immediately)
+    localAll.forEach(a => {
+      if (a && a.id) {
+        apptMap.set(String(a.id), a);
+      } else if (a && a.date && a.time) {
+        apptMap.set(`${a.date}_${normalizeTimeTo24H(a.time)}_${a.nutritionist || 'ANY'}`, a);
+      }
+    });
+
+    // 3. Any explicit existing appointments passed in props
+    (existingAppointments || []).forEach(a => {
+      if (a && a.id) {
+        apptMap.set(String(a.id), a);
+      } else if (a && a.date && a.time) {
+        apptMap.set(`${a.date}_${normalizeTimeTo24H(a.time)}_${a.nutritionist || 'ANY'}`, a);
+      }
+    });
+
+    const allAppts = Array.from(apptMap.values());
     const map = {};
 
     allAppts.forEach(a => {
@@ -107,7 +171,7 @@ const TimeSlotPicker = ({
     });
 
     return map;
-  }, [selectedDate, selectedNutritionistId, existingAppointments, excludeAppointmentId]);
+  }, [selectedDate, selectedNutritionistId, existingAppointments, excludeAppointmentId, remoteSlots]);
 
   // 2. Check if selected date is today to mark past time slots as expired
   const now = new Date();
